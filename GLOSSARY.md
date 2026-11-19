@@ -10,6 +10,10 @@ A menu bar app for taking screenshots, marking them up quickly, and getting them
 The act of grabbing screen pixels, and the image that act produces.
 _Avoid_: Screenshot (in code and tickets), snap, grab
 
+**Last Capture**:
+The most recently taken Capture, kept with its Annotations so the Editor can reopen it after it closes. Taking a new Capture replaces it.
+_Avoid_: Recent capture, history, draft
+
 **Capture mode**:
 Which part of the screen a Capture takes: **Area**, **Window**, or **Screen**.
 _Avoid_: Capture type, region mode
@@ -44,7 +48,7 @@ The window where a Capture is marked up before Export.
 _Avoid_: Preview, canvas window, annotator
 
 **Annotation**:
-One mark the user adds to a Capture in the Editor, such as an arrow, rectangle, text, or highlight.
+One mark the user adds to a Capture in the Editor, such as an arrow, rectangle, oval, text, or highlight.
 _Avoid_: Shape, drawing, markup
 
 **Annotation color**:
@@ -52,7 +56,7 @@ The color an Annotation is drawn in, chosen in the Editor. Not the same thing as
 _Avoid_: Stroke color, tint, picking a color
 
 **Redaction**:
-An Annotation that hides the content beneath it (blur or pixelate) and irreversibly destroys those pixels on Export.
+An Annotation that hides the content beneath it by pixelating it, and irreversibly destroys those pixels on Export.
 _Avoid_: Censor, mask, obfuscation
 
 ### Output
