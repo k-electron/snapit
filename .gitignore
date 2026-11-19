@@ -64,6 +64,7 @@ fastlane/test_output
 *.swp
 *~
 .claude/settings.local.json
+.claude/worktrees/
 
 # Local scratch
 .scratch/
