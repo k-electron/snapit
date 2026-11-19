@@ -26,7 +26,7 @@ A Capture mode that takes one whole display.
 _Avoid_: Full screen, fullscreen, display capture
 
 **Color picker**:
-A tool that reads the color of a single on-screen pixel so the user can copy its value.
+A tool that reads the color of a single on-screen pixel so the user can copy its value. Not the same thing as an **Annotation color**.
 _Avoid_: Eyedropper, color sampler
 
 ### Editing
@@ -38,6 +38,10 @@ _Avoid_: Preview, canvas window, annotator
 **Annotation**:
 One mark the user adds to a Capture in the Editor, such as an arrow, rectangle, text, or highlight.
 _Avoid_: Shape, drawing, markup
+
+**Annotation color**:
+The color an Annotation is drawn in, chosen in the Editor. Not the same thing as the **Color picker**, which reads a pixel off the screen.
+_Avoid_: Stroke color, tint, picking a color
 
 **Redaction**:
 An Annotation that hides the content beneath it (blur or pixelate) and irreversibly destroys those pixels on Export.
