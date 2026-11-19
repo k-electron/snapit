@@ -25,6 +25,14 @@ A Capture mode that takes exactly one app window.
 A Capture mode that takes one whole display.
 _Avoid_: Full screen, fullscreen, display capture
 
+**Action bar**:
+The floating bar shown beside a selected Area, offering Capture, **Timed Capture**, the **Color picker**, and Cancel.
+_Avoid_: Toolbar, HUD, popover
+
+**Timed Capture**:
+A Capture of a chosen Area taken after a countdown, while the rest of the desktop stays usable.
+_Avoid_: Delayed capture, self-timer, timer capture
+
 **Color picker**:
 A tool that reads the color of a single on-screen pixel so the user can copy its value. Not the same thing as an **Annotation color**.
 _Avoid_: Eyedropper, color sampler
@@ -56,10 +64,6 @@ _Avoid_: Share, output, send
 **Save location**:
 The folder where a saved Export is written.
 _Avoid_: Output folder, destination, save path
-
-**Instant mode**:
-A setting where a Capture goes straight to Export without opening the Editor.
-_Avoid_: Quick mode, express mode
 
 ### App
 
