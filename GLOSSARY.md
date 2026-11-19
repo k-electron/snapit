@@ -75,6 +75,10 @@ _Avoid_: Output folder, destination, save path
 The first-run walkthrough that gets the permissions and shortcuts snapit needs in place.
 _Avoid_: OOBE, setup wizard, welcome flow
 
+**User Guide**:
+The help that ships inside snapit and walks through every flow the user can take.
+_Avoid_: Manual, docs, help pages, README
+
 **Shortcut**:
 A global key combination that starts a Capture in a given Capture mode.
 _Avoid_: Hotkey, keybinding
