@@ -268,7 +268,27 @@ send "$APP_SOCK" "update-script hold off" >/dev/null
 if wait_until 10 update_settled; then pass "the answer arrives when GitHub answers"; else fail "the window never left Checking"; fi
 expect_equal "and it is the newer version" "snapit 2.6.0 is available" "$(uval headline)"
 expect_equal "still one request for the three clicks" "$((BEFORE_HOLD + 1))" "$(update_requests)"
-send_slow "$EDITOR_SOCK" update-press close >/dev/null
+send_slow "$EDITOR_SOCK" "update-press close" >/dev/null
+wait_until 10 u_no_helper
+
+# 6b. Closing the window while GitHub has not answered: the helper quits, the menu bar app survives
+#     its reply having nowhere to go, and the next click joins the request still in flight.
+send "$APP_SOCK" "update-script hold on" >/dev/null
+BEFORE_CLOSE="$(update_requests)"
+send_slow "$APP_SOCK" "menu-click check-for-updates" >/dev/null
+wait_until 5 requests_are "$((BEFORE_CLOSE + 1))"
+CLOSE_REPLY="$(send_slow "$EDITOR_SOCK" "update-press close")"
+if wait_until 10 u_no_helper; then pass "closing the window during a check quits the helper"; else fail "the helper outlived the update window (close replied '$CLOSE_REPLY', pid $(helper_pid), $(ufacts | head -4 | tr '\n' ' '))"; fi
+send_slow "$APP_SOCK" "menu-click check-for-updates" >/dev/null
+sleep 1
+expect_equal "a click after closing joins the check still running: no second request" "$((BEFORE_CLOSE + 1))" "$(update_requests)"
+expect_equal "the new window says it is checking" "checking" "$(uval state)"
+send "$APP_SOCK" "update-script hold off" >/dev/null
+if wait_until 10 update_settled; then pass "the answer arrives in the new window"; else fail "the new window never left Checking"; fi
+expect_equal "it is the newer version" "snapit 2.6.0 is available" "$(uval headline)"
+expect_equal "still one request" "$((BEFORE_CLOSE + 1))" "$(update_requests)"
+if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "snapit survived the reply to a helper that had quit"; else fail "snapit died when the helper quit during a check"; fi
+send_slow "$EDITOR_SOCK" "update-press close" >/dev/null
 wait_until 10 u_no_helper
 
 # 7. Settings › About has the button: it does what the menu item does.
