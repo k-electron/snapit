@@ -9,6 +9,11 @@ nonisolated extension SocketCommand {
     /// `pasteboard-dump-png <path>`: writes the PNG on the private pasteboard to `<path>` (inside
     /// the run's root) and replies `ok <byte count>`.
     static let pasteboardDumpPNG = SocketCommand("pasteboard-dump-png")
+    /// `defaults-set <key> <value>`: stores a string through `AppDefaults.store`. Replies `ok`.
+    static let defaultsSet = SocketCommand("defaults-set")
+    /// `defaults-get <key>`: replies with the string `AppDefaults.store` holds, or `none`. The
+    /// scripted run writes in one process and reads in the other to prove they share defaults.
+    static let defaultsGet = SocketCommand("defaults-get")
     /// Empties the private pasteboard.
     static let pasteboardClear = SocketCommand("pasteboard-clear")
 }
@@ -22,11 +27,16 @@ extension SocketCommandRegistry {
     func registerTestModeCommands() {
         guard TestMode.isActive else { return }
 
+        register(.engineProbePanic) { _ in
+            Engine.probePanic().map { "\($0)" } ?? "unknown"
+        }
+        register(.echo) { request in
+            request.arguments.joined(separator: "\n")
+        }
         register(.testSeams) { _ in
             [
                 "root=\(TestMode.root?.path ?? "")",
                 "pasteboard=\(AppPasteboard.current.name.rawValue)",
-                "defaults=\(AppDefaults.location)",
                 "save=\(SaveLocation.folder.path)",
                 "cache=\(AppIdentity.cacheFolder.path)",
                 "permission=\(ScreenRecordingPermission.current.isGranted ? "granted" : "denied")",
@@ -48,6 +58,15 @@ extension SocketCommandRegistry {
             } catch {
                 return "error \(error)"
             }
+        }
+        register(.defaultsSet) { request in
+            guard request.arguments.count == 2 else { return "error defaults-set <key> <value>" }
+            AppDefaults.store.set(request.arguments[1], forKey: request.arguments[0])
+            return "ok"
+        }
+        register(.defaultsGet) { request in
+            guard let key = request.arguments.first else { return "error defaults-get <key>" }
+            return AppDefaults.store.string(forKey: key) ?? "none"
         }
         register(.pasteboardClear) { _ in
             AppPasteboard.current.clearContents()

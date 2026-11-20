@@ -94,7 +94,7 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
             bytesNoCopy: UnsafeMutableRawPointer(owned.data), count: owned.len,
             deallocator: .custom { _, _ in
                 var copy = owned
-                snapit_bytes_free(&copy)
+                _ = snapit_bytes_free(&copy)
             })
     }
 }

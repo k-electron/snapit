@@ -4,8 +4,6 @@ nonisolated extension SocketCommand {
     /// `fixture-display <scale> [<point width> <point height>]`: chooses the fake display the
     /// fixture Capture source returns. Replies `ok <pixel width>x<pixel height> <color space>`.
     static let fixtureDisplay = SocketCommand("fixture-display")
-    /// Replies with how the last Screen Capture ended. Test mode only.
-    static let captureOutcome = SocketCommand("capture-outcome")
     /// Replies `fixture` when the Capture source is the test one. Test mode only.
     static let captureSource = SocketCommand("capture-source")
 }
@@ -27,9 +25,6 @@ extension SocketCommandRegistry {
         }
         register(.captureSource) { _ in
             CaptureSources.current is FixtureCaptureSource ? "fixture" : "screencapturekit"
-        }
-        register(.captureOutcome) { _ in
-            ScreenCaptureFlow.lastOutcome.map { "\($0)" } ?? "none"
         }
     }
 }

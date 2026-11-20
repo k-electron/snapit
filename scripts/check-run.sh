@@ -14,7 +14,7 @@
 # Optional: SNAPIT_IDLE_SECONDS (default 15) sets the idle window; SNAPIT_FOOTPRINT_MB_MAX
 # (default 20) the menu bar app's footprint ceiling; SNAPIT_FOOTPRINT_GROWTH_MB_MAX (default 4)
 # how far its footprint may grow over repeated Captures once warmed up;
-# SNAPIT_FOOTPRINT_FROM_REST_MB_MAX (default 8) how far above its at-rest footprint it may end up.
+# SNAPIT_FOOTPRINT_FROM_REST_MB_MAX (default 5) how far above its at-rest footprint it may end up.
 set -uo pipefail
 
 APP="${1:?usage: check-run.sh path/to/snapit.app}"
@@ -25,7 +25,7 @@ HELPER_EXE="$APP/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit Editor
 IDLE_SECONDS="${SNAPIT_IDLE_SECONDS:-15}"
 FOOTPRINT_MB_MAX="${SNAPIT_FOOTPRINT_MB_MAX:-20}"
 FOOTPRINT_GROWTH_MB_MAX="${SNAPIT_FOOTPRINT_GROWTH_MB_MAX:-4}"
-FOOTPRINT_FROM_REST_MB_MAX="${SNAPIT_FOOTPRINT_FROM_REST_MB_MAX:-8}"
+FOOTPRINT_FROM_REST_MB_MAX="${SNAPIT_FOOTPRINT_FROM_REST_MB_MAX:-5}"
 
 # A short path: a Unix socket path holds at most 103 bytes.
 RUN_ROOT="$(mktemp -d /tmp/snapit-run.XXXXXX)"

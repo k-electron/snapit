@@ -39,7 +39,7 @@ fn encode(
     };
     assert_eq!(status, SNAPIT_STATUS_OK);
     let png = bytes_of(&out).to_vec();
-    unsafe { snapit_bytes_free(&mut out) };
+    assert_eq!(unsafe { snapit_bytes_free(&mut out) }, SNAPIT_STATUS_OK);
     assert!(out.data.is_null());
     png
 }
@@ -189,6 +189,9 @@ fn invalid_arguments_come_back_as_status_codes() {
 #[test]
 fn freeing_empty_bytes_is_harmless() {
     let mut out = empty_bytes();
-    unsafe { snapit_bytes_free(&mut out) };
-    unsafe { snapit_bytes_free(ptr::null_mut()) };
+    assert_eq!(unsafe { snapit_bytes_free(&mut out) }, SNAPIT_STATUS_OK);
+    assert_eq!(
+        unsafe { snapit_bytes_free(ptr::null_mut()) },
+        SNAPIT_STATUS_INVALID_ARGUMENT
+    );
 }

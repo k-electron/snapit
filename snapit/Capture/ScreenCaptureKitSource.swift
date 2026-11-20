@@ -26,11 +26,14 @@ struct ScreenCaptureKitSource: CaptureSource {
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw ScreenCaptureError.noDisplay
         }
-        // snapit's own windows (a menu that is still fading out) never appear in a Capture.
-        let ownApplications = content.applications.filter {
-            $0.bundleIdentifier == AppIdentity.mainBundleIdentifier
+        // snapit's own windows (a menu still fading out, later its overlay) never appear in a
+        // Capture. Its menu bar icon is a status item window, part of the screen, so it stays in.
+        let statusLayer = Int(CGWindowLevelForKey(.statusWindow))
+        let ownWindows = content.windows.filter {
+            $0.owningApplication?.bundleIdentifier == AppIdentity.mainBundleIdentifier
+                && $0.windowLayer != statusLayer
         }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
+        let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
 
         let scale = Double(filter.pointPixelScale)
         let configuration = SCScreenshotConfiguration()
