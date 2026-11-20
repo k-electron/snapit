@@ -8,6 +8,8 @@ enum ToolRegistry {
             ArrowTool(),
             RectangleTool(),
             OvalTool(),
+            RedactionTool(),
+            CropTool(),
         ]
         return tools.sorted { $0.order < $1.order }
     }()

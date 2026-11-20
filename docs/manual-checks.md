@@ -113,3 +113,15 @@ Run on a real install, with Screen Recording granted, before a release and after
 9. With two displays, start a countdown on one and move the mouse to the other: the border and badge stay with the Area. Change the display arrangement during a countdown: it ends.
 10. Close the last Editor (⌘W) while a countdown runs, then let it reach zero: the Capture still opens, in a new Editor.
 11. Memory and CPU, with `footprint <pid>` and Activity Monitor: while a countdown runs snapit holds no frozen frame (about the resting footprint, plus the first Action bar's under 1 MB); at zero and after the Editor opens it returns to the resting footprint and idles at 0% CPU.
+
+## Last Capture and Reopen Last Capture (#27)
+
+Run after changing the Last Capture store, the Editor's state file or the menu. The scripted run reads the files in the private cache and what the Editor shows and exports; it cannot look at the real menu bar menu's greyed item or at the real cache folder.
+
+1. **The real menu.** With no Capture since launch, open the menu bar menu: "Reopen Last Capture" is greyed out. Take a Capture and close its Editor: the item is enabled the next time the menu opens. Choose it: the Editor comes back with its Annotations and Undo history. Delete Capture in that Editor, then open the menu: the item is greyed out again.
+2. **The real cache.** While a Last Capture exists, `ls -la ~/Library/Caches/dev.snapit.snapit/captures` shows `capture-<N>.pixels` and, after an edit, `capture-<N>.state` (mode 600) in a folder of mode 700. Choose Quit snapit: the folder and both files are gone.
+3. **A real Retina Screen Capture.** Close its Editor and reopen it from the menu: the pixels, colors and size match the first Editor, and no pause longer than a blink shows (nothing is decoded).
+
+4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
+
+Clean up: quit snapit, so the cache folder's `captures` folder is removed.
