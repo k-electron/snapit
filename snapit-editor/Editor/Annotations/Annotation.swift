@@ -94,6 +94,26 @@ nonisolated struct Annotation: Codable, Equatable, Identifiable, Sendable {
     var end: CGPoint
     var style: AnnotationStyle
 
+    init(id: Int, kind: AnnotationKindID, start: CGPoint, end: CGPoint, style: AnnotationStyle) {
+        self.id = id
+        self.kind = kind
+        self.start = start
+        self.end = end
+        self.style = style
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, start, end, style }
+
+    /// A field added later is decoded with `decodeIfPresent` and a default, like `style`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        kind = try container.decode(AnnotationKindID.self, forKey: .kind)
+        start = try container.decode(CGPoint.self, forKey: .start)
+        end = try container.decode(CGPoint.self, forKey: .end)
+        style = try container.decodeIfPresent(AnnotationStyle.self, forKey: .style) ?? AnnotationStyle()
+    }
+
     /// The box `start` and `end` span.
     var box: CGRect {
         CGRect(

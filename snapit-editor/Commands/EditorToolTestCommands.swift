@@ -8,7 +8,9 @@ nonisolated extension SocketCommand {
     /// `editor-drag <N> <x1> <y1> <x2> <y2>`: press, drag in steps, release. Test mode only.
     static let editorDrag = SocketCommand("editor-drag")
     /// `editor-keystroke <N> undo|redo|delete|<character>`: sends Editor N's window ⌘Z, ⇧⌘Z, ⌫ or
-    /// the key itself (a tool's key), the way a key press arrives. Test mode only.
+    /// the key itself (a tool's key), the way a key press arrives. A `caps-` prefix holds Caps Lock
+    /// down; a `plain-` prefix hands the window the key press only, without first offering it as a
+    /// key equivalent. Test mode only.
     static let editorKeystroke = SocketCommand("editor-keystroke")
     /// `editor-style <N> fill outline|solid`, `width <points>` or `color <RRGGBB>`: what the style
     /// controls do. Test mode only.
@@ -54,17 +56,31 @@ extension SocketCommandRegistry {
         register(.editorKeystroke) { request in
             guard let session = Self.session(request.arguments), request.arguments.count == 2, let window = session.window
             else { return "error editor-keystroke <N> undo|redo|delete|<character>" }
-            let name = request.arguments[1]
+            var name = request.arguments[1]
+            var extra: NSEvent.ModifierFlags = []
+            var offerAsKeyEquivalent = true
+            while true {
+                if name.hasPrefix("caps-") {
+                    extra.insert(.capsLock)
+                    name.removeFirst("caps-".count)
+                } else if name.hasPrefix("plain-") {
+                    offerAsKeyEquivalent = false
+                    name.removeFirst("plain-".count)
+                } else {
+                    break
+                }
+            }
             let event: NSEvent?
             switch name {
-            case "undo": event = Self.keyEvent("z", code: 6, flags: .command, window: window)
-            case "redo": event = Self.keyEvent("z", code: 6, flags: [.command, .shift], window: window)
-            case "delete": event = Self.keyEvent("\u{7F}", code: 51, flags: [], window: window)
+            case "undo": event = Self.keyEvent("z", code: 6, flags: extra.union(.command), window: window)
+            case "redo": event = Self.keyEvent("z", code: 6, flags: extra.union([.command, .shift]), window: window)
+            case "delete": event = Self.keyEvent("\u{7F}", code: 51, flags: extra, window: window)
             default:
                 guard name.count == 1 else { return "error unknown key \(name)" }
-                event = Self.keyEvent(name, code: 0, flags: [], window: window)
+                event = Self.keyEvent(name, code: 0, flags: extra, window: window)
             }
-            return Self.send(event, to: window) ? "ok" : "error the window did not take the key"
+            return Self.send(event, to: window, offerAsKeyEquivalent: offerAsKeyEquivalent)
+                ? "ok" : "error the window did not take the key"
         }
         register(.editorStyle) { request in
             let arguments = request.arguments
@@ -168,10 +184,12 @@ extension SocketCommandRegistry {
     }
 
     /// Key equivalents first (the window, then the main menu), then the key itself to the window.
-    private static func send(_ event: NSEvent?, to window: NSWindow) -> Bool {
+    private static func send(_ event: NSEvent?, to window: NSWindow, offerAsKeyEquivalent: Bool = true) -> Bool {
         guard let event else { return false }
-        if window.performKeyEquivalent(with: event) { return true }
-        if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        if offerAsKeyEquivalent {
+            if window.performKeyEquivalent(with: event) { return true }
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        }
         window.sendEvent(event)
         return true
     }
