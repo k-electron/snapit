@@ -7,5 +7,6 @@ extension SocketCommandRegistry {
         registerEditorCommands()
         registerWarmUpCommands()
         registerEditorTestCommands()
+        registerInstallHelperCommands()
     }
 }

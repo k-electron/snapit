@@ -26,6 +26,7 @@ extension SocketCommandRegistry {
         registerEditorActivationTestCommands()
         registerEditorWarmUpTestCommands()
         registerShortcutTestCommands()
+        registerInstallCommands()
     }
 
     private func registerMenuCommands() {

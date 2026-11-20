@@ -66,7 +66,7 @@ enum EditorHelperLauncher {
 
     /// Asks LaunchServices to activate the running helper (see `EditorActivation`). Reaches a
     /// helper that was already running; its reopen handler does nothing of its own.
-    private static func bringForward() async {
+    static func bringForward() async {
         guard EditorActivation.current.activateAfterOpen else { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
