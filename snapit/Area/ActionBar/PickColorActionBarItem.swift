@@ -8,7 +8,7 @@ struct PickColorActionBarItem: ActionBarItem {
     let tooltip = "Pick a color from the screen (P)"
     let keyEquivalent: String? = "p"
 
-    /// An eyedropper: bulb, barrel and tip.
+    /// A bulb on a slanted barrel with a tip.
     var glyph: CGPath? {
         let path = CGMutablePath()
         path.addEllipse(in: CGRect(x: 8, y: 8, width: 4.6, height: 4.6))

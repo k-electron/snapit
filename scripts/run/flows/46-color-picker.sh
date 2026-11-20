@@ -56,12 +56,22 @@ picked() {
   expect_equal "$1: the toast says it was copied" "Copied $2" "$(send "$APP_SOCK" color-toast)"
 }
 
+# set_after_selecting <value>: stores the setting and reads it back, so a dropped command shows here.
+set_after_selecting() {
+  local try
+  for try in 1 2 3; do
+    send "$APP_SOCK" "defaults-set afterSelectingArea $1" >/dev/null
+    [[ "$(send "$APP_SOCK" "defaults-get afterSelectingArea")" == "$1" ]] && return 0
+  done
+  fail "the setting 'After selecting an Area' would not take $1"
+}
+
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 send "$APP_SOCK" "fixture-pixel-layout alpha-first" >/dev/null
 send "$APP_SOCK" "fixture-delay 0" >/dev/null
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
-send "$APP_SOCK" "defaults-set afterSelectingArea showActionBar" >/dev/null
+set_after_selecting showActionBar
 PICK_BEFORE="$(precise_mb "$APP_PID")"
 
 # 1. The menu item and the Shortcut: Pick Color after Capture Screen, unassigned until the user records one.
@@ -229,7 +239,7 @@ wait_until 5 toast_gone
 expect_equal "the toast window is gone" "" "$(overlay_panels)"
 
 # 4. Either "After selecting an Area" setting: with Capture on release, a drag in the picker picks, never captures.
-send "$APP_SOCK" "defaults-set afterSelectingArea captureOnRelease" >/dev/null
+set_after_selecting captureOnRelease
 area_start "menu-click capture.pick-color" >/dev/null
 expect_contains "the setting reads Capture on release" "after-selecting=captureOnRelease" "$(send "$APP_SOCK" overlay-facts)"
 mouse move 0 40.5 40.5 >/dev/null
@@ -243,7 +253,7 @@ area_start "press-shortcut capture-area" >/dev/null
 send "$APP_SOCK" "overlay-key p" >/dev/null
 expect_equal "with Capture on release there is no Action bar, so P does nothing" "idle" "$(fact state)"
 area_cancel
-send "$APP_SOCK" "defaults-set afterSelectingArea showActionBar" >/dev/null
+set_after_selecting showActionBar
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 
 # 5. 2x, Display P3: the hex is the stored value (the fixture formula), with the loupe on the right device pixel.
@@ -260,6 +270,18 @@ read -r _ _ B1 <<<"$CELL"
 read -r _ _ B2 <<<"$("$INSPECT" pixel "$RUN_ROOT/picker.png" $RIGHT)"
 if ((B1 < 120 && B2 > 130)); then pass "pixel 15 is a 40-blue cell and the next device pixel to its right a 200-blue one (blue $B1, then $B2)"; else fail "the loupe's cells at the checkerboard edge: blue $B1 then $B2"; fi
 if near "$(snapshot_pixel 0 swatch 2)" "$CELL" 3; then pass "the swatch matches the outlined cell at 2x"; else fail "the swatch '$(snapshot_pixel 0 swatch 2)' differs from the outlined cell '$CELL'"; fi
+# One row up from the checkerboard edge: the cells to the right and below the outlined one are the
+# 40-blue ones, so a loupe that is off by one in any direction shows.
+mouse move 0 7.75 19.75 >/dev/null
+expect_pick "2x aim at 7.75,19.75 points" 2 600 400 15 39
+CELL="$(snapshot_pixel 0 outlined 2)"
+BELOW="$(pfact outlined | awk -F, '{ printf "%d %d", $1 * 2, ($2 + 16) * 2 }')"
+RIGHT="$(pfact outlined | awk -F, '{ printf "%d %d", ($1 + 16) * 2, $2 * 2 }')"
+read -r _ _ B0 <<<"$CELL"
+read -r _ _ B1 <<<"$("$INSPECT" pixel "$RUN_ROOT/picker.png" $RIGHT)"
+read -r _ _ B2 <<<"$("$INSPECT" pixel "$RUN_ROOT/picker.png" $BELOW)"
+if ((B0 > 130 && B1 < 120 && B2 < 120)); then pass "pixel (15,39) is 200-blue with 40-blue cells to its right and below (blue $B0, $B1, $B2)"; else fail "the loupe's cells around (15,39): blue $B0, right $B1, below $B2"; fi
+mouse move 0 7.75 20.25 >/dev/null
 send "$APP_SOCK" "overlay-key right" >/dev/null
 expect_pick "2x nudge right is one device pixel" 2 600 400 16 40
 read -r _ _ B1 <<<"$(snapshot_pixel 0 outlined 2)"
@@ -359,6 +381,13 @@ send_slow "$APP_SOCK" overlay-wait >/dev/null
 assert_idle_cpu "menu bar app after the Color picker" "$APP_PID" 4
 expect_equal "no Editor helper process exists after the picks" "" "$(helper_pid)"
 
-# Leave what the next flows expect.
+# Leave what the next flows expect, and hold the process to the ceiling here, not in a later flow.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
+sleep 1
+PICK_END="$(footprint_mb "$APP_PID")"
+if awk -v a="$PICK_END" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
+  pass "memory is under the ${FOOTPRINT_MB_MAX} MB ceiling after the Color picker flow (${PICK_END} MB)"
+else
+  fail "memory is ${PICK_END} MB after the Color picker flow (ceiling ${FOOTPRINT_MB_MAX} MB)"
+fi
