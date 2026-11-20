@@ -123,10 +123,13 @@ final class TimedCountdown {
         badgeView = view
 
         // A display plugged in, unplugged or rearranged ends the countdown, as it ends the overlay.
+        let started = DisplayConfiguration.current()
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.onCancel?() }
+            MainActor.assumeIsolated {
+                if DisplayConfiguration.changed(since: started, for: "countdown") { self?.onCancel?() }
+            }
         }
         // The screen going to sleep or the session being locked ends it too: the tick stops
         // while the Mac sleeps, and a Capture at wake would be of the lock screen.
@@ -134,7 +137,10 @@ final class TimedCountdown {
             workspaceObservers.append(
                 NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) {
                     [weak self] _ in
-                    MainActor.assumeIsolated { self?.onCancel?() }
+                    MainActor.assumeIsolated {
+                        if TestMode.isActive { NSLog("snapit: \(name.rawValue) ends the countdown") }
+                        self?.onCancel?()
+                    }
                 })
         }
 
