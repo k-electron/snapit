@@ -69,8 +69,8 @@ struct UpdateView: View {
                 Text(detail)
                     .foregroundStyle(.secondary)
             }
-            if let notes = model.notes {
-                NotesView(blocks: ReleaseNotesBlocks.parse(notes))
+            if model.notes != nil {
+                NotesView(blocks: model.blocks)
             }
             if let reminder = model.reminder {
                 Text(reminder)
@@ -117,9 +117,9 @@ private struct NotesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
+            LazyVStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    switch block {
+                    switch block.kind {
                     case .heading:
                         Text(block.attributed).font(.headline).padding(.top, 4)
                     case .bullet:

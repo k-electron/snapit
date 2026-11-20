@@ -9,15 +9,14 @@ import Foundation
 /// | no answer in time | unreachable: timeout |
 /// | HTTP 403 or 429 | unreachable: rate limit |
 /// | HTTP 404 (no release published), a draft or a pre-release | unreachable: no release |
-/// | any other status but 200, a body that is not JSON, no `tag_name`, a tag that is not `vX.Y.Z` | unreachable: bad response |
-/// | a tag newer than snapit's bundle version | newer, with the notes and the release page |
+/// | any other status but 200 (a refused redirect included), a body that is not JSON, no `tag_name`, a tag that is not `vX.Y.Z` | unreachable: bad response |
+/// | a tag newer than snapit's bundle version | newer, with the notes and the release page of the tag |
 /// | a tag equal to or older than it | up to date |
 nonisolated enum UpdateAnswers {
-    /// The release notes the window shows are cut here: a longer text is the release page's to read.
-    static let notesLimit = 20_000
-
-    /// The only page the Download button may open: a page of snapit's own repository.
-    private static let downloadPrefix = "/k-electron/snapit/"
+    /// The release notes the window shows are cut at this many lines and this many UTF-8 bytes,
+    /// whichever comes first: a longer text is the release page's to read.
+    static let notesLineLimit = 300
+    static let notesByteLimit = 20_000
 
     static func answer(for result: Result<ReleaseResponse, ReleaseEndpointError>, installed: String) -> UpdateAnswer {
         let response: ReleaseResponse
@@ -41,33 +40,44 @@ nonisolated enum UpdateAnswers {
         guard version > current else { return .upToDate(installed: current.description) }
         return .newer(
             installed: current.description, version: version.description,
-            downloadURL: downloadURL(release.html_url, tag: tag), notes: notes(release.body))
+            downloadURL: releasePage(tag: tag), notes: notes(release.body))
     }
 
-    /// GitHub's `html_url` when it is a page of snapit's repository, else the release page of the tag.
-    static func downloadURL(_ htmlURL: String?, tag: String) -> String {
-        if let htmlURL, let url = URL(string: htmlURL), url.scheme == "https", url.host == "github.com",
-            url.path.hasPrefix(downloadPrefix)
-        {
-            return url.absoluteString
-        }
-        let safeTag = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
-        return "\(ReleaseRequest.releasesPage)/tag/\(safeTag)"
+    /// The release page of a tag in snapit's repository. Built here from the tag that
+    /// `ReleaseVersion` accepted (digits, dots and a leading `v`), never taken from GitHub's
+    /// `html_url`: a link in a reply is not trusted to point anywhere.
+    static func releasePage(tag: String) -> String {
+        "\(ReleaseRequest.releasesPage)/tag/\(tag.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
 
     static func notes(_ body: String?) -> String {
-        let text = (body ?? "").replacingOccurrences(of: "\r\n", with: "\n")
+        var text = (body ?? "").replacingOccurrences(of: "\r\n", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count > notesLimit else { return text }
-        return String(text.prefix(notesLimit)) + "…"
+        var cut = false
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.count > notesLineLimit {
+            text = lines.prefix(notesLineLimit).joined(separator: "\n")
+            cut = true
+        }
+        var bytes = 0
+        var kept = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            bytes += String(scalar).utf8.count
+            if bytes > notesByteLimit {
+                cut = true
+                break
+            }
+            kept.append(scalar)
+        }
+        return cut ? String(kept) + "…" : String(kept)
     }
 }
 
-/// The fields of GitHub's release object that Check for Updates reads.
+/// The fields of GitHub's release object that Check for Updates reads. Its `html_url` is not one:
+/// the Download button's page is built from the tag.
 nonisolated struct LatestRelease: Decodable {
     let tag_name: String?
     let body: String?
-    let html_url: String?
     let draft: Bool?
     let prerelease: Bool?
 }

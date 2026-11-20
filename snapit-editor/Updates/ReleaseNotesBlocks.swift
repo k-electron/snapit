@@ -2,33 +2,29 @@ import Foundation
 
 /// A release's notes (GitHub's Markdown) as the few blocks the update window draws: headings,
 /// bullets and paragraphs, with inline Markdown (bold, italics, code, links) inside each. A line
-/// that is none of these is a paragraph, so any text shows, as plain text at worst.
-enum NotesBlock: Equatable {
-    case heading(String)
-    case bullet(String)
-    case paragraph(String)
-
-    var kind: String {
-        switch self {
-        case .heading: "heading"
-        case .bullet: "bullet"
-        case .paragraph: "paragraph"
-        }
+/// that is none of these is a paragraph, so any text shows, as plain text at worst. Parsed once,
+/// when the answer arrives.
+struct NotesBlock: Equatable {
+    enum Kind: String {
+        case heading
+        case bullet
+        case paragraph
     }
 
-    /// The Markdown of the block, without its marker.
-    var markdown: String {
-        switch self {
-        case .heading(let text), .bullet(let text), .paragraph(let text): text
-        }
-    }
+    let kind: Kind
+    /// What the block says with inline Markdown applied, links kept, images not: an image shows as
+    /// its alternative text and no image is ever fetched.
+    let attributed: AttributedString
 
-    /// What the block says once inline Markdown is applied.
+    /// The same, as plain text.
     var plainText: String { String(attributed.characters) }
 
-    var attributed: AttributedString {
+    init(kind: Kind, markdown: String) {
+        self.kind = kind
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnly)
-        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        var text = (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        for run in text.runs where run.imageURL != nil { text[run.range].imageURL = nil }
+        attributed = text
     }
 }
 
@@ -39,12 +35,12 @@ enum ReleaseNotesBlocks {
             guard !line.isEmpty else { return nil }
             if line.hasPrefix("#") {
                 let text = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
-                if !text.isEmpty { return .heading(text) }
+                if !text.isEmpty { return NotesBlock(kind: .heading, markdown: text) }
             }
             for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
-                return .bullet(String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces))
+                return NotesBlock(kind: .bullet, markdown: String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces))
             }
-            return .paragraph(line)
+            return NotesBlock(kind: .paragraph, markdown: line)
         }
     }
 }
