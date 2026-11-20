@@ -97,7 +97,7 @@ expect_equal "clicking Pick Color opens the picker" "pickingColor" "$(fact state
 expect_equal "the Action bar is hidden while picking" "none" "$(fact action-bar)"
 expect_equal "no handle shows while picking" "0" "$(fact handles)"
 expect_equal "the overlay's own crosshair loupe is hidden" "hidden" "$(fact loupe)"
-expect_equal "the selection is kept for Esc to return to" "0 100,60 200x100" "$(fact selection)"
+expect_equal "the selection is kept for Esc to return to" "0 100,60 200x100" "$(fact area)"
 expect_equal "the picker knows it came from the Action bar" "bar" "$(pfact origin)"
 if [[ "$(pfact loupe)" != none ]]; then pass "the picker's loupe is showing ($(pfact loupe))"; else fail "the picker's loupe is not showing"; fi
 expect_contains "the overlay is still layer-hosted with the picker up" "view=layer-hosted-scene" "$(send "$APP_SOCK" overlay-facts)"
@@ -154,7 +154,7 @@ assert_idle_cpu "menu bar app with the Color picker showing" "$APP_PID" 3
 # Esc goes back to the Action bar, with the selection where it was; nothing was copied.
 send "$APP_SOCK" "overlay-key escape" >/dev/null
 expect_equal "Esc returns to the Action bar" "adjusting" "$(fact state)"
-expect_equal "the selection is where it was" "0 100,60 200x100" "$(fact selection)"
+expect_equal "the selection is where it was" "0 100,60 200x100" "$(fact area)"
 if [[ "$(fact action-bar)" != none ]]; then pass "the Action bar shows again"; else fail "no Action bar after Esc from the picker"; fi
 expect_equal "and its eight handles" "8" "$(fact handles)"
 expect_equal "the picker is gone" "none" "$(send "$APP_SOCK" overlay-picker)"
@@ -195,7 +195,7 @@ expect_equal "the menu's Pick Color opens the overlay" "ok" "$(area_start "menu-
 expect_equal "it opens in the Color picker" "pickingColor" "$(fact state)"
 expect_equal "the picker knows it came from the menu" "entry" "$(pfact origin)"
 expect_equal "one panel covers the display" "1" "$(overlay_panels | grep -c '^600x400 ')"
-expect_equal "there is no selection" "none none" "$(fact selection)"
+expect_equal "there is no selection" "none none" "$(fact area)"
 expect_equal "and no Action bar" "none" "$(fact action-bar)"
 expect_equal "the Editor is not warmed up for a pick" "idle" "$(send "$APP_SOCK" "editor-warm-up state")"
 expect_equal "and no Editor helper process exists" "" "$(helper_pid)"

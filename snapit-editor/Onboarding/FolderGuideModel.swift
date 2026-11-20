@@ -242,7 +242,7 @@ final class FolderGuideModel: GuideContent {
             "guide-headline=\(headline)",
             "guide-message=\(message)",
         ]
-        lines += buttons.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
+        lines += buttons.map(\.factsLine)
         return lines
     }
 

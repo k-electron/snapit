@@ -114,7 +114,7 @@ final class OverlayLoupe {
 
     func hide() { layer.isHidden = true }
 
-    /// Lets go of the frozen frame the image layer samples.
+    /// Lets go of the frozen frame the image layer reads.
     func releaseFrame() {
         image.contents = nil
         hasFrame = false

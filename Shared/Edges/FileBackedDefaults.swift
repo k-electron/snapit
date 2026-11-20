@@ -9,10 +9,11 @@ import Foundation
 /// menu bar app) must agree at once, as they do through the real domain, so this store reads the
 /// file every time. The plist is small and written by hand-driven commands only.
 ///
-/// It covers what snapit uses: `object`, `string`, `bool`, `integer`, `double`, `float`, `url`,
-/// `array`, `stringArray`, `dictionary`, `data`, `set`, `removeObject` and
-/// `dictionaryRepresentation`. `register(defaults:)`, key-value observing and
-/// `UserDefaults.didChangeNotification` are not supported: read the key where it is needed.
+/// It answers `object`, `string`, `bool`, `integer`, `double`, `float`, `url`, `array`,
+/// `stringArray`, `dictionary`, `data`, `set`, `removeObject` and `dictionaryRepresentation`, each
+/// from the file at the moment it is called. It is a `UserDefaults` subclass because
+/// `AppDefaults.store` is a `UserDefaults` for every caller (about 60 call sites in both
+/// processes); a separate protocol would touch all of them for the sake of a test-only store.
 nonisolated final class FileBackedDefaults: UserDefaults {
     private let file: URL
     private let lockFile: URL

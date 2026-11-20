@@ -23,7 +23,7 @@ APP="${1:?usage: check-run.sh path/to/snapit.app}"
 APP="$(cd "$APP" && pwd)"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_EXE="$APP/Contents/MacOS/snapit"
-HELPER_EXE="$APP/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit Editor"
+HELPER_EXE="$APP/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit"
 IDLE_SECONDS="${SNAPIT_IDLE_SECONDS:-15}"
 FOOTPRINT_MB_MAX="${SNAPIT_FOOTPRINT_MB_MAX:-20}"
 FOOTPRINT_GROWTH_MB_MAX="${SNAPIT_FOOTPRINT_GROWTH_MB_MAX:-4}"
@@ -79,7 +79,7 @@ fi
 isolation_begin
 
 # The menu bar app starts, in test mode, and answers on its socket.
-(nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
+launch_app
 if wait_until 10 answers "$APP_SOCK"; then pass "menu bar app starts and answers on its socket"; else abort "menu bar app did not answer"; fi
 APP_PID="$(pid_of "$APP_EXE")"
 

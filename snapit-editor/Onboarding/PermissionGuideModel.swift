@@ -7,6 +7,9 @@ struct HelperButton {
     let id: String
     let title: String
     let tooltip: String
+
+    /// The line a window's facts command prints for this button.
+    var factsLine: String { "button \(id)|\(title)|\(tooltip)" }
 }
 
 /// The Screen Recording Permission guide: what it says, which drawing it plays and what its buttons
@@ -214,7 +217,7 @@ final class PermissionGuideModel: GuideContent {
             "guide-reset-failure=\(resetFailure ?? "none")",
             "guide-relaunch-error=\(relaunchError ?? "none")",
         ]
-        lines += buttons.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
+        lines += buttons.map(\.factsLine)
         return lines
     }
 

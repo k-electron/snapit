@@ -119,7 +119,7 @@ rm -f "$RUN_ROOT/overlay.png"
 # A drag selects nothing, there is no Action bar, and Return does nothing.
 mouse down 0 30 30 >/dev/null
 mouse drag 0 100 100 >/dev/null
-expect_equal "a drag makes no selection" "none" "$(fact selection | sed 's/^[^ ]* //')"
+expect_equal "a drag makes no selection" "none" "$(fact area | sed 's/^[^ ]* //')"
 expect_equal "and shows no handles or Action bar" "0 none" "$(fact handles) $(fact action-bar)"
 mouse move 0 10 170 >/dev/null
 mouse up 0 10 170 >/dev/null
@@ -382,6 +382,7 @@ else
 fi
 area_start "press-shortcut capture-window" >/dev/null
 mouse move 0 70 50 >/dev/null
+wait_until 10 scene_updates_quiet
 UPDATES_BEFORE="$(fact scene-updates)"
 assert_idle_cpu "the menu bar app with the window overlay up" "$APP_PID" 3
 expect_equal "an idle overlay updates nothing (no polling)" "$UPDATES_BEFORE" "$(fact scene-updates)"

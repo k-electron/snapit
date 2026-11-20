@@ -297,11 +297,11 @@ enum OnboardingFacts {
         default:
             break
         }
-        lines += model.navigation.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
+        lines += model.navigation.map(\.factsLine)
         if model.step == .screenRecording {
             lines += model.guide.facts()
         } else {
-            lines += model.stepButtons.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
+            lines += model.stepButtons.map(\.factsLine)
         }
         return lines.joined(separator: "\n")
     }

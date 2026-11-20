@@ -53,7 +53,7 @@ nonisolated extension SocketCommand {
     static let ping = SocketCommand("ping")
     /// Quits the receiving process.
     static let quit = SocketCommand("quit")
-    /// Replies with the engine version read through the C ABI.
+    /// Replies with the engine version read through the C ABI. Test mode only.
     static let engineVersion = SocketCommand("engine-version")
     /// Makes the engine panic on purpose and replies with the status it came back as (`panic`). Test mode only.
     static let engineProbePanic = SocketCommand("engine-probe-panic")

@@ -33,7 +33,7 @@ extension SocketCommandRegistry {
                 "message=\(model.message)",
                 "activation=\(NSApp.activationPolicy() == .regular ? "regular" : "accessory")",
             ]
-            lines += model.buttons.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
+            lines += model.buttons.map(\.factsLine)
             return lines.joined(separator: "\n")
         }
         register(.moveScreenPress) { request in

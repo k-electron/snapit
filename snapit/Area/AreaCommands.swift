@@ -188,7 +188,7 @@ extension AreaOverlayController {
             "cursor=\(format(cursor.x)),\(format(cursor.y))",
             "hover=\(describe(hoveredWindow))",
             "hover-window=\(hoveredOnScreenWindow.map { String($0.id) } ?? "none")",
-            "selection=\(selectionIndex.map(String.init) ?? "none") \(describe(selection))",
+            "area=\(areaDisplayIndex.map(String.init) ?? "none") \(describe(area))",
             "view=\(layerHosted ? "layer-hosted-scene" : "drawn")",
             "after-selecting=\(CapturingSettings.afterSelectingArea.rawValue)",
             "handles=\(views.reduce(0) { $0 + $1.scene.visibleHandles })",

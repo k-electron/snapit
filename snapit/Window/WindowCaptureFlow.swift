@@ -2,7 +2,7 @@ import Foundation
 
 /// A Window Capture: the overlay highlights the window under the pointer, a click captures exactly
 /// that window through a single-window content filter, and the Capture opens in the Editor. No
-/// Action bar: picking a window is the whole selection.
+/// Action bar: picking a window is the whole Area.
 ///
 /// The overlay, its frozen frames, the gate, the Editor helper's warm-up and the hand-off to the
 /// Editor are the Area Capture's (`AreaCaptureFlow`, started in `.window` mode); this file is the
