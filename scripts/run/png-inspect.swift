@@ -9,7 +9,13 @@
 //                                               size (1x Export of a Retina Capture): every pixel is the
 //                                               average of its 2 x 2 source block, rounded half up
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
-//   png-inspect general-pasteboard              changeCount of the general pasteboard (never its contents)
+//   png-inspect verify-fixture <file> <w> <h> <full w> <full h> <x> <y>
+//                                               the same for a crop: the file is the w x h pixels of the
+//                                               full w x full h fixture that start at column x, row y
+//   png-inspect pixel <file> <x> <y>            `r g b` of one pixel, read in sRGB
+//   png-inspect overlay-windows <pid>           one line per on-screen window of the process at the
+//                                               screen-saver level (the Area overlay's panels)
+//   png-inspect general-pasteboard             changeCount of the general pasteboard (never its contents)
 //   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
 //                                               `<width>x<height> onscreen|offscreen`; no names, so no TCC prompt
 //
@@ -113,9 +119,18 @@ case "info":
     print("dpi=\(properties[kCGImagePropertyDPIWidth] ?? "none")")
 
 case "verify-fixture":
-    guard arguments.count == 5, let width = Int(arguments[3]), let height = Int(arguments[4]) else {
-        fail("verify-fixture <file> <w> <h>")
-    }
+    // verify-fixture <file> <w> <h>                     the file is the fixture, w x h pixels
+    // verify-fixture <file> <w> <h> <full w> <full h> <x> <y>
+    //                                                   the file is the w x h pixels of the fixture image
+    //                                                   (full w x full h) that start at column x, row y
+    guard arguments.count == 5 || arguments.count == 9, let width = Int(arguments[3]), let height = Int(arguments[4])
+    else { fail("verify-fixture <file> <w> <h> [<full w> <full h> <x> <y>]") }
+    let whole = arguments.count == 9 ? arguments[5...8].compactMap { Int($0) } : []
+    guard arguments.count == 5 || whole.count == 4 else { fail("verify-fixture: the crop arguments must be numbers") }
+    let fullWidth = whole.isEmpty ? width : whole[0]
+    let fullHeight = whole.isEmpty ? height : whole[1]
+    let originX = whole.isEmpty ? 0 : whole[2]
+    let originY = whole.isEmpty ? 0 : whole[3]
     let (image, _) = loadImage(arguments[2])
     guard image.width == width, image.height == height else {
         print("size=\(image.width)x\(image.height)")
@@ -135,9 +150,10 @@ case "verify-fixture":
     for y in 0..<height {
         for x in 0..<width {
             let at = pixels + (y * width + x) * 4
+            let sourceX = originX + x, sourceY = originY + y
             let expected = (
-                UInt8(x * 255 / max(width - 1, 1)), UInt8(y * 255 / max(height - 1, 1)),
-                UInt8((x / 8 + y / 8) % 2 == 0 ? 40 : 200)
+                UInt8(sourceX * 255 / max(fullWidth - 1, 1)), UInt8(sourceY * 255 / max(fullHeight - 1, 1)),
+                UInt8((sourceX / 8 + sourceY / 8) % 2 == 0 ? 40 : 200)
             )
             if at[0] != expected.0 || at[1] != expected.1 || at[2] != expected.2 {
                 if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
@@ -212,6 +228,33 @@ case "windows":
         guard let bounds, bounds.width > 8, bounds.height > 8 else { continue }
         let onScreen = (window[kCGWindowIsOnscreen as String] as? Bool) ?? false
         print("\(Int(bounds.width))x\(Int(bounds.height)) \(onScreen ? "onscreen" : "offscreen")")
+    }
+
+case "pixel":
+    // pixel <file> <x> <y>: `r g b` of one pixel, read in sRGB.
+    guard arguments.count == 5, let x = Int(arguments[3]), let y = Int(arguments[4]) else { fail("pixel <file> <x> <y>") }
+    let (image, _) = loadImage(arguments[2])
+    guard x >= 0, y >= 0, x < image.width, y < image.height,
+        let space = CGColorSpace(name: CGColorSpace.sRGB),
+        let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { fail("pixel is outside the image") }
+    context.setBlendMode(.copy)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    let at = context.data!.bindMemory(to: UInt8.self, capacity: image.width * image.height * 4) + (y * image.width + x) * 4
+    print("\(at[0]) \(at[1]) \(at[2])")
+
+case "overlay-windows":
+    // overlay-windows <pid>: one line per window of the process at the screen-saver level that is
+    // on screen (the Area overlay's panels): `<w>x<h> @<x>,<y>`. Window server facts only.
+    guard arguments.count == 3, let pid = Int32(arguments[2]) else { fail("overlay-windows <pid>") }
+    let overlayLevel = Int(CGWindowLevelForKey(.screenSaverWindow))
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+    for window in list where (window[kCGWindowOwnerPID as String] as? Int32) == pid && (window[kCGWindowLayer as String] as? Int) == overlayLevel {
+        let bounds = (window[kCGWindowBounds as String] as? [String: Any]).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+        guard let bounds else { continue }
+        print("\(Int(bounds.width))x\(Int(bounds.height)) @\(Int(bounds.minX)),\(Int(bounds.minY))")
     }
 
 default:

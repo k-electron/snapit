@@ -11,7 +11,6 @@ enum HelperLifecycle {
     /// True once any window has shown. Until then the helper (warm, or started on its own)
     /// must not quit just because it has no window.
     private(set) static var hasShownWindow = false
-
     static func windowWillShow() {
         // Become a regular app before the window shows, so it appears once, already owned by
         // a regular app.

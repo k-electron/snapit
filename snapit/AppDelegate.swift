@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ExportFiles.removeAll()
             // Only the copy that owns the menu bar listens for Shortcuts.
             ShortcutBindings.registerAll()
+            SocketOwnership.adopt(server)
+            // Where this copy runs from: a mounted disk image or a translocated path needs a move.
+            Task { await InstallCheck.runAtLaunch() }
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.
             NSApplication.shared.terminate(nil)
