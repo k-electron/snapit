@@ -119,6 +119,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `annotation-kinds` | the ids in `AnnotationKinds.all`, one per line |
 | `editor-inject-kinds <N>` | one Annotation of every kind in `AnnotationKinds.all` added to Editor N, each its own Undo step (a ticket that adds a kind is covered by the Reopen flow with no edit) |
 | `editor-state-crop <N> get\|set <x> <y> <w> <h>` | Editor N's crop in image points (`none` for the whole Capture); `set` is one Undo step. Stands in for the Crop tool, to check the crop is stored |
+| `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
