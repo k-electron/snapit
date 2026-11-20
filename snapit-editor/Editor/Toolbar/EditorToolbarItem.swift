@@ -42,13 +42,18 @@ struct EditorKeyEquivalent: Equatable {
 
     func matches(_ event: NSEvent) -> Bool {
         // Caps Lock is a state, not part of the combination.
-        event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers
-            && event.charactersIgnoringModifiers?.lowercased() == key
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers else {
+            return false
+        }
+        let typed = event.charactersIgnoringModifiers?.lowercased()
+        // Enter on the numeric keypad is the same as Return.
+        return typed == key || (key == "\r" && typed == "\u{3}")
     }
 }
 
 /// The helper's menu an item appears in, besides the fixed items of each menu.
 enum EditorMenu: String, CaseIterable {
+    case file = "File"
     case edit = "Edit"
     case window = "Window"
 }

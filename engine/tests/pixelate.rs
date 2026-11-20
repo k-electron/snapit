@@ -395,3 +395,27 @@ fn no_source_pixel_survives_where_a_block_holds_different_pixels() {
         assert_eq!(*pixel, [127, 127, 127, 255]);
     }
 }
+
+#[test]
+fn a_rectangle_of_more_pixels_than_any_display_is_refused_before_it_is_read() {
+    // 2^21 x 2^20 pixels claimed over a few bytes: the size check refuses it, nothing is read.
+    let src = [0u8; 64];
+    let mut dst = [PADDING; 64];
+    let status = unsafe {
+        snapit_pixelate(
+            src.as_ptr(),
+            1 << 21,
+            1 << 20,
+            (1usize << 21) * 4,
+            0,
+            0,
+            1 << 21,
+            1 << 20,
+            8,
+            dst.as_mut_ptr(),
+            (1usize << 21) * 4,
+        )
+    };
+    assert_eq!(status, SNAPIT_STATUS_INVALID_ARGUMENT);
+    assert!(dst.iter().all(|&b| b == PADDING));
+}

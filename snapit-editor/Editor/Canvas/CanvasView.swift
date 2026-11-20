@@ -128,7 +128,10 @@ final class CanvasView: NSView {
         CATransaction.setDisableActions(true)
         placeLayers()
         CATransaction.commit()
+        // The zoom changed with the visible part: lay the layers out now, so the pointer's mapping
+        // (the zoom) and the layers' place agree before the next event.
         needsLayout = true
+        layoutSubtreeIfNeeded()
         annotationLayers.contextChanged(renderContext)
     }
 

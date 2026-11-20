@@ -23,6 +23,7 @@ extension SocketCommandRegistry {
         registerEditorHelperCommands()
         registerCaptureTestCommands()
         registerCaptureDeleteCommands()
+        registerSaveCommands()
         registerAreaTestCommands()
         registerEditorActivationTestCommands()
         registerEditorWarmUpTestCommands()

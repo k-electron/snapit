@@ -1,16 +1,27 @@
 //! PNG encoding of BGRA pixels, with the physical size and color profile a Capture carries.
+//!
+//! Three entry points share one encoder: [`snapit_png_encode`] (the original, bytes out),
+//! [`snapit_png_encode_ex`] (bytes out, with the 1x downscale) and [`snapit_png_encode_to_fd`]
+//! (streamed into a file, for Save and drag-out). The downscale is made in the same pass as the
+//! encode, one row at a time: no buffer of the smaller image exists. Output bytes live in
+//! page-backed memory that [`snapit_bytes_free`] unmaps, so the footprint returns to where it
+//! was; a file is written through a buffer of a few hundred kilobytes.
 
 use std::borrow::Cow;
-use std::io::Write;
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
+use std::mem::ManuallyDrop;
+use std::os::fd::FromRawFd;
 use std::ptr;
 use std::slice;
 
 use png::{BitDepth, ColorType, Compression, Info, PixelDimensions, Unit};
 
-use crate::buffer::SNAPIT_BYTES_PER_PIXEL;
+use crate::buffer::{SNAPIT_BYTES_PER_PIXEL, page_size};
+use crate::downscale::{Downscaler, Source, readable_len, valid_target, within_averaging_limit};
 use crate::{
-    SNAPIT_STATUS_ENCODE_FAILED, SNAPIT_STATUS_INVALID_ARGUMENT, SNAPIT_STATUS_OK,
-    SNAPIT_STATUS_OUT_OF_MEMORY, SnapitStatus, guard,
+    SNAPIT_STATUS_ENCODE_FAILED, SNAPIT_STATUS_INVALID_ARGUMENT, SNAPIT_STATUS_IO_FAILED,
+    SNAPIT_STATUS_OK, SNAPIT_STATUS_OUT_OF_MEMORY, SnapitStatus, guard,
 };
 
 /// Fast: the encoder Copy and drag-out use.
@@ -27,8 +38,26 @@ pub struct SnapitBytes {
     pub data: *mut u8,
     /// Number of bytes in use.
     pub len: usize,
-    /// Number of bytes allocated.
+    /// Length of the page-backed allocation in bytes (whole pages).
     pub capacity: usize,
+}
+
+/// How to encode: the level, the resolution to record, the size of the PNG and the color profile.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SnapitPngParams {
+    /// One of `SNAPIT_PNG_FAST`, `SNAPIT_PNG_BALANCED` or `SNAPIT_PNG_HIGH`.
+    pub level: u32,
+    /// Becomes the `pHYs` chunk: 144 for a Retina Capture, 72 at 1x.
+    pub dpi: u32,
+    /// Width of the PNG in pixels: the source width, or less to average the image down to it.
+    pub out_width: u32,
+    /// Height of the PNG in pixels: the source height, or less.
+    pub out_height: u32,
+    /// The display's color profile, embedded as an `iCCP` chunk; null (with `icc_len` 0) for none.
+    pub icc: *const u8,
+    /// Length of `icc` in bytes.
+    pub icc_len: usize,
 }
 
 /// PNG pixels per metre for a resolution in dots per inch.
@@ -38,53 +67,76 @@ fn pixels_per_metre(dpi: u32) -> u32 {
 
 enum EncodeError {
     OutOfMemory,
+    Io,
     Failed,
 }
 
 impl From<png::EncodingError> for EncodeError {
-    fn from(_: png::EncodingError) -> Self {
-        Self::Failed
+    fn from(error: png::EncodingError) -> Self {
+        match error {
+            png::EncodingError::IoError(e) if e.kind() == io::ErrorKind::OutOfMemory => {
+                Self::OutOfMemory
+            }
+            png::EncodingError::IoError(_) => Self::Io,
+            _ => Self::Failed,
+        }
     }
 }
 
-impl From<std::io::Error> for EncodeError {
-    fn from(_: std::io::Error) -> Self {
-        Self::Failed
+impl From<io::Error> for EncodeError {
+    fn from(error: io::Error) -> Self {
+        if error.kind() == io::ErrorKind::OutOfMemory {
+            Self::OutOfMemory
+        } else {
+            Self::Io
+        }
     }
 }
 
-fn encode(
-    pixels: &[u8],
-    width: u32,
-    height: u32,
-    stride: usize,
+impl EncodeError {
+    fn status(&self) -> SnapitStatus {
+        match self {
+            Self::OutOfMemory => SNAPIT_STATUS_OUT_OF_MEMORY,
+            Self::Io => SNAPIT_STATUS_IO_FAILED,
+            Self::Failed => SNAPIT_STATUS_ENCODE_FAILED,
+        }
+    }
+}
+
+/// A validated call: the source pixels and how to encode them.
+struct Job<'a> {
+    source: Source<'a>,
     level: u32,
     dpi: u32,
-    icc: &[u8],
-) -> Result<Vec<u8>, EncodeError> {
-    let (w, h) = (width as usize, height as usize);
-    let mut info = Info::with_size(width, height);
+    out_width: usize,
+    out_height: usize,
+    icc: &'a [u8],
+}
+
+/// Encodes `job` into `sink`: the PNG, row by row, averaging rows down when the output is
+/// smaller than the source.
+fn encode_into<W: Write>(sink: W, job: &Job) -> Result<(), EncodeError> {
+    let Job {
+        source,
+        out_width: w,
+        out_height: h,
+        ..
+    } = *job;
+    let mut info = Info::with_size(w as u32, h as u32);
     info.color_type = ColorType::Rgb;
     info.bit_depth = BitDepth::Eight;
-    let ppm = pixels_per_metre(dpi);
+    let ppm = pixels_per_metre(job.dpi);
     info.pixel_dims = Some(PixelDimensions {
         xppu: ppm,
         yppu: ppm,
         unit: Unit::Meter,
     });
-    if !icc.is_empty() {
-        info.icc_profile = Some(Cow::Borrowed(icc));
+    if !job.icc.is_empty() {
+        info.icc_profile = Some(Cow::Borrowed(job.icc));
     }
 
-    // A Capture compresses to roughly a tenth of its size; start there and let it grow.
-    let mut out: Vec<u8> = Vec::new();
-    // Reserve up front at most 256 MiB; the output grows past that on demand.
-    const MAX_INITIAL_RESERVE: usize = 256 << 20;
-    let estimate = (w.saturating_mul(h) / 2 + 1024).min(MAX_INITIAL_RESERVE);
-    out.try_reserve_exact(estimate)
-        .map_err(|_| EncodeError::OutOfMemory)?;
-    let mut encoder = png::Encoder::with_info(&mut out, info)?;
-    encoder.set_compression(match level {
+    let mut encoder = png::Encoder::with_info(sink, info)?;
+    encoder.set_compression(match job.level {
         SNAPIT_PNG_FAST => Compression::Fast,
         SNAPIT_PNG_HIGH => Compression::High,
         _ => Compression::Balanced,
@@ -92,19 +144,170 @@ fn encode(
     let mut writer = encoder.write_header()?;
     {
         let mut stream = writer.stream_writer()?;
-        let mut row = vec![[0u8; 3]; w];
-        for y in 0..h {
-            let source = &pixels[y * stride..y * stride + w * SNAPIT_BYTES_PER_PIXEL];
-            let (source, _) = source.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
-            for (dst, src) in row.iter_mut().zip(source) {
-                *dst = [src[2], src[1], src[0]];
+        let mut row = vec![0u8; w * 3];
+        if (w, h) == (source.width, source.height) {
+            for y in 0..h {
+                let pixels = &source.pixels[y * source.stride..][..w * SNAPIT_BYTES_PER_PIXEL];
+                let (out, _) = row.as_chunks_mut::<3>();
+                let (pixels, _) = pixels.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
+                for (dst, src) in out.iter_mut().zip(pixels) {
+                    *dst = [src[2], src[1], src[0]];
+                }
+                stream.write_all(&row)?;
             }
-            stream.write_all(row.as_flattened())?;
+        } else {
+            let mut scaler = Downscaler::new(source, w, h);
+            for y in 0..h {
+                scaler.row_rgb(y, &mut row);
+                stream.write_all(&row)?;
+            }
         }
         stream.finish()?;
     }
     writer.finish()?;
-    Ok(out)
+    Ok(())
+}
+
+/// Checks a call's arguments and builds its [`Job`], or says which status to return.
+///
+/// # Safety
+///
+/// `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes (when the sizes
+/// pass), and the profile in `params` for `icc_len` bytes.
+unsafe fn make_job<'a>(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    params: *const SnapitPngParams,
+) -> Result<Job<'a>, SnapitStatus> {
+    if pixels.is_null() || params.is_null() || width == 0 || height == 0 {
+        return Err(SNAPIT_STATUS_INVALID_ARGUMENT);
+    }
+    // SAFETY: the caller guarantees `params` is readable.
+    let p = unsafe { *params };
+    let scaled = (p.out_width, p.out_height) != (width, height);
+    if p.dpi == 0
+        || p.level > SNAPIT_PNG_HIGH
+        || p.icc.is_null() != (p.icc_len == 0)
+        || !valid_target(width, height, p.out_width, p.out_height)
+        || (scaled && !within_averaging_limit(width, height))
+    {
+        return Err(SNAPIT_STATUS_INVALID_ARGUMENT);
+    }
+    let Some(readable) = readable_len(width, height, stride) else {
+        return Err(SNAPIT_STATUS_INVALID_ARGUMENT);
+    };
+    // SAFETY: the caller guarantees `pixels` is readable for `readable` bytes.
+    let pixels = unsafe { slice::from_raw_parts(pixels, readable) };
+    let icc = if p.icc.is_null() {
+        &[][..]
+    } else {
+        // SAFETY: the caller guarantees `icc` is readable for `icc_len` bytes.
+        unsafe { slice::from_raw_parts(p.icc, p.icc_len) }
+    };
+    Ok(Job {
+        source: Source {
+            pixels,
+            width: width as usize,
+            height: height as usize,
+            stride,
+        },
+        level: p.level,
+        dpi: p.dpi,
+        out_width: p.out_width as usize,
+        out_height: p.out_height as usize,
+        icc,
+    })
+}
+
+/// A write-only sink into one anonymous `mmap` allocation sized to the largest PNG the image
+/// can make. Pages that are never written cost nothing, and unmapping returns them all.
+struct MappedSink {
+    data: *mut u8,
+    len: usize,
+    capacity: usize,
+}
+
+impl MappedSink {
+    fn new(job: &Job) -> Result<Self, EncodeError> {
+        // Raw RGB rows with a filter byte each, plus generous room for compression framing,
+        // chunk headers and the profile.
+        let raw = job
+            .out_height
+            .checked_mul(job.out_width * 3 + 1)
+            .ok_or(EncodeError::OutOfMemory)?;
+        let bound = raw
+            .checked_add(raw / 8 + job.icc.len() + 64 * 1024)
+            .and_then(|n| n.checked_next_multiple_of(page_size()))
+            .filter(|&n| n <= isize::MAX as usize / 2)
+            .ok_or(EncodeError::OutOfMemory)?;
+        // SAFETY: an anonymous private mapping has no preconditions on its arguments.
+        let data = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                bound,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANON,
+                -1,
+                0,
+            )
+        };
+        if data == libc::MAP_FAILED {
+            return Err(EncodeError::OutOfMemory);
+        }
+        Ok(Self {
+            data: data.cast(),
+            len: 0,
+            capacity: bound,
+        })
+    }
+
+    /// Hands the mapping over without unmapping it.
+    fn into_bytes(self) -> SnapitBytes {
+        let this = ManuallyDrop::new(self);
+        SnapitBytes {
+            data: this.data,
+            len: this.len,
+            capacity: this.capacity,
+        }
+    }
+}
+
+impl Write for &mut MappedSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.len + buf.len() > self.capacity {
+            return Err(io::ErrorKind::OutOfMemory.into());
+        }
+        // SAFETY: `len + buf.len()` is within the mapping, and `buf` cannot overlap it.
+        unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), self.data.add(self.len), buf.len()) };
+        self.len += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for MappedSink {
+    fn drop(&mut self) {
+        // SAFETY: `data` and `capacity` describe the mapping `new` made.
+        unsafe { libc::munmap(self.data.cast(), self.capacity) };
+    }
+}
+
+fn encode_to_bytes(job: &Job, out: *mut SnapitBytes) -> SnapitStatus {
+    let mut sink = match MappedSink::new(job) {
+        Ok(sink) => sink,
+        Err(e) => return e.status(),
+    };
+    if let Err(e) = encode_into(&mut sink, job) {
+        return e.status();
+    }
+    // SAFETY: the caller guarantees `out` is writable.
+    unsafe { out.write(sink.into_bytes()) };
+    SNAPIT_STATUS_OK
 }
 
 /// Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
@@ -134,49 +337,83 @@ pub unsafe extern "C" fn snapit_png_encode(
     icc_len: usize,
     out: *mut SnapitBytes,
 ) -> SnapitStatus {
+    let params = SnapitPngParams {
+        level,
+        dpi,
+        out_width: width,
+        out_height: height,
+        icc,
+        icc_len,
+    };
+    // SAFETY: the caller's guarantees are the ones `snapit_png_encode_ex` asks for.
+    unsafe { snapit_png_encode_ex(pixels, width, height, stride, &params, out) }
+}
+
+/// Like [`snapit_png_encode`], with the options in `params`. When `params.out_width` and
+/// `out_height` are smaller than the source, the image is averaged down to that size (area
+/// averaging) in the same pass as the encode: a 1x Export of a Retina Capture. The size must be
+/// at least 1 and no larger than the source; a source of more than 65535 pixels either way can
+/// only be encoded at its own size.
+///
+/// # Safety
+///
+/// `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes, `params` for a
+/// read (and its `icc` for `icc_len` bytes, when not null), and `out` for a write of one
+/// `SnapitBytes`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snapit_png_encode_ex(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    params: *const SnapitPngParams,
+    out: *mut SnapitBytes,
+) -> SnapitStatus {
     guard(|| {
-        if pixels.is_null()
-            || out.is_null()
-            || width == 0
-            || height == 0
-            || dpi == 0
-            || level > SNAPIT_PNG_HIGH
-            || (icc.is_null() != (icc_len == 0))
-        {
+        if out.is_null() {
             return SNAPIT_STATUS_INVALID_ARGUMENT;
         }
-        let row = width as usize * SNAPIT_BYTES_PER_PIXEL;
-        let readable = (height as usize - 1)
-            .checked_mul(stride)
-            .and_then(|above_last_row| above_last_row.checked_add(row));
-        let Some(readable) = readable.filter(|&len| stride >= row && len <= isize::MAX as usize)
-        else {
-            return SNAPIT_STATUS_INVALID_ARGUMENT;
-        };
-        // SAFETY: the caller guarantees `pixels` is readable for `readable` bytes.
-        let pixels = unsafe { slice::from_raw_parts(pixels, readable) };
-        let icc = if icc.is_null() {
-            &[][..]
-        } else {
-            // SAFETY: the caller guarantees `icc` is readable for `icc_len` bytes.
-            unsafe { slice::from_raw_parts(icc, icc_len) }
-        };
+        // SAFETY: the caller's guarantees are the ones `make_job` asks for.
+        match unsafe { make_job(pixels, width, height, stride, params) } {
+            Ok(job) => encode_to_bytes(&job, out),
+            Err(status) => status,
+        }
+    })
+}
 
-        match encode(pixels, width, height, stride, level, dpi, icc) {
-            Ok(png) => {
-                let mut png = std::mem::ManuallyDrop::new(png);
-                // SAFETY: the caller guarantees `out` is writable.
-                unsafe {
-                    out.write(SnapitBytes {
-                        data: png.as_mut_ptr(),
-                        len: png.len(),
-                        capacity: png.capacity(),
-                    });
-                }
-                SNAPIT_STATUS_OK
-            }
-            Err(EncodeError::OutOfMemory) => SNAPIT_STATUS_OUT_OF_MEMORY,
-            Err(EncodeError::Failed) => SNAPIT_STATUS_ENCODE_FAILED,
+/// Encodes like [`snapit_png_encode_ex`], but streams the PNG into the file `fd` through a
+/// small buffer: the PNG is never held in memory, whatever its size. The engine writes from the
+/// file's current position and leaves the descriptor open (and unflushed beyond the write); the
+/// caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`.
+///
+/// # Safety
+///
+/// As for [`snapit_png_encode_ex`], and `fd` must be a file open for writing.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snapit_png_encode_to_fd(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    params: *const SnapitPngParams,
+    fd: i32,
+) -> SnapitStatus {
+    guard(|| {
+        if fd < 0 {
+            return SNAPIT_STATUS_INVALID_ARGUMENT;
+        }
+        // SAFETY: the caller's guarantees are the ones `make_job` asks for.
+        let job = match unsafe { make_job(pixels, width, height, stride, params) } {
+            Ok(job) => job,
+            Err(status) => return status,
+        };
+        // SAFETY: the caller owns `fd`; wrapping it in `ManuallyDrop` keeps it from being closed.
+        let file = ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
+        let mut sink = BufWriter::with_capacity(256 * 1024, &*file);
+        let result = encode_into(&mut sink, &job).and_then(|()| sink.flush().map_err(Into::into));
+        match result {
+            Ok(()) => SNAPIT_STATUS_OK,
+            Err(e) => e.status(),
         }
     })
 }
@@ -195,8 +432,8 @@ pub unsafe extern "C" fn snapit_bytes_free(bytes: *mut SnapitBytes) -> SnapitSta
         // SAFETY: the caller guarantees `bytes` points to a `SnapitBytes`.
         let b = unsafe { &mut *bytes };
         if !b.data.is_null() {
-            // SAFETY: `data`, `len` and `capacity` came from a `Vec<u8>` leaked by the encoder.
-            drop(unsafe { Vec::from_raw_parts(b.data, b.len, b.capacity) });
+            // SAFETY: `data` and `capacity` describe a mapping the encoder made.
+            unsafe { libc::munmap(b.data.cast(), b.capacity) };
         }
         b.data = ptr::null_mut();
         b.len = 0;

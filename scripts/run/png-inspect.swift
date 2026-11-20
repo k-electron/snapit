@@ -4,6 +4,11 @@
 //
 //   png-inspect info <file>                     key=value lines: size, chunks, pHYs, iCCP
 //   png-inspect verify-fixture <file> <w> <h>   compares every pixel with the fixture formula
+//   png-inspect verify-fixture-scaled <file> <w> <h> <factor>
+//                                               the file is the fixture of w x h pixels averaged down by a whole
+//                                               factor (a 1x Export of a Retina Capture): its size is the source
+//                                               size divided by the factor, rounded, and every pixel is the
+//                                               average of its factor x factor block, rounded half up
 //   png-inspect raw-pixel <file> <x> <y>        the pixel's `red,green,blue` as 0-255 values in the PNG's own color space
 //   png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]
 //                                               how many pixels differ from the fixture formula, their bounding
@@ -121,7 +126,7 @@ func readPixels(_ image: CGImage) -> CGContext {
 }
 
 let arguments = CommandLine.arguments
-guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|pixel|raw-pixel|diff-fixture|profile-sha|general-pasteboard|windows") }
+guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|verify-fixture-scaled|pixel|raw-pixel|diff-fixture|profile-sha|general-pasteboard|windows") }
 
 switch arguments[1] {
 case "info":
@@ -190,6 +195,46 @@ case "verify-fixture":
                 UInt8((sourceX / 8 + sourceY / 8) % 2 == 0 ? 40 : 200)
             )
             if at[0] != expected.0 || at[1] != expected.1 || at[2] != expected.2 {
+                if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
+                mismatches += 1
+            }
+        }
+    }
+    print("size=\(width)x\(height)")
+    print("mismatches=\(mismatches)")
+    if mismatches > 0 { print("first_mismatch=\(first)") }
+
+case "verify-fixture-scaled":
+    guard arguments.count == 6, let sourceWidth = Int(arguments[3]), let sourceHeight = Int(arguments[4]),
+        let factor = Int(arguments[5]), factor >= 1, sourceWidth % factor == 0, sourceHeight % factor == 0
+    else { fail("verify-fixture-scaled <file> <w> <h> <factor> (sizes a multiple of the factor)") }
+    let width = sourceWidth / factor, height = sourceHeight / factor
+    let (image, _) = loadImage(arguments[2])
+    guard image.width == width, image.height == height else {
+        print("size=\(image.width)x\(image.height)")
+        print("mismatches=all")
+        exit(0)
+    }
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    func fixture(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+        (x * 255 / max(sourceWidth - 1, 1), y * 255 / max(sourceHeight - 1, 1), (x / 8 + y / 8) % 2 == 0 ? 40 : 200)
+    }
+    var mismatches = 0
+    var first = ""
+    let block = factor * factor
+    for y in 0..<height {
+        for x in 0..<width {
+            var sum = (0, 0, 0)
+            for dy in 0..<factor {
+                for dx in 0..<factor {
+                    let c = fixture(factor * x + dx, factor * y + dy)
+                    sum = (sum.0 + c.0, sum.1 + c.1, sum.2 + c.2)
+                }
+            }
+            let expected = ((sum.0 + block / 2) / block, (sum.1 + block / 2) / block, (sum.2 + block / 2) / block)
+            let at = pixels + (y * width + x) * 4
+            if Int(at[0]) != expected.0 || Int(at[1]) != expected.1 || Int(at[2]) != expected.2 {
                 if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
                 mismatches += 1
             }

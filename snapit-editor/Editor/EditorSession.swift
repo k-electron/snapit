@@ -34,7 +34,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var isExporting = false
     /// True when this session was built ahead of its Capture (a warm-up).
     @ObservationIgnored var wasWarmedUp = false
-    /// The running Copy, so a caller can wait for it.
+    /// The running Copy or Save, so a caller can wait for it.
     @ObservationIgnored var copyTask: Task<Void, Never>?
 
     @ObservationIgnored private(set) var chrome: EditorChrome?
@@ -125,6 +125,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
         isClosing = true
+        if let number = document?.captureNumber { SaveFailureSignal.forget(captureNumber: number) }
         onClosed?(self)
         // A button's own action may be what closed the window: free everything one run-loop
         // turn later, once that action has returned.
