@@ -1,6 +1,12 @@
 import AppKit
 import QuartzCore
 
+/// How long the pointer rests on a tile of the Action bar, or on the Timed Capture's cancel button,
+/// before its tooltip shows.
+enum TooltipTiming {
+    static let restDelay: TimeInterval = 0.5
+}
+
 /// One tile of the Action bar, as persistent layers. The bar sets its frame; the overlay's
 /// controller hit-tests the tile's rectangle, so a tile is a full-size hit area, and calls the
 /// pointer hooks with points in the tile's own space (points, origin at its top left).
