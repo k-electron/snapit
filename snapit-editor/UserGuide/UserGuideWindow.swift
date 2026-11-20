@@ -43,6 +43,9 @@ final class UserGuideWindow: NSObject, NSWindowDelegate {
         HelperLifecycle.windowWillShow()
         window.makeKeyAndOrderFront(nil)
         HelperLifecycle.windowDidShow()
+        // The search field would take the keyboard when the window opens, and its blinking caret
+        // keeps the helper busy. The window itself holds it until a click puts it in the field.
+        window.makeFirstResponder(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

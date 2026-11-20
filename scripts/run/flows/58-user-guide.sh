@@ -49,6 +49,7 @@ if wait_until 10 has_onscreen_window "$UG_PID"; then pass "the guide is on scree
 expect_equal "the guide is one window" "1" "$(onscreen_windows "$UG_PID")"
 expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
 expect_equal "the guide starts on its first section, the overview" "overview" "$(ugv section)"
+expect_equal "no text field has the keyboard when the guide opens (a blinking caret is CPU)" "first-responder-is-text=false" "$(ugfacts | grep '^first-responder-is-text=')"
 expect_no_internet "the Editor helper with the User Guide open" "$UG_PID"
 expect_no_internet "the menu bar app with the User Guide open" "$APP_PID"
 
@@ -130,7 +131,8 @@ send "$EDITOR_SOCK" "user-guide-select overview" >/dev/null
 expect_equal "a link to GitHub opens in the browser" "browser $GITHUB" "$(send "$EDITOR_SOCK" "user-guide-link $(printf '%s' "$GITHUB" | perl -pe 's/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord($1))/ge')")"
 expect_equal "the browser edge got exactly that link" "$GITHUB" "$(ug_links)"
 expect_equal "and the guide stayed where it was" "overview" "$(ugv section)"
-for odd in "http://github.com/k-electron/snapit" "https://evil.example/snapit" "https://github.com.evil.example/x" \
+for odd in "http://github.com/k-electron/snapit" "https://github.com/someone-else/x" "https://github.com:8443/k-electron/snapit" \
+  "https://user@github.com/k-electron/snapit" "https://github.com/k-electron/snapit-evil" "https://evil.example/snapit" "https://github.com.evil.example/x" \
   "file:///etc/passwd" "javascript:alert(1)" "x-apple.systempreferences:com.apple.preference.security" "mailto:someone@example.com"; do
   reply="$(send "$EDITOR_SOCK" "user-guide-link $(printf '%s' "$odd" | perl -pe 's/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord($1))/ge')")"
   expect_equal "the link $odd is dropped" "refused $odd" "$reply"
