@@ -170,6 +170,8 @@ extension SocketCommandRegistry {
         register(.guidePress) { request in
             let (guide, rest) = Self.guideWindow(request)
             guard let guide, let id = rest.first else { return "error no guide window" }
+            // The chooser is a real panel: a scripted run sets the folder with its own command.
+            guard id != FolderGuideModel.chooseFolderID else { return "error use guide-choose-folder <folder>" }
             return await guide.content.press(id) ? "ok" : "error no button \(id)"
         }
         register(.guideActivate) { request in

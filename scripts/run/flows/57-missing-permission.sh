@@ -57,6 +57,8 @@ mp_close_windows
 MP_TRIGGERS=("press-shortcut capture-screen" "press-shortcut capture-area" "press-shortcut capture-window" "press-shortcut pick-color"
   "menu-click capture.screen" "menu-click capture.area" "menu-click capture.window" "menu-click capture.pick-color")
 send "$APP_SOCK" "screen-recording-simulate turnedOff" >/dev/null
+MP_REQUESTS_START="$(mp_sr requests)"
+MP_RESETS_START="$(mp_sr resets)"
 CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
 for trigger in "${MP_TRIGGERS[@]}"; do
   send_slow "$APP_SOCK" "$trigger" >/dev/null
@@ -70,8 +72,8 @@ for trigger in "${MP_TRIGGERS[@]}"; do
   mp_close_windows
   if mp_no_helper; then pass "closing the guide ends the helper after $trigger"; else fail "a helper is left after $trigger"; fi
 done
-expect_equal "snapit asked macOS for nothing: it was switched off, and macOS does not ask again" "0" "$(mp_sr requests)"
-expect_equal "and reset nothing" "0" "$(mp_sr resets)"
+expect_equal "snapit asked macOS for nothing: it was switched off, and macOS does not ask again" "$MP_REQUESTS_START" "$(mp_sr requests)"
+expect_equal "and reset nothing" "$MP_RESETS_START" "$(mp_sr resets)"
 expect_equal "no Capture file was left behind" "" "$(capture_files)"
 
 # 2. The state the permission is in decides what the guide says and asks.
@@ -303,10 +305,30 @@ if is_foreground "$(helper_pid)"; then pass "the helper has a Dock icon while th
 expect_equal "no Editor is open" "" "$(open_editors)"
 wait_until 15 mp_save_idle
 expect_equal "nothing is pending" "0" "$(send "$APP_SOCK" save-pending)"
-send "$EDITOR_SOCK" "guide-close folder" >/dev/null
-if wait_until 10 mp_no_helper; then pass "the helper quits when the window closes"; else fail "the helper did not quit"; fi
+find "$MP_ELSEWHERE" -mindepth 1 -delete
+expect_equal "the chooser is a real panel: a run names the folder with its own command" "error use guide-choose-folder <folder>" "$(send "$EDITOR_SOCK" "guide-press folder choose-folder")"
+send_slow "$EDITOR_SOCK" "guide-choose-folder $MP_ELSEWHERE" >/dev/null
+if wait_until 10 mp_no_helper; then pass "choosing another folder finishes the guide, and the helper quits with its window"; else fail "the guide stayed after a folder was chosen"; fi
+expect_equal "the chosen folder is the Save location for the next Save" "$MP_ELSEWHERE" "$(send "$APP_SOCK" test-seams | sed -n 's/^save=//p')"
+expect_equal "nothing was saved by the choice: the Capture was not saved" "0" "$(mp_saved_pngs "$MP_ELSEWHERE")"
+send "$APP_SOCK" "defaults-set saveLocation $MP_SAVE" >/dev/null
 chmod 700 "$MP_SAVE"
 mp_clear_save
+
+# 7a. The same failure with the helper still quitting: close after Save is on, so the Editor closes and the
+#     helper starts to quit while the (instant) failure is reported. The window must still show: a helper
+#     that is quitting because its last window closed stays when the menu bar app has asked for a window.
+send "$APP_SOCK" "save-fail-write 28" >/dev/null
+for round in 1 2 3 4 5; do
+  if ! capture_into_editor "press-shortcut capture-screen"; then fail "no Capture for round $round"; continue; fi
+  MP_EDITOR="$EDITOR_N"
+  send_slow "$EDITOR_SOCK" "editor-press $MP_EDITOR save" >/dev/null
+  if wait_until 20 mp_guide_visible folder; then pass "round $round: a failure right after Save closed the Editor still shows the guide"; else fail "round $round: the guide was lost to the quitting helper"; fi
+  expect_equal "round $round: the Editor is gone" "" "$(open_editors)"
+  send "$EDITOR_SOCK" "guide-close folder" >/dev/null
+  wait_until 10 mp_no_helper
+done
+send "$APP_SOCK" "save-fail-write off" >/dev/null
 
 # 7b. The disk filled up after the hand-over (a test seam for the errno), with the Editor still open:
 #     the window shows beside it, and closing it leaves the Editor and the helper alone.
