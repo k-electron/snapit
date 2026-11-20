@@ -6,6 +6,9 @@
 # (`menu-click`, `press-shortcut`, or one of your own), then assert on what is observable.
 # shellcheck shell=bash
 
+# The at-rest footprint, before any Capture has run.
+AT_REST="$(footprint_mb "$APP_PID")"
+
 # 1. Every edge is the test one before anything is driven.
 SEAMS="$(send "$APP_SOCK" test-seams)"
 expect_contains "test mode: the root is this run's temporary folder" "root=$RUN_ROOT" "$SEAMS"
@@ -75,6 +78,11 @@ if awk -v a="$AFTER" -v b="$BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN {
   pass "memory returns to baseline after ten 5K Captures (${BASELINE} MB before, ${AFTER} MB after)"
 else
   fail "memory grew from ${BASELINE} MB to ${AFTER} MB over ten 5K Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
+fi
+if awk -v a="$AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "memory is back near the at-rest footprint after the Captures (${AT_REST} MB at rest, ${AFTER} MB after)"
+else
+  fail "memory is ${AFTER} MB after the Captures, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
 fi
 send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/big.png" >/dev/null
 BIG_INFO="$("$INSPECT" info "$RUN_ROOT/big.png")"

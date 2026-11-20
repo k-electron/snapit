@@ -5,7 +5,7 @@
 //   png-inspect info <file>                     key=value lines: size, chunks, pHYs, iCCP
 //   png-inspect verify-fixture <file> <w> <h>   compares every pixel with the fixture formula
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
-//   png-inspect general-pasteboard              changeCount and PNG presence of the general pasteboard
+//   png-inspect general-pasteboard              changeCount of the general pasteboard (never its contents)
 //
 // The fixture formula (see FixtureCaptureSource.swift), `w` x `h` pixels:
 //   R = x * 255 / (w - 1)   G = y * 255 / (h - 1)   B = 40 if (x / 8 + y / 8) is even else 200
@@ -150,9 +150,8 @@ case "profile-sha":
     print(sha256(data))
 
 case "general-pasteboard":
-    let pasteboard = NSPasteboard.general
-    print("change_count=\(pasteboard.changeCount)")
-    print("has_png=\(pasteboard.data(forType: .png) != nil)")
+    // The change count only: the user's clipboard contents are never read.
+    print("change_count=\(NSPasteboard.general.changeCount)")
 
 default:
     fail("unknown command \(arguments[1])")
