@@ -35,7 +35,7 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
             rootView: PermissionGuideWindowView(model: model, close: { [weak self] in self?.window?.close() }))
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 520, height: 560)),
-            styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "Screen Recording"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -50,7 +50,7 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         HelperLifecycle.windowDidShow()
         model.isShown = true
-        model.isVisible = window.isVisible
+        model.isVisible = window.isSeenByUser
         Task { await model.windowBecameActive() }
     }
 
@@ -62,9 +62,15 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
         model.windowResigned()
     }
 
-    func windowDidChangeOcclusionState(_ notification: Notification) {
-        model.isVisible = window?.occlusionState.contains(.visible) ?? false
+    /// On screen: not minimised, and not covered by other windows.
+    private func updateVisibility() {
+        guard let window else { return }
+        model.isVisible = window.isSeenByUser
     }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) { updateVisibility() }
+    func windowDidMiniaturize(_ notification: Notification) { updateVisibility() }
+    func windowDidDeminiaturize(_ notification: Notification) { updateVisibility() }
 
     func windowWillClose(_ notification: Notification) {
         model.isShown = false

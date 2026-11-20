@@ -59,6 +59,7 @@ struct PermissionGuideView: View {
             GuideDrawing(
                 progress: model.animation.progress, isPlaying: model.animation.state == .playing, variant: model.variant
             )
+            .id(model.animation.epoch)
             .padding(12)
             .chromeGlass(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }

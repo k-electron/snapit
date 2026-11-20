@@ -68,14 +68,19 @@ extension SocketCommandRegistry {
 /// is granted to the menu bar app, and macOS only lets a process use it from its next launch on.
 @MainActor
 enum SnapitRelaunch {
+    /// True once a relaunch has quit the Editor helper: quitting then leaves the helper socket alone.
+    private(set) static var hasQuitHelper = false
+
     static func run() async -> String {
         // The Editor helper goes first, so the relaunched copy starts a helper of its own (it shows
         // Onboarding again at the step it was on) instead of meeting this one on its way out.
         await quitHelper()
+        hasQuitHelper = true
         SocketOwnership.release()
         do {
             try await InstallRelaunch.start(appAt: Bundle.main.bundleURL)
         } catch {
+            hasQuitHelper = false
             SocketOwnership.reacquire()
             return "error snapit could not relaunch: \(error.localizedDescription)"
         }

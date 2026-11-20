@@ -27,6 +27,10 @@ final class GuideAnimation {
     private(set) var state = State.idle
     /// How many times it has started.
     private(set) var plays = 0
+    /// Changes whenever the animation is stopped. The drawing is given this as its identity: SwiftUI
+    /// keeps evaluating an animation it was running for the rest of its duration even after the value
+    /// was set again, and a drawing with a new identity starts from nothing.
+    private(set) var epoch = 0
     @ObservationIgnored private var generation = 0
 
     /// Plays `loops` loops from the start, unless it is playing already.
@@ -50,8 +54,7 @@ final class GuideAnimation {
         guard state != .idle else { return }
         generation += 1
         state = .idle
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { progress = progress.rounded(.up) + 1 }
+        epoch += 1
+        withAnimation(nil) { progress = progress.rounded(.up) + 1 }
     }
 }

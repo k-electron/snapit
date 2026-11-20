@@ -72,7 +72,7 @@ final class OnboardingModel {
         return "Try it: press \(combo.displayString)"
     }
 
-    var heading: String { step.title }
+    var heading: String { step.heading }
 
     var text: String {
         switch step {

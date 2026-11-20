@@ -8,14 +8,15 @@ nonisolated extension SocketCommand {
     /// guide's `guide-…` lines at the Screen Recording step) and one
     /// `button <id>|<title>|<tooltip>` line per button. Test mode only.
     static let onboardingFacts = SocketCommand("onboarding-facts")
-    /// `onboarding-press <button id>`: does what clicking the button does. Test mode only.
+    /// `onboarding-press <button id>`: does what clicking the button does; `shortcut.<id>` starts a
+    /// Shortcut's recorder and `shortcut-clear.<id>` clears it. Test mode only.
     static let onboardingPress = SocketCommand("onboarding-press")
     /// Does what happens when the user comes back to snapit's window (it deactivated, then became
     /// active): the Permission guide looks at Screen Recording again. A scripted run never activates
     /// the helper, so this stands in for it. Test mode only.
     static let onboardingActivate = SocketCommand("onboarding-activate")
-    /// `onboarding-hide`, `onboarding-unhide`: take the window off screen and bring it back, as
-    /// another app covering it would. Test mode only.
+    /// `onboarding-hide`, `onboarding-unhide`: minimise the window and bring it back, so it is not on
+    /// screen for a while. Test mode only.
     static let onboardingHide = SocketCommand("onboarding-hide")
     static let onboardingUnhide = SocketCommand("onboarding-unhide")
     /// Presses the window's close button. The helper quits when no other window is open, so a reply
@@ -93,6 +94,19 @@ extension SocketCommandRegistry {
             guard id != onboarding.model.chooseSaveLocationButton.id else {
                 return "error use onboarding-choose-save-location <folder>"
             }
+            // A Shortcut's recorder (`shortcut.<id>`) and its clear button (`shortcut-clear.<id>`).
+            let settings = onboarding.model.settings
+            if id.hasPrefix("shortcut."), let entry = ShortcutCatalog.entry(id: String(id.dropFirst("shortcut.".count))) {
+                if settings.recordingID == entry.shortcut.id { settings.cancelRecording() } else { settings.beginRecording(entry) }
+                return "ok"
+            }
+            if id.hasPrefix("shortcut-clear."),
+                let entry = ShortcutCatalog.entry(id: String(id.dropFirst("shortcut-clear.".count)))
+            {
+                settings.record(nil, for: entry)
+                await settings.applying?.value
+                return "ok"
+            }
             return await onboarding.model.press(id) ? "ok" : "error no button \(id)"
         }
         register(.onboardingActivate) { _ in
@@ -165,18 +179,21 @@ enum WindowTesting {
         [
             "window=\(window.isVisible ? "visible" : "hidden")",
             "title=\(window.title)",
+            "occlusion-visible=\(window.occlusionState.contains(.visible))",
+            "miniaturized=\(window.isMiniaturized)",
             "activation=\(NSApp.activationPolicy() == .regular ? "regular" : "accessory")",
         ]
     }
 
     static func hide(_ window: NSWindow?) -> String {
         guard let window else { return "error no window" }
-        window.orderOut(nil)
+        window.miniaturize(nil)
         return "ok"
     }
 
     static func unhide(_ window: NSWindow?) -> String {
         guard let window else { return "error no window" }
+        window.deminiaturize(nil)
         window.makeKeyAndOrderFront(nil)
         return "ok"
     }
