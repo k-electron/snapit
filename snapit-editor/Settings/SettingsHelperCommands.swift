@@ -126,7 +126,7 @@ enum SettingsFacts {
         return lines.joined(separator: "\n")
     }
 
-    private static func loginValue(_ state: SettingsModel.LoginState) -> String {
+    static func loginValue(_ state: SettingsModel.LoginState) -> String {
         switch state {
         case .unknown: "unknown"
         case .on: "on"
@@ -169,19 +169,6 @@ enum SettingsFacts {
 
     static func key(_ arguments: [String]) async -> String {
         guard let settings = SettingsWindow.shared, let window = settings.window else { return "error no Settings window" }
-        guard let combo = ShortcutCombo.parse(wire: arguments), let combo else {
-            return "error settings-key <key code> [<modifier>,...]"
-        }
-        var flags: NSEvent.ModifierFlags = []
-        flags.formUnion(combo.modifiers)
-        guard
-            let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
-                isARepeat: false, keyCode: UInt16(combo.keyCode))
-        else { return "error could not make the key event" }
-        NSApp.sendEvent(event)
-        await settings.model.applying?.value
-        return "ok"
+        return await RecorderKeyEvent.send(arguments, to: window, model: settings.model)
     }
 }
