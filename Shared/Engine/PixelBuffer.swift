@@ -110,7 +110,22 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
 
     /// Draws `image` over the whole buffer, copying its pixels without converting them.
     func draw(_ image: CGImage) throws {
-        precondition(isWritable, "PixelBuffer.draw on a read-only Capture mapping: call makeOwnedCopy() first")
+        try withCGContext { context in
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    /// Calls `body` with a Core Graphics context that draws straight into these pixels, in the
+    /// buffer's own color space and with its stride: no copy in, no copy out. The context's
+    /// origin is the bottom left, as Core Graphics has it. Only a writable buffer: drawing into a
+    /// Capture's read-only mapping would crash, so this refuses it.
+    ///
+    /// A color space a bitmap cannot hold becomes sRGB (and `colorSpace`, and the profile the PNG
+    /// carries, follow) rather than losing the Capture.
+    func withCGContext<Result>(_ body: (CGContext) throws -> Result) throws -> Result {
+        precondition(isWritable, "PixelBuffer.withCGContext on a read-only Capture mapping: call makeOwnedCopy() first")
         let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         func makeContext(_ space: CGColorSpace) -> CGContext? {
             CGContext(
@@ -119,16 +134,13 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
         }
         var context = makeContext(colorSpace)
         if context == nil, let srgb = CGColorSpace(name: CGColorSpace.sRGB) {
-            // A color space a bitmap can't hold: convert to sRGB rather than lose the Capture.
             colorSpace = srgb
             context = makeContext(srgb)
         }
         guard let context else {
             throw EngineError(status: .invalidArgument, rawValue: SNAPIT_STATUS_INVALID_ARGUMENT)
         }
-        context.setBlendMode(.copy)
-        context.interpolationQuality = .none
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return try body(context)
     }
 
     /// Calls `body` with the first byte of the pixels and the stride. For drawing straight
