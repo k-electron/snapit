@@ -6,8 +6,8 @@ nonisolated extension SocketCommand {
     /// `editor-facts <N>`: `key=value` lines about Editor N: the Capture's pixel size, scale and
     /// resolution, the window, the canvas, the active tool, the app's activation policy. Test mode only.
     static let editorFacts = SocketCommand("editor-facts")
-    /// `editor-key <N> copy|save|escape|close`: sends Editor N's window the key press (⌘C, ⌘S, Esc, ⌘W)
-    /// as an event, and replies `ok` when what it does has finished. Test mode only.
+    /// `editor-key <N> copy|save|escape|close|close-button`: sends Editor N's window the key press (⌘C, ⌘S, Esc, ⌘W)
+    /// as an event, or presses the title bar's close button, and replies `ok` when what it does has finished. Test mode only.
     static let editorKey = SocketCommand("editor-key")
     /// Builds the Editor ahead of its Capture, hidden, as a warming-up helper does. Test mode only.
     static let editorWarm = SocketCommand("editor-warm")
@@ -70,6 +70,10 @@ extension SocketCommandRegistry {
             case "close": sent = Self.send(Self.keyEvent("w", code: 13, flags: .command, window: window), to: window)
             case "save": sent = Self.send(Self.keyEvent("s", code: 1, flags: .command, window: window), to: window)
             case "escape": sent = Self.send(Self.keyEvent("\u{1B}", code: 53, flags: [], window: window), to: window)
+            case "close-button":
+                // The title bar's close button: `performClose` asks the window's delegate first.
+                window.performClose(nil)
+                sent = true
             default: return "error unknown key \(request.arguments[1])"
             }
             await session.copyTask?.value
@@ -128,6 +132,7 @@ extension SocketCommandRegistry {
             ("key-window", window?.isKeyWindow == true ? "yes" : "no"),
             ("window", window.map { $0.isVisible ? "visible" : "hidden" } ?? "none"),
             ("window-title", window?.title ?? ""),
+            ("window-origin", window.map { "\(Int($0.frame.origin.x.rounded())),\(Int($0.frame.origin.y.rounded()))" } ?? "none"),
             // A layer-backed view is its layer's delegate and AppKit draws into it; a layer-hosting
             // view's layer belongs to the app and AppKit never draws into it.
             ("canvas", canvas.map { view in view.layer.map { $0.delegate === view ? "layer-backed" : "layer-hosted" } ?? "plain" } ?? "none"),
