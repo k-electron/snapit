@@ -11,7 +11,7 @@ nonisolated enum ExportFileName {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = .current
+        formatter.timeZone = .autoupdatingCurrent
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return "snapit-" + formatter.string(from: captureTime)
     }

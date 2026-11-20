@@ -34,8 +34,8 @@ export_png() {
 fixture_diff() { "$INSPECT" diff-fixture "$@"; }
 # changed_pixels <png> <pixel width> <pixel height>: how many pixels differ from the fixture.
 changed_pixels() { "$INSPECT" diff-fixture "$1" "$2" "$3" | sed -n 's/^changed=//p'; }
-# pixel <png> <x> <y>: "r,g,b".
-pixel() { "$INSPECT" pixel "$@"; }
+# pixel <png> <x> <y>: "r,g,b" in the PNG's own color space.
+pixel() { "$INSPECT" raw-pixel "$@"; }
 # channel <"r,g,b"> <0|1|2>
 channel() { echo "$1" | cut -d, -f"$(($2 + 1))"; }
 # expect_unchanged <description> <png> <pixel width> <pixel height>: no pixel differs from the fixture.

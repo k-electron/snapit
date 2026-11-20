@@ -9,7 +9,7 @@
 //                                               factor (a 1x Export of a Retina Capture): its size is the source
 //                                               size divided by the factor, rounded, and every pixel is the
 //                                               average of its factor x factor block, rounded half up
-//   png-inspect pixel <file> <x> <y>            the pixel's red,green,blue as 0-255 values in the PNG's own color space
+//   png-inspect raw-pixel <file> <x> <y>        the pixel's `red,green,blue` as 0-255 values in the PNG's own color space
 //   png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]
 //                                               how many pixels differ from the fixture formula, their bounding
 //                                               box (`x0,y0,x1,y1`, end exclusive) and, given a rectangle
@@ -109,7 +109,7 @@ func readPixels(_ image: CGImage) -> CGContext {
 }
 
 let arguments = CommandLine.arguments
-guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|verify-fixture-scaled|pixel|diff-fixture|profile-sha|general-pasteboard|windows") }
+guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|verify-fixture-scaled|pixel|raw-pixel|diff-fixture|profile-sha|general-pasteboard|windows") }
 
 switch arguments[1] {
 case "info":
@@ -227,8 +227,8 @@ case "verify-fixture-scaled":
     print("mismatches=\(mismatches)")
     if mismatches > 0 { print("first_mismatch=\(first)") }
 
-case "pixel":
-    guard arguments.count == 5, let x = Int(arguments[3]), let y = Int(arguments[4]) else { fail("pixel <file> <x> <y>") }
+case "raw-pixel":
+    guard arguments.count == 5, let x = Int(arguments[3]), let y = Int(arguments[4]) else { fail("raw-pixel <file> <x> <y>") }
     let (image, _) = loadImage(arguments[2])
     guard x >= 0, y >= 0, x < image.width, y < image.height else { fail("pixel outside the \(image.width)x\(image.height) image") }
     let bitmap = readPixels(image)

@@ -28,9 +28,18 @@ nonisolated enum ExportFiles {
         return file.deletingLastPathComponent().path == folder.path && file.pathExtension == "pixels"
     }
 
-    /// Removes the Editor's drag-out folder (its PNG, then the folder).
-    static func removeDragOut(captureNumber: Int) {
-        remove(folder: dragOutFolder(captureNumber: captureNumber), fileSuffixes: [".png", ".partial"])
+    /// Removes the drag-out folders nobody can still be reading: those last changed more than
+    /// `age` seconds ago. A drop target may read the file for a while after the Editor closed, so
+    /// folders are not removed with their Editor; the helper calls this when it starts and when a
+    /// Capture opens (events, no timer).
+    static func removeStaleDragOut(olderThan age: TimeInterval = 600, now: Date = Date()) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dragOutFolder.path)) ?? []
+        for name in names where Int(name) != nil {
+            let folder = dragOutFolder.appendingPathComponent(name)
+            let changed = (try? FileManager.default.attributesOfItem(atPath: folder.path))?[.modificationDate] as? Date
+            guard let changed, now.timeIntervalSince(changed) > age else { continue }
+            remove(folder: folder, fileSuffixes: [".png", ".partial"])
+        }
         rmdir(dragOutFolder.path)
     }
 

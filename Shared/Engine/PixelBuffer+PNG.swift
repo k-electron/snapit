@@ -50,16 +50,27 @@ nonisolated extension PixelBuffer {
         try Engine.check(status)
     }
 
-    /// Writes the PNG to a new file at `url` (an existing file is replaced), streamed.
+    /// Writes the PNG to the file at `url`, streamed. The PNG is encoded into a hidden partial file of
+    /// its own in the same folder and renamed over `url`, so a reader that has the old file open keeps
+    /// reading the old one, two writes never share a file, and nobody sees half a PNG. The file's mode is
+    /// 0644 less the umask, the same as a Saved file.
     func writePNG(level: PNGLevel, plan: PNGOutputPlan, to url: URL) throws {
-        let descriptor = Darwin.open(url.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        let folder = url.deletingLastPathComponent()
+        let partial = folder.appendingPathComponent(".\(url.lastPathComponent)-\(UUID().uuidString).partial")
+        let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
         guard descriptor >= 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
-        defer { close(descriptor) }
         do {
             try writePNG(level: level, plan: plan, toDescriptor: descriptor)
+            guard close(descriptor) == 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
         } catch {
-            unlink(url.path)
+            close(descriptor)
+            unlink(partial.path)
             throw error
+        }
+        guard rename(partial.path, url.path) == 0 else {
+            let code = errno
+            unlink(partial.path)
+            throw EngineError(status: .ioFailed, rawValue: code)
         }
     }
 

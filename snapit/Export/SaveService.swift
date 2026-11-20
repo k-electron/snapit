@@ -18,6 +18,14 @@ import Foundation
 /// their `-2`, `-3` in the order the Saves came in: Balanced-encode into the partial file (streamed,
 /// the PNG is never in memory), then rename it to the first free name. The mapping and the
 /// descriptor are gone when it ends, so memory returns to where it was.
+///
+/// A Save counts as pending from the moment `begin` starts (so a Quit during a folder prompt waits
+/// too) until its file is written or it failed. Quitting waits for pending Saves
+/// (`waitForSavesBeforeQuit`).
+///
+/// A failure after the hand-over (disk full, the rename failed) cannot reach the Editor, which may
+/// be gone. It goes to the observers registered with `observeWriteFailures`, on the main queue; with
+/// none registered the menu bar app beeps.
 nonisolated final class SaveService: @unchecked Sendable {
     static let shared = SaveService()
 
@@ -25,27 +33,44 @@ nonisolated final class SaveService: @unchecked Sendable {
     private let lock = NSLock()
     private var pending = 0
     private var idleWaiters: [@Sendable () -> Void] = []
+    private var inFlightPartials: Set<String> = []
+    private var writeFailureObservers: [@Sendable (String) -> Void] = []
     private var heldForTest = false
     private let testGate = DispatchSemaphore(value: 0)
 
-    /// How many Saves are still being written.
+    /// How many Saves are still being written (or checked).
     var pendingCount: Int { lock.withLock { pending } }
 
-    /// Calls `body` once no Save is being written (at once when none is).
-    func whenIdle(_ body: @escaping @Sendable () -> Void) {
-        let runNow: Bool = lock.withLock {
-            if pending == 0 { return true }
-            idleWaiters.append(body)
-            return false
+    /// One locked step for Quit: true when a Save is pending, in which case `done` is called (on
+    /// whichever thread finishes the last Save) once none is; false when none is, and `done` is
+    /// never called.
+    func waitForSavesBeforeQuit(_ done: @escaping @Sendable () -> Void) -> Bool {
+        lock.withLock {
+            guard pending > 0 else { return false }
+            idleWaiters.append(done)
+            return true
         }
-        if runNow { body() }
+    }
+
+    /// Calls `observer`, on the main queue, with a message when a Save fails after it was handed
+    /// over (the Editor can no longer be told).
+    func observeWriteFailures(_ observer: @escaping @Sendable (String) -> Void) {
+        lock.withLock { writeFailureObservers.append(observer) }
     }
 
     // MARK: The request
 
-    /// Checks the Save location (`folder`, read from `SaveLocation.folder` on the main actor) and queues the write. Call it off the main thread: a folder
-    /// prompt blocks the calling thread until the user answers.
+    /// Checks the Save location (`folder`, read from `SaveLocation.folder` on the main actor) and
+    /// queues the write. Call it off the main thread: a folder prompt blocks the calling thread
+    /// until the user answers.
     func begin(exportPath: String, downscale: Bool, folder: URL) -> SaveReply {
+        lock.withLock { pending += 1 }
+        let reply = check(exportPath: exportPath, downscale: downscale, folder: folder)
+        if reply != .accepted { finishOne() }
+        return reply
+    }
+
+    private func check(exportPath: String, downscale: Bool, folder: URL) -> SaveReply {
         guard ExportFiles.isExportFile(path: exportPath) else { return .failed("not a shared export file") }
         let url = URL(fileURLWithPath: exportPath)
         let capture: OpenedCapture
@@ -57,16 +82,35 @@ nonisolated final class SaveService: @unchecked Sendable {
         }
         unlink(exportPath)  // the mapping keeps the pages; nothing is left to clean up
 
-        let partial = folder.appendingPathComponent(".snapit-\(UUID().uuidString).partial")
-        let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o666)
+        let partialName = ".snapit-\(UUID().uuidString).partial"
+        let partial = folder.appendingPathComponent(partialName)
+        let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
         guard descriptor >= 0 else { return .folderNotWritable(folder: folder.path, code: errno) }
+        lock.withLock { _ = inFlightPartials.insert(partialName) }
+        removeAbandonedPartials(in: folder)
 
-        lock.withLock { pending += 1 }
         queue.async { [self] in
             write(capture, downscale: downscale, descriptor: descriptor, partial: partial, folder: folder)
+            lock.withLock { _ = inFlightPartials.remove(partialName) }
             finishOne()
         }
         return .accepted
+    }
+
+    /// Removes hidden partial files an earlier run left behind (a crash, a force-quit mid-Save):
+    /// exactly `.snapit-<UUID>.partial`, and none of the ones being written now.
+    private func removeAbandonedPartials(in folder: URL) {
+        let inFlight = lock.withLock { inFlightPartials }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where Self.isPartialName(name) && !inFlight.contains(name) {
+            unlink(folder.appendingPathComponent(name).path)
+        }
+    }
+
+    static func isPartialName(_ name: String) -> Bool {
+        let prefix = ".snapit-", suffix = ".partial"
+        guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return false }
+        return UUID(uuidString: String(name.dropFirst(prefix.count).dropLast(suffix.count))) != nil
     }
 
     // MARK: The write
@@ -83,8 +127,7 @@ nonisolated final class SaveService: @unchecked Sendable {
         } catch {
             close(descriptor)
             unlink(partial.path)
-            NSLog("snapit: Save failed: \(error)")
-            if !TestMode.isActive { DispatchQueue.main.async { NSSound.beep() } }
+            reportWriteFailure("\(error)")
             return
         }
         do {
@@ -92,8 +135,19 @@ nonisolated final class SaveService: @unchecked Sendable {
             NSLog("snapit: Saved \(name)")
         } catch {
             unlink(partial.path)
-            NSLog("snapit: Save failed: \(error)")
-            if !TestMode.isActive { DispatchQueue.main.async { NSSound.beep() } }
+            reportWriteFailure("\(error)")
+        }
+    }
+
+    private func reportWriteFailure(_ message: String) {
+        NSLog("snapit: Save failed: \(message)")
+        let observers = lock.withLock { writeFailureObservers }
+        DispatchQueue.main.async {
+            if observers.isEmpty {
+                if !TestMode.isActive { NSSound.beep() }
+            } else {
+                for observer in observers { observer(message) }
+            }
         }
     }
 

@@ -254,7 +254,23 @@ Save is `EditorSession+Save.swift`: the helper sends `save-export` and the menu 
 (`snapit/Export/SaveService.swift`) checks the Save location at once, then encodes in the
 background and writes `snapit-YYYYMMDD-HHMMSS.png`. A failed check keeps the Editor open and goes
 to `SaveFailureSignal` (`Export/SaveFailure.swift`): a feature that reacts to it (the folder
-Permission guide) registers with `SaveFailureSignal.observe`.
+Permission guide) registers with `SaveFailureSignal.observe`. Its `.folderNotWritable(folder:code:)` carries the
+`errno`: `EPERM` (1) is a macOS privacy (TCC) denial, `EACCES` (13) POSIX permissions, `ENOENT` (2) a
+missing folder, `EROFS` (30) a read-only volume. The signal covers only the writability check made
+before the hand-over. A failure after it (disk full, the final rename) cannot reach the Editor, which
+may be gone: the menu bar app sends it to `SaveService.observeWriteFailures` observers (on the main
+queue) and beeps when there are none.
+
+Quit waits for Saves that are still being written (`applicationShouldTerminate` answers
+`.terminateLater` and replies from the main run loop in the common modes: a reply through
+`DispatchQueue.main.async` never runs when `terminate` came from a main-queue block). A Save counts as
+pending from the start of its writability check. A Save begins by removing the hidden
+`.snapit-<UUID>.partial` files an earlier crash left in the Save location.
+
+Drag-out files are written under a hidden partial name and renamed into place (a reader of an earlier
+drag keeps its own file), with mode 0644 less the umask like a Saved file. They stay in
+`<cache>/drag-out/<N>/` after their Editor closes; folders older than ten minutes are removed when a
+Capture opens, and everything goes when the menu bar app starts or quits.
 
 The Editor's window, toolbars and canvas layers are built without a Capture (`EditorSession()`),
 and `attach(_:)` gives it the Capture: a warming-up helper calls `EditorSessions.warmUp()` ahead of
