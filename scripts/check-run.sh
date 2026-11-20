@@ -71,7 +71,15 @@ isolation_begin
 if wait_until 10 answers "$APP_SOCK"; then pass "menu bar app starts and answers on its socket"; else abort "menu bar app did not answer"; fi
 APP_PID="$(pid_of "$APP_EXE")"
 
+# SNAPIT_FLOWS="37 40" runs only the flows whose names start with one of those numbers (all by
+# default): quicker while working on one flow. Flows share state, so a run of a few flows is for
+# development only; scripts/test.sh runs them all.
 for flow in "$ROOT_DIR"/scripts/run/flows/*.sh; do
+  if [[ -n "${SNAPIT_FLOWS:-}" ]]; then
+    selected=""
+    for prefix in $SNAPIT_FLOWS; do [[ "$(basename "$flow")" == "$prefix"* ]] && selected=yes; done
+    [[ -n "$selected" ]] || continue
+  fi
   echo "--- $(basename "$flow" .sh)"
   # shellcheck source=/dev/null
   source "$flow"

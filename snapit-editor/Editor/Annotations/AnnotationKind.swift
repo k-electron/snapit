@@ -26,6 +26,9 @@ struct AnnotationRenderContext {
     /// Pixels per point.
     let scale: Double
     let zoom: CGFloat
+    /// The part of the Capture the canvas shows, in Capture pixels, when a crop is applied; nil
+    /// for all of it. A kind that previews from the Capture works on this part, as Export does.
+    var cropPixels: PixelRect?
 }
 
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in

@@ -7,6 +7,8 @@ import AppKit
 @MainActor
 enum ToolbarRegistry {
     static let all: [any EditorToolbarItem] = [
+        ApplyCropToolbarItem(),
+        CancelCropToolbarItem(),
         CloseToolbarItem(),
         CopyToolbarItem(),
         DeleteAnnotationToolbarItem(),
