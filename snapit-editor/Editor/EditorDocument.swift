@@ -30,6 +30,6 @@ final class EditorDocument {
     func makeExportJob(level: PNGLevel) -> ExportJob {
         let info = capture.info
         let image = ExportImage(pixels: capture.pixels, scale: info.scale, dpi: info.dpi)
-        return ExportJob(image: image, level: level)
+        return ExportJob(image: image, level: level, standardResolution: ExportSettings.standardResolution)
     }
 }

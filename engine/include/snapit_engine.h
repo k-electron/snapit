@@ -104,7 +104,7 @@ typedef struct SnapitCaptureHeader {
   /*
    Bytes between the starts of two rows.
    */
-  size_t stride;
+  uint64_t stride;
   /*
    Pixels per point: 2 on a Retina display, 1 otherwise.
    */
@@ -220,7 +220,7 @@ SnapitStatus snapit_buffer_free(struct SnapitPixelBuffer *buffer);
  The file is sized, then given its header and ICC profile; the stride is chosen by the
  engine and returned in `out_header`. `scale` is pixels per point, `capture_time` seconds
  since 1970. `icc` and `icc_len` give the display's color profile (null and 0 for none).
- Free the mapping with [`snapit_buffer_free`](crate::snapit_buffer_free).
+ Free the mapping with `snapit_buffer_free`.
 
  # Safety
 
@@ -257,7 +257,7 @@ SnapitStatus snapit_capture_file_info(int32_t fd, struct SnapitCaptureHeader *ou
 
  # Safety
 
- `fd` must be a file open for reading, `header` the header [`snapit_capture_file_info`]
+ `fd` must be a file open for reading, `header` the header `snapit_capture_file_info`
  returned for it, `buffer` valid for writes of `capacity` bytes (it may be null when the
  header has no profile).
  */
@@ -269,7 +269,7 @@ SnapitStatus snapit_capture_file_icc(int32_t fd,
 /*
  Maps the pixels of the Capture file `fd`, described by `header`, into `out`. `writable`
  0 maps them read-only (the Editor helper), anything else writable (the menu bar app). The
- mapping is shared: free it with [`snapit_buffer_free`](crate::snapit_buffer_free), which
+ mapping is shared: free it with `snapit_buffer_free`, which
  unmaps it and returns the memory to the OS.
 
  Refuses a `header` the file does not back (`SNAPIT_STATUS_INVALID_FILE`).

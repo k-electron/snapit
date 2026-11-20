@@ -1,7 +1,8 @@
 import AppKit
 
-/// The Editor window: always able to become key, and handles the keys that belong to the
-/// Editor itself before the menu bar does (⌘C, ⌘W, Esc, a tool's key).
+/// The Editor window: always able to become key. Its key equivalents come from
+/// `ToolbarRegistry` (each item names its own key), tool keys from `ToolRegistry`, and Esc
+/// closes the Editor.
 final class EditorWindow: NSWindow {
     weak var session: EditorSession?
 
@@ -9,16 +10,13 @@ final class EditorWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags == .command, let session, let key = event.charactersIgnoringModifiers?.lowercased() else {
-            return super.performKeyEquivalent(with: event)
+        // Text being edited takes its own keys first (⌘C copies its selection).
+        if firstResponder is NSText, super.performKeyEquivalent(with: event) { return true }
+        if let session, let item = ToolbarRegistry.item(matching: event), item.isEnabled(in: session) {
+            item.perform(in: session)
+            return true
         }
-        switch key {
-        case "c": session.startCopy()
-        case "w": session.close()
-        default: return super.performKeyEquivalent(with: event)
-        }
-        return true
+        return firstResponder is NSText ? false : super.performKeyEquivalent(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -33,5 +31,22 @@ final class EditorWindow: NSWindow {
         } else {
             super.keyDown(with: event)
         }
+    }
+
+    /// The action of every menu item built from a toolbar item (`HelperMainMenu`): runs the
+    /// item named by the menu item's `representedObject`.
+    @objc func performToolbarItem(_ sender: NSMenuItem) {
+        guard let session, let id = sender.representedObject as? String, let item = ToolbarRegistry.item(id: id)
+        else { return }
+        item.perform(in: session)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(performToolbarItem(_:)) {
+            guard let session, let id = menuItem.representedObject as? String, let item = ToolbarRegistry.item(id: id)
+            else { return false }
+            return item.isEnabled(in: session)
+        }
+        return super.validateMenuItem(menuItem)
     }
 }

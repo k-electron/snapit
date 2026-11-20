@@ -5,7 +5,7 @@ import AppKit
 /// Cmd-Tab entry and its own menus. It quits when its last window closes.
 ///
 /// Any window the helper hosts (Editor, and later Settings, Onboarding and the guides) calls
-/// `windowWillShow()` before it creates its window and `windowDidShow()` after it is on screen.
+/// `windowWillShow()` before it shows its window and `windowDidShow()` after it is on screen.
 @MainActor
 enum HelperLifecycle {
     /// True once any window has shown. Until then the helper (warm, or started on its own)
@@ -13,7 +13,7 @@ enum HelperLifecycle {
     private(set) static var hasShownWindow = false
 
     static func windowWillShow() {
-        // Become a regular app before the window exists, so it appears once, already owned by
+        // Become a regular app before the window shows, so it appears once, already owned by
         // a regular app.
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
@@ -24,7 +24,14 @@ enum HelperLifecycle {
         hasShownWindow = true
         // Re-assign the main menu so the menu bar refreshes after the policy switch.
         NSApp.mainMenu = NSApp.mainMenu
-        // A scripted run must never take focus from what the user is doing.
+        activate()
+    }
+
+    /// Makes the helper the active app. The menu bar app also asks LaunchServices to bring the
+    /// helper forward when it opens a Capture (`EditorActivation`), because macOS lets an app
+    /// that is not frontmost refuse to be activated by another. A scripted run never takes
+    /// focus from what the user is doing.
+    static func activate() {
         if !TestMode.isActive { NSApp.activate() }
     }
 }

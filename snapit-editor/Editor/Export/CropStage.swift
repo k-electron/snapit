@@ -1,5 +1,5 @@
-/// Cuts the image to the document's crop rectangle in the engine. A document with no crop
-/// leaves the image as it is.
+/// Cuts the image to the document's crop rectangle in the engine, into a buffer of its own. The
+/// document has no crop yet, so the image passes through unchanged.
 nonisolated struct CropStage: ExportStage {
     let id = "crop"
     let order = 100

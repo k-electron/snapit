@@ -1,17 +1,24 @@
 import AppKit
 import Observation
 
-/// One open Editor: its document, its window and everything the user does in it. Actions that
-/// a button, a key and a test command all trigger live here once, in `EditorSession+…` files
-/// (Copy is `EditorSession+Copy.swift`).
+/// One Editor: its window and everything the user does in it. Actions that a button, a key and
+/// a test command all trigger live here once, in `EditorSession+…` files (Copy is
+/// `EditorSession+Copy.swift`).
+///
+/// A session is built without a Capture: the window, the toolbars and the canvas layers exist
+/// from `init`, hidden. A helper warming up builds one ahead of time; `attach(_:)` gives it the
+/// Capture and `show()` puts it on screen.
 @MainActor
 @Observable
 final class EditorSession: NSObject, NSWindowDelegate {
-    let document: EditorDocument
+    /// The Capture being edited; nil until `attach(_:)`.
+    private(set) var document: EditorDocument?
     /// The id of the active tool in `ToolRegistry`.
     private(set) var selectedToolID = ToolRegistry.initial.id
     /// True while Copy (or any Export) is running.
     var isExporting = false
+    /// True when this session was built ahead of its Capture (a warm-up).
+    @ObservationIgnored var wasWarmedUp = false
     /// The running Copy, so a caller can wait for it.
     @ObservationIgnored var copyTask: Task<Void, Never>?
 
@@ -19,9 +26,11 @@ final class EditorSession: NSObject, NSWindowDelegate {
     @ObservationIgnored var onClosed: ((EditorSession) -> Void)?
     @ObservationIgnored private var isClosing = false
 
-    init(document: EditorDocument) {
-        self.document = document
+    override init() {
         super.init()
+        let chrome = EditorChrome(session: self)
+        chrome.window.delegate = self
+        self.chrome = chrome
     }
 
     var window: EditorWindow? { chrome?.window }
@@ -36,22 +45,35 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     // MARK: Window
 
-    /// Builds the window and shows it. The helper is already a regular app by now.
-    func show() {
-        let chrome = EditorChrome(session: self)
-        self.chrome = chrome
-        chrome.window.delegate = self
-        chrome.window.makeKeyAndOrderFront(nil)
+    /// Gives the Editor its Capture and sizes the window to it.
+    func attach(_ document: EditorDocument) {
+        self.document = document
+        chrome?.attach(document)
     }
 
+    /// Puts the window on screen. The helper is already a regular app by now.
+    func show() {
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Brings an open Editor in front of every other window and makes it key.
     func bringForward() {
         window?.makeKeyAndOrderFront(nil)
+        HelperLifecycle.activate()
     }
 
     /// Closes the Editor. Nothing is asked and nothing is exported.
     func close() {
         guard !isClosing else { return }
         window?.close()
+    }
+
+    /// Frees a session that never showed (a warm-up that was cancelled).
+    func discard() {
+        guard !isClosing else { return }
+        isClosing = true
+        chrome?.tearDown()
+        chrome = nil
     }
 
     /// Esc: closes the Editor without exporting. A tool with something pending (text being
@@ -62,10 +84,14 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     /// Delete Capture: closes the Editor at once and has the menu bar app remove the Capture file.
     func deleteCapture() {
-        // The helper may quit as this window closes, so tell the menu bar app first.
-        CommandSocketClient.sendBeforeExit(
-            .deleteCapture, arguments: [String(document.captureNumber)], to: AppIdentity.appSocketPath)
-        close()
+        guard let number = document?.captureNumber else { return close() }
+        // The helper may quit as this window closes, so the menu bar app hears first; the
+        // main thread never waits for the reply.
+        Task {
+            _ = try? await CommandSocketClient.send(
+                .deleteCapture, arguments: [String(number)], to: AppIdentity.appSocketPath)
+            close()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

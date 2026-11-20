@@ -29,6 +29,9 @@ const MAGIC: [u8; 8] = *b"SNAPCAP\0";
 const VERSION: u32 = 1;
 const HEADER_SIZE: u64 = size_of::<SnapitCaptureHeader>() as u64;
 
+// The header is part of the file format: any change to its layout is a new version.
+const _: () = assert!(size_of::<SnapitCaptureHeader>() == 72);
+
 /// The fixed-size start of a Capture file.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -44,7 +47,7 @@ pub struct SnapitCaptureHeader {
     /// Height in pixels.
     pub height: u32,
     /// Bytes between the starts of two rows.
-    pub stride: usize,
+    pub stride: u64,
     /// Pixels per point: 2 on a Retina display, 1 otherwise.
     pub scale: f64,
     /// When the Capture was taken, in seconds since 1970.
@@ -64,10 +67,18 @@ fn file_len(fd: i32) -> Option<u64> {
     (unsafe { libc::fstat(fd, &mut stat) } == 0).then_some(stat.st_size as u64)
 }
 
+/// True when the last system call was interrupted by a signal and should be retried.
+fn interrupted() -> bool {
+    std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+}
+
 fn write_all_at(fd: i32, mut bytes: &[u8], mut offset: u64) -> bool {
     while !bytes.is_empty() {
         // SAFETY: `bytes` is a valid slice.
         let n = unsafe { libc::pwrite(fd, bytes.as_ptr().cast(), bytes.len(), offset as i64) };
+        if n < 0 && interrupted() {
+            continue;
+        }
         if n <= 0 {
             return false;
         }
@@ -81,6 +92,9 @@ fn read_exact_at(fd: i32, mut bytes: &mut [u8], mut offset: u64) -> bool {
     while !bytes.is_empty() {
         // SAFETY: `bytes` is a valid slice.
         let n = unsafe { libc::pread(fd, bytes.as_mut_ptr().cast(), bytes.len(), offset as i64) };
+        if n < 0 && interrupted() {
+            continue;
+        }
         if n <= 0 {
             return false;
         }
@@ -93,12 +107,12 @@ fn read_exact_at(fd: i32, mut bytes: &mut [u8], mut offset: u64) -> bool {
 
 /// True when `header` describes a Capture file of `len` bytes that holds all its pixels.
 fn describes_file(header: &SnapitCaptureHeader, len: u64) -> bool {
-    let row = (header.width as usize).checked_mul(SNAPIT_BYTES_PER_PIXEL);
-    let pixels = header.stride.checked_mul(header.height as usize);
+    let row = u64::from(header.width).checked_mul(SNAPIT_BYTES_PER_PIXEL as u64);
+    let pixels = header.stride.checked_mul(u64::from(header.height));
     let (Some(row), Some(pixels)) = (row, pixels) else {
         return false;
     };
-    let pixel_end = header.pixel_offset.checked_add(pixels as u64);
+    let pixel_end = header.pixel_offset.checked_add(pixels);
     let icc_end = header.icc_offset.checked_add(header.icc_len);
     header.magic == MAGIC
         && header.version == VERSION
@@ -106,7 +120,7 @@ fn describes_file(header: &SnapitCaptureHeader, len: u64) -> bool {
         && header.width > 0
         && header.height > 0
         && header.stride >= row
-        && header.stride.is_multiple_of(SNAPIT_BYTES_PER_PIXEL)
+        && header.stride.is_multiple_of(SNAPIT_BYTES_PER_PIXEL as u64)
         && header.scale.is_finite()
         && header.scale > 0.0
         && header.icc_offset == HEADER_SIZE
@@ -121,7 +135,7 @@ fn describes_file(header: &SnapitCaptureHeader, len: u64) -> bool {
 /// The file is sized, then given its header and ICC profile; the stride is chosen by the
 /// engine and returned in `out_header`. `scale` is pixels per point, `capture_time` seconds
 /// since 1970. `icc` and `icc_len` give the display's color profile (null and 0 for none).
-/// Free the mapping with [`snapit_buffer_free`](crate::snapit_buffer_free).
+/// Free the mapping with `snapit_buffer_free`.
 ///
 /// # Safety
 ///
@@ -171,7 +185,7 @@ pub unsafe extern "C" fn snapit_capture_file_create(
             pixel_format: SNAPIT_PIXEL_FORMAT_BGRA8_PREMULTIPLIED,
             width,
             height,
-            stride,
+            stride: stride as u64,
             scale,
             capture_time,
             pixel_offset,
@@ -252,7 +266,7 @@ pub unsafe extern "C" fn snapit_capture_file_info(
 ///
 /// # Safety
 ///
-/// `fd` must be a file open for reading, `header` the header [`snapit_capture_file_info`]
+/// `fd` must be a file open for reading, `header` the header `snapit_capture_file_info`
 /// returned for it, `buffer` valid for writes of `capacity` bytes (it may be null when the
 /// header has no profile).
 #[unsafe(no_mangle)]
@@ -296,7 +310,7 @@ pub unsafe extern "C" fn snapit_capture_file_icc(
 
 /// Maps the pixels of the Capture file `fd`, described by `header`, into `out`. `writable`
 /// 0 maps them read-only (the Editor helper), anything else writable (the menu bar app). The
-/// mapping is shared: free it with [`snapit_buffer_free`](crate::snapit_buffer_free), which
+/// mapping is shared: free it with `snapit_buffer_free`, which
 /// unmaps it and returns the memory to the OS.
 ///
 /// Refuses a `header` the file does not back (`SNAPIT_STATUS_INVALID_FILE`).
@@ -334,9 +348,9 @@ fn map(
     writable: bool,
     out: *mut SnapitPixelBuffer,
 ) -> SnapitStatus {
-    let Some(mapped_len) = header
-        .stride
-        .checked_mul(header.height as usize)
+    let Some(mapped_len) = usize::try_from(header.stride)
+        .ok()
+        .and_then(|stride| stride.checked_mul(header.height as usize))
         .and_then(|len| len.checked_next_multiple_of(page_size()))
     else {
         return SNAPIT_STATUS_INVALID_ARGUMENT;
@@ -371,7 +385,7 @@ fn map(
             data: data.cast(),
             width: header.width,
             height: header.height,
-            stride: header.stride,
+            stride: header.stride as usize,
             mapped_len,
         });
     }

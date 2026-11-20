@@ -13,6 +13,12 @@ is_foreground() { [[ "$(app_type "$1")" == "Foreground" ]]; }
 onscreen_windows() { "$INSPECT" windows "$1" | grep -c onscreen; }
 has_onscreen_window() { (($(onscreen_windows "$1") >= 1)); }
 
+# The Capture files in the run's cache folder (other files there belong to other features).
+capture_files() { ls "$RUN_ROOT/captures" 2>/dev/null | grep '^capture-.*\.pixels$'; }
+
+# menu_items <main-menu output> <menu title>: the items of one menu, one per line.
+menu_items() { printf '%s\n' "$1" | sed -n "s/^$2: //p" | tr '|' '\n'; }
+
 # The numbers of the open Editors, one per line.
 open_editors() { send "$EDITOR_SOCK" editors; }
 

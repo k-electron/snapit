@@ -16,13 +16,10 @@ enum ScreenCaptureFlow {
         case failed(String)
     }
 
-    private static var isRunning = false
-
     @discardableResult
     static func run() async -> Outcome {
-        guard !isRunning else { return .busy }
-        isRunning = true
-        defer { isRunning = false }
+        guard CaptureGate.enter() else { return .busy }
+        defer { CaptureGate.leave() }
         return await capture()
     }
 
@@ -34,7 +31,13 @@ enum ScreenCaptureFlow {
         do {
             let screen = try await CaptureSources.current.captureDisplayUnderPointer()
             let number = try await CaptureHandoff.publish(screen)
-            try await EditorHelperLauncher.open(capture: number)
+            do {
+                try await EditorHelperLauncher.open(capture: number)
+            } catch {
+                CaptureHandoff.discard(number: number)
+                throw error
+            }
+            CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {
             NSLog("snapit: Screen Capture failed: \(error)")

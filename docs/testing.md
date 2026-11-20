@@ -52,6 +52,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 |---|---|
 | `test-seams` | one `key=value` line per edge: root, pasteboard, save, cache, permission |
 | `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
+| `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
 | `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished |
@@ -68,7 +69,9 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editors` | the numbers of the open Editors, one per line (a Capture's number is the `N` in `open-capture <N>`) |
 | `editor-facts <N>` | `key=value` lines about Editor N: `pixels`, `scale`, `dpi`, `window`, `canvas`, `tool`, `activation` |
 | `editor-key <N> copy\|escape\|close` | sends the window the ⌘C, Esc or ⌘W key event; replies `ok` when a Copy it started has finished. A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
-| `editor-press <N> <item id>` | runs a top toolbar item's action (`copy`, `delete-capture`, ...), as its button does |
+| `editor-press <N> <item id>` | runs a toolbar item's action (`copy`, `delete-capture`, `close`, ...), as its button does |
+| `editor-warm`, `editor-warm-state` | builds the Editor ahead of its Capture, hidden; replies `warm window=hidden canvas=built` or `cold` |
+| `export-owned-probe <N>` | makes an owned copy of Editor N's Capture, encodes it into `<root>/probe/owned.png` and replies `ok <path>` |
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
@@ -134,26 +137,36 @@ is the model to copy. Edges both processes need live in `Shared/Edges/`; their c
 ## Adding to the Editor
 
 Each part of the Editor is one file plus one line in a registry, so tickets that run in parallel
-do not edit the same file:
+touch different files. Registry arrays have one entry per line with a trailing comma; two tickets
+adding an entry in the same place get a one-line merge conflict, and the fix is to keep both sides.
 
 | To add | Add a file in `snapit-editor/Editor/` | And one line in |
 |---|---|---|
 | an Annotation tool on the left toolbar | `Tools/<Name>Tool.swift` (`EditorTool`: `id`, `order`, `title`, `symbol`, `key`, pointer hooks in image points) | `Tools/ToolRegistry.swift` |
-| a control in the top toolbar | `Toolbar/<Name>ToolbarItem.swift` (`EditorToolbarItem`: `id`, `slot`, `order`, `symbol`, `tooltip`, `perform`) | `Toolbar/ToolbarRegistry.swift` |
+| a control in the top toolbar, a key equivalent or a menu item | `Toolbar/<Name>ToolbarItem.swift` (`EditorToolbarItem`: `id`, `slot`, `order`, `symbol`, `tooltip`, `perform`, and optionally `keyEquivalent` and `menu`; slot `.menuOnly` for an item with no button) | `Toolbar/ToolbarRegistry.swift` |
 | an Export pipeline step | `Export/<Name>Stage.swift` (`ExportStage`: `id`, `order`, `apply`) | `Export/ExportPipeline.swift` |
-| an Editor action | `EditorSession+<Name>.swift` (an extension of `EditorSession`, called by the button, the key and the test command) | the key handler in `EditorWindow.swift` or a menu item in `Menu/HelperMainMenu.swift` |
+| an Editor action | `EditorSession+<Name>.swift` (an extension of `EditorSession`, run by a toolbar item's `perform`) | nothing: the item that runs it is in `ToolbarRegistry` |
 | a helper socket command | `Commands/<Name>Commands.swift` with a `register…Commands()` | `Commands/HelperCommands.swift` |
 
-Position comes from each entry's `order` (and a toolbar item's `slot`), never from the line
-order, so appended lines never conflict. Stage orders: crop 100, Redaction 200, Annotations 300,
-1x 400, then the PNG encode. Tooltips and full-size hit areas come with `ToolbarButton` and
-`ChromeButtonStyle`; a custom control applies `.help` and `.contentShape` itself. Document state a
-stage reads is copied into `ExportJob` (`EditorDocument.makeExportJob`) so the pipeline runs off the
-main actor.
+Position comes from each entry's `order` (and a toolbar item's `slot`), never from the line order.
+`EditorWindow` runs an item's `keyEquivalent` and `HelperMainMenu` builds the Edit and Window menus
+from the same registry, so no other file lists keys. Stage orders: crop 100, Redaction 200,
+Annotations 300, 1x 400, then the PNG encode. Tooltips and full-size hit areas come with
+`ToolbarButton` and `ChromeButtonStyle`; a custom control applies `.help` and `.contentShape`
+itself.
 
-The helper's windows all go through `HelperLifecycle`: call `windowWillShow()` before creating a
-window (it makes the helper a regular app) and `windowDidShow()` after it shows. The helper quits
-when its last window closes.
+The Export pipeline never touches the Capture's mapping, which is read-only (`PixelBuffer` refuses
+`withPixels` and `draw` on it). The first stage that changes pixels makes the Export's one owned
+buffer (`image.makeOwned()`, or crop's smaller `makeEmptyBuffer`); later stages change it in place.
+Buffers made from another carry its ICC profile along. Document state a stage reads is copied into
+`ExportJob` (`EditorDocument.makeExportJob`) so the pipeline runs off the main actor. `flatten`
+returns the flattened image for a sink (Save's shared export file); `run` also Fast-encodes it.
+
+The Editor's window, toolbars and canvas layers are built without a Capture (`EditorSession()`),
+and `attach(_:)` gives it the Capture: a warming-up helper calls `EditorSessions.warmUp()` ahead of
+time. The helper's windows all go through `HelperLifecycle`: call `windowWillShow()` before showing
+a window (it makes the helper a regular app) and `windowDidShow()` after. The helper quits when its
+last window closes.
 
 ## Adding a Shortcut
 

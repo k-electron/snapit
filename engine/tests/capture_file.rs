@@ -125,7 +125,7 @@ fn pixels_written_by_one_mapping_are_read_back_by_another_with_the_metadata() {
     );
     assert_eq!(
         (buffer.width, buffer.height, buffer.stride),
-        (301, 187, header.stride)
+        (301, 187, header.stride as usize)
     );
     let pixels =
         unsafe { std::slice::from_raw_parts(buffer.data, buffer.stride * buffer.height as usize) };
@@ -398,7 +398,7 @@ fn damaged_files_are_refused_with_the_invalid_file_status() {
     let file = TempFile::new("truncated");
     let good = write_fixture(&file, 64, 64, &[]);
     file.file
-        .set_len(good.pixel_offset + good.stride as u64 * 10)
+        .set_len(good.pixel_offset + good.stride * 10)
         .unwrap();
     assert_eq!(
         unsafe { snapit_capture_file_info(file.fd(), &mut header) },
@@ -410,4 +410,57 @@ fn damaged_files_are_refused_with_the_invalid_file_status() {
         SNAPIT_STATUS_INVALID_FILE,
         "a header the file does not back is refused at map time too"
     );
+}
+
+/// Byte offsets of header fields in the file (see `SnapitCaptureHeader`).
+const STRIDE_AT: u64 = 24;
+const PIXEL_OFFSET_AT: u64 = 48;
+const ICC_LEN_AT: u64 = 64;
+
+/// Writes `value` over the 8-byte header field at `at`.
+fn corrupt(file: &mut TempFile, at: u64, value: u64) {
+    file.file.seek(SeekFrom::Start(at)).unwrap();
+    file.file.write_all(&value.to_le_bytes()).unwrap();
+}
+
+#[test]
+fn headers_that_contradict_themselves_are_refused() {
+    let mut header = empty_header();
+    let cases: [(&str, u64, u64); 4] = [
+        ("stride-below-row", STRIDE_AT, 16 * 4 - 4),
+        ("stride-not-a-pixel-multiple", STRIDE_AT, 16 * 4 + 2),
+        ("pixel-offset-unaligned", PIXEL_OFFSET_AT, 100),
+        ("profile-overlaps-pixels", ICC_LEN_AT, 1 << 30),
+    ];
+    for (name, at, value) in cases {
+        let mut file = TempFile::new(name);
+        write_fixture(&file, 16, 16, &[7; 32]);
+        corrupt(&mut file, at, value);
+        assert_eq!(
+            unsafe { snapit_capture_file_info(file.fd(), &mut header) },
+            SNAPIT_STATUS_INVALID_FILE,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_stride_times_height_that_overflows_is_refused_not_mapped() {
+    let mut file = TempFile::new("huge");
+    let good = write_fixture(&file, 16, 16, &[]);
+    corrupt(&mut file, STRIDE_AT, u64::MAX - 3);
+    let mut header = empty_header();
+    assert_eq!(
+        unsafe { snapit_capture_file_info(file.fd(), &mut header) },
+        SNAPIT_STATUS_INVALID_FILE
+    );
+    // The in-memory header is checked the same way at map time.
+    let mut bad = good;
+    bad.stride = 1 << 62;
+    let mut buffer = empty_buffer();
+    assert_eq!(
+        unsafe { snapit_capture_file_map(file.fd(), &bad, 1, &mut buffer) },
+        SNAPIT_STATUS_INVALID_FILE
+    );
+    assert!(buffer.data.is_null());
 }

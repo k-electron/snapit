@@ -28,12 +28,13 @@ nonisolated struct OpenedCapture: Sendable {
 }
 
 /// Capture files: how a Capture's pixels get from the menu bar app to the Editor helper, and
-/// what the Last Capture store (a later ticket) keeps. The pixels never travel over the socket.
+/// what the Last Capture store keeps. The pixels never travel over the socket.
 ///
 /// Each Capture is one file, `captures/capture-<N>.pixels` in snapit's private cache folder.
 /// The menu bar app writes it (see `write`) and tells the helper `open-capture <N>`; the
 /// helper maps it read-only (see `open`). The file format lives in the engine
-/// (`engine/src/capture_file.rs`).
+/// (`engine/src/capture_file.rs`); `create(at:…)` and `open(at:)` work on any path, for other
+/// files in the same format (a shared Export file).
 nonisolated enum CaptureFiles {
     static var folder: URL { AppIdentity.cacheFolder.appendingPathComponent("captures", isDirectory: true) }
 
@@ -43,47 +44,34 @@ nonisolated enum CaptureFiles {
     private static let suffix = ".pixels"
     private static let partialSuffix = ".partial"
 
-    /// Writes `image` as Capture N. The file is built under a partial name and renamed into
-    /// place, so the helper never sees half a file. Returns once the pixels are in the file and
-    /// the mapping is gone.
-    static func write(number: Int, image: CGImage, scale: Double, captureTime: Date = Date()) throws {
-        try FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let final = url(number: number)
-        let partialPath = final.path + partialSuffix
-        let descriptor = Darwin.open(partialPath, O_RDWR | O_CREAT | O_TRUNC, 0o600)
+    /// Creates a Capture file at `url` for a `width` x `height` image and returns its pixels,
+    /// mapped writable and zeroed. The file already has its header and ICC profile; whatever the
+    /// caller draws into the buffer is what the file holds once the buffer is released. The
+    /// buffer's `iccProfile` is `icc`.
+    static func create(
+        at url: URL, width: Int, height: Int, scale: Double, captureTime: Date, icc: Data, colorSpace: CGColorSpace
+    ) throws -> PixelBuffer {
+        guard let w = UInt32(exactly: width), let h = UInt32(exactly: height) else {
+            throw EngineError(status: .invalidArgument, rawValue: SNAPIT_STATUS_INVALID_ARGUMENT)
+        }
+        let descriptor = Darwin.open(url.path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
         guard descriptor >= 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
-        defer { close(descriptor) }
-        do {
-            let space = PixelBuffer.bitmapColorSpace(for: image)
-            let profile = (space.copyICCData() as Data?) ?? Data()
-            var header = SnapitCaptureHeader()
-            var mapping = SnapitPixelBuffer(data: nil, width: 0, height: 0, stride: 0, mapped_len: 0)
-            let status = profile.withUnsafeBytes { bytes in
-                snapit_capture_file_create(
-                    descriptor, UInt32(image.width), UInt32(image.height), scale,
-                    Int64(captureTime.timeIntervalSince1970),
-                    profile.isEmpty ? nil : bytes.bindMemory(to: UInt8.self).baseAddress,
-                    profile.count, &header, &mapping)
-            }
-            try Engine.check(status)
-            // The buffer unmaps the file when it goes out of scope at the end of this block.
-            let pixels = PixelBuffer(adopting: mapping, colorSpace: space, iccProfile: profile)
-            try pixels.draw(image)
-        } catch {
-            unlink(partialPath)
-            throw error
+        defer { close(descriptor) }  // the mapping stays valid after the descriptor closes
+
+        var header = SnapitCaptureHeader()
+        var mapping = SnapitPixelBuffer(data: nil, width: 0, height: 0, stride: 0, mapped_len: 0)
+        let status = icc.withUnsafeBytes { bytes in
+            snapit_capture_file_create(
+                descriptor, w, h, scale, Int64(captureTime.timeIntervalSince1970),
+                icc.isEmpty ? nil : bytes.bindMemory(to: UInt8.self).baseAddress, icc.count, &header, &mapping)
         }
-        guard rename(partialPath, final.path) == 0 else {
-            let code = errno
-            unlink(partialPath)
-            throw EngineError(status: .ioFailed, rawValue: code)
-        }
+        try Engine.check(status)
+        return PixelBuffer(adopting: mapping, colorSpace: colorSpace, iccProfile: icc, isWritable: true)
     }
 
-    /// Maps Capture N read-only.
-    static func open(number: Int) throws -> OpenedCapture {
-        let descriptor = Darwin.open(url(number: number).path, O_RDONLY)
+    /// Maps the Capture file at `url` read-only.
+    static func open(at url: URL) throws -> OpenedCapture {
+        let descriptor = Darwin.open(url.path, O_RDONLY)
         guard descriptor >= 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
         defer { close(descriptor) }
 
@@ -103,9 +91,42 @@ nonisolated enum CaptureFiles {
         let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
         let space = profile.isEmpty ? srgb : (CGColorSpace(iccData: profile as CFData) ?? srgb)
         let info = CaptureFileInfo(
-            width: Int(header.width), height: Int(header.height), stride: header.stride, scale: header.scale,
+            width: Int(header.width), height: Int(header.height), stride: Int(header.stride), scale: header.scale,
             captureTime: Date(timeIntervalSince1970: TimeInterval(header.capture_time)), iccProfile: profile)
-        return OpenedCapture(info: info, pixels: PixelBuffer(adopting: mapping, colorSpace: space, iccProfile: profile))
+        let pixels = PixelBuffer(adopting: mapping, colorSpace: space, iccProfile: profile, isWritable: false)
+        return OpenedCapture(info: info, pixels: pixels)
+    }
+
+    /// Writes `image` as Capture N. The file is built under a partial name and renamed into
+    /// place, so the helper never sees half a file. Returns once the pixels are in the file and
+    /// the mapping is gone.
+    static func write(number: Int, image: CGImage, scale: Double, captureTime: Date = Date()) throws {
+        try FileManager.default.createDirectory(
+            at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let final = url(number: number)
+        let partial = URL(fileURLWithPath: final.path + partialSuffix)
+        do {
+            let space = PixelBuffer.bitmapColorSpace(for: image)
+            let profile = (space.copyICCData() as Data?) ?? Data()
+            // The buffer unmaps the file when it goes out of scope at the end of this block.
+            let pixels = try create(
+                at: partial, width: image.width, height: image.height, scale: scale, captureTime: captureTime,
+                icc: profile, colorSpace: space)
+            try pixels.draw(image)
+        } catch {
+            unlink(partial.path)
+            throw error
+        }
+        guard rename(partial.path, final.path) == 0 else {
+            let code = errno
+            unlink(partial.path)
+            throw EngineError(status: .ioFailed, rawValue: code)
+        }
+    }
+
+    /// Maps Capture N read-only.
+    static func open(number: Int) throws -> OpenedCapture {
+        try open(at: url(number: number))
     }
 
     /// The numbers of the Capture files in the folder.

@@ -35,7 +35,7 @@ enum EditorHelperLauncher {
     }
 
     /// Opens Capture N in the Editor: reuses the running helper, or starts one first. Returns
-    /// once the Editor window is showing.
+    /// once the Editor window is showing and the helper has been asked to come forward.
     static func open(capture number: Int) async throws {
         var failure: Error = EditorHelperError.didNotStart
         // Twice: a helper that was quitting when the first send arrived is replaced by a new one.
@@ -45,6 +45,7 @@ enum EditorHelperLauncher {
                 let reply = try await CommandSocketClient.send(
                     .openCapture, arguments: [String(number)], to: AppIdentity.editorSocketPath, timeoutSeconds: 10)
                 guard reply == "ok" else { throw EditorHelperError.refused(reply) }
+                await bringForward()
                 return
             } catch let error as EditorHelperError {
                 if case .refused = error { throw error }
@@ -56,13 +57,21 @@ enum EditorHelperLauncher {
         throw failure
     }
 
+    /// Asks LaunchServices to activate the running helper (see `EditorActivation`). Reaches a
+    /// helper that was already running; its reopen handler does nothing of its own.
+    private static func bringForward() async {
+        guard EditorActivation.current.activateAfterOpen else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        _ = try? await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
+    }
+
     /// Waits until the helper's socket answers, starting the helper when it is not running.
     /// The wait is bounded and happens only while a Capture opens, never at rest.
     private static func ensureRunning() async throws {
         let path = AppIdentity.editorSocketPath
         if await CommandSocketClient.isListening(at: path) { return }
-        // A scripted run never takes focus from what the user is doing.
-        try await start(activates: !TestMode.isActive)
+        try await start(activates: EditorActivation.current.activateAtLaunch)
         let deadline = ContinuousClock.now + .seconds(10)
         while ContinuousClock.now < deadline {
             if await CommandSocketClient.isListening(at: path) { return }

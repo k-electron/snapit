@@ -2,7 +2,11 @@ import Foundation
 
 /// Export: crop, then Redactions (pixelated in the engine), then Annotations (Core Graphics),
 /// then the optional 1x downscale, then PNG. Flattening happens only here, never while the
-/// user edits. Copy, Save and drag-out run the same pipeline and differ in the PNG level.
+/// user edits.
+///
+/// `flatten` runs the stages and returns the flattened image; a sink takes it from there. Copy
+/// and drag-out Fast-encode it (`run`); Save writes it into a shared export file and sends a
+/// Save request, so it flattens and stops.
 nonisolated enum ExportPipeline {
     /// Every stage before the PNG encode. A feature adds its stage with one line; the order of
     /// the lines never matters (each stage has its own `order`).
@@ -19,13 +23,18 @@ nonisolated enum ExportPipeline {
     /// The names of the steps, in the order they run, ending with the PNG encode.
     static var stageIDs: [String] { stages.map(\.id) + [PNGEncodeStep.id] }
 
-    /// Runs every stage over the job's image and encodes the result.
-    static func run(_ job: ExportJob) throws -> Data {
+    /// Runs every stage over the job's image.
+    static func flatten(_ job: ExportJob) throws -> ExportImage {
         var image = job.image
         for stage in stages {
             image = try stage.apply(to: image, job: job)
         }
-        return try PNGEncodeStep.encode(image, level: job.level)
+        return image
+    }
+
+    /// Flattens and encodes the result as a PNG.
+    static func run(_ job: ExportJob) throws -> Data {
+        try PNGEncodeStep.encode(flatten(job), level: job.level)
     }
 
     /// The same, off the calling actor: an Export of a 5K Capture is tens of milliseconds and

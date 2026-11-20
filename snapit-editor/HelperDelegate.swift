@@ -5,7 +5,20 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        HelperMainMenu.install()
+        HelperMainMenu.install(quitTarget: self, quitAction: #selector(quitSnapit(_:)))
+    }
+
+    /// "Quit snapit" in the helper's menu quits snapit, not just the helper: to the user there
+    /// is one app. The menu bar app quits the helper with it.
+    @objc func quitSnapit(_ sender: Any?) {
+        CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
+        NSApplication.shared.terminate(nil)
+    }
+
+    /// LaunchServices re-opens the running helper when the menu bar app brings it forward;
+    /// that must not make anything of its own happen.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
