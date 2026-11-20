@@ -69,7 +69,7 @@ final class ActionBarButtonControl: ActionBarControl {
         self.item = item
         host = context.host
         look = item.look
-        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
         let textWidth = ceil(NSAttributedString(string: item.title, attributes: [.font: font]).size().width)
         let glyphWidth: CGFloat = item.glyph == nil ? 0 : Self.glyphSize + 6
         super.init(
