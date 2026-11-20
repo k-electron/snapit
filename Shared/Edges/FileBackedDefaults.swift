@@ -15,8 +15,9 @@ nonisolated final class FileBackedDefaults: UserDefaults {
     init?(file: URL) {
         self.file = file
         self.lockFile = file.appendingPathExtension("lock")
-        // A suite no snapit code ever writes: every accessor below is overridden.
-        super.init(suiteName: "dev.snapit.test.file-backed")
+        // Every accessor below is overridden, so this suite is never used; it is a path inside the
+        // run's root (never a system domain) so that an accessor missed here still stays in the root.
+        super.init(suiteName: file.deletingLastPathComponent().appendingPathComponent("defaults-unused").path)
     }
 
     // MARK: File access

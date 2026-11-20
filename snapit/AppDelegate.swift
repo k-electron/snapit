@@ -20,7 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ShortcutBindings.registerAll()
             SocketOwnership.adopt(server)
             // Where this copy runs from: a mounted disk image or a translocated path needs a move.
-            Task { await InstallCheck.runAtLaunch() }
+            Task {
+                // A copy that must move first (a disk image) is not the one to open at login.
+                if await InstallCheck.runAtLaunch() == .none { LoginItemDefault.applyOnce() }
+            }
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.
             NSApplication.shared.terminate(nil)

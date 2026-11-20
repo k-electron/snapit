@@ -27,7 +27,7 @@ the real system is replaced:
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist`, read and written straight through under a file lock (`FileBackedDefaults`): both processes see each other's writes at once | `Shared/Edges/AppDefaults.swift` |
-| Open at Login | `SMAppService.mainApp` (menu bar app) | a status held in memory, starting enabled; the real login items are never touched | `snapit/Settings/LoginItem.swift` |
+| Open at Login | `SMAppService.mainApp` (menu bar app) | a status held in memory, starting `notFound` like a fresh install (the first launch from a normal place registers it: on by default); the real login items are never touched | `snapit/Settings/LoginItem.swift` |
 | macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5 | `Shared/Edges/SystemShortcutClashes.swift` |
 | System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
@@ -74,7 +74,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `login-item-status`, `login-item-set on\|off`, `login-item-simulate <status>` | the (fake) login item Settings drives: read its status, register or unregister it, set the status as System Settings would (`enabled`, `notRegistered`, `requiresApproval`, `notFound`) |
-| `apply-shortcut <id> none\|<key code> [<modifier>,...]` | what the helper's recorder sends: rebinds a Shortcut of `ShortcutCatalog` (and the menu glyph follows) |
+| `apply-shortcut <id> none\|<key code> [<modifier>,...]`, `shortcut-combos` | what the helper's recorder sends: rebinds a Shortcut of `ShortcutCatalog` (and the menu glyph follows); and what Settings asks when it opens: one `<id> <combo>` line per Shortcut, from the registrar |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
@@ -410,8 +410,10 @@ control's id, title and tooltip, which the view and `settings-facts` both read.
 | a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…, User Guide and Check for Updates… |
 
 Open at Login lives in the menu bar app (`LoginItem.current`: `SMAppService.mainApp`, or the fake
-in test mode); the helper sends `login-item-status` when Settings opens and `login-item-set`
-when the switch is flipped. Nothing polls. The Shortcut recorders use `ShortcutRecorder`, a local
+in test mode); the helper sends `login-item-status` (and `shortcut-combos`) when Settings opens or
+comes forward and `login-item-set` when the switch is flipped. Nothing polls. `LoginItemDefault`
+registers the login item once, on the first launch from a normal place (the flag
+`openAtLoginDefaultApplied`), so a later Off survives relaunches. The Shortcut recorders use `ShortcutRecorder`, a local
 key monitor that exists only while one waits; the result goes to `ShortcutSettings` (the key
 `shortcut.<id>` in `AppDefaults.store`) and to the menu bar app with `apply-shortcut`. A
 combination that macOS also uses (`SystemShortcuts.current`) or another Shortcut already has

@@ -48,6 +48,9 @@ final class SettingsModel {
         return build.map { "\(version) (\($0))" } ?? version
     }
 
+    /// The engine's version, read through the C ABI.
+    var engineVersionText: String { (try? Engine.version()) ?? "unavailable" }
+
     // MARK: Open at Login
 
     /// Asks the menu bar app for the status. Called when Settings opens or is brought forward.
@@ -77,6 +80,22 @@ final class SettingsModel {
         case .requiresApproval: return .needsApproval
         case .notRegistered, .notFound: return .off
         case nil: return .failed("snapit answered \(reply)")
+        }
+    }
+
+    /// Asks the menu bar app which combination each Shortcut has now: its registrar is the one
+    /// truth, and what Settings stored may be older (another install, a failed apply).
+    func refreshShortcuts() async {
+        guard let reply = try? await CommandSocketClient.send(.shortcutCombos, to: AppIdentity.appSocketPath) else {
+            return
+        }
+        for line in reply.split(separator: "\n") {
+            let words = line.split(separator: " ").map(String.init)
+            guard let id = words.first, let entry = ShortcutCatalog.entry(id: id),
+                let combo = ShortcutCombo.parse(wire: Array(words.dropFirst()))
+            else { continue }
+            combos[id] = .some(combo)
+            ShortcutSettings.store(combo, for: entry.shortcut)
         }
     }
 

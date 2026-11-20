@@ -6,9 +6,8 @@ import Carbon.HIToolbox
 /// the menu bar app applies the recorded combination (`apply-shortcut`) to the entry's
 /// `AppShortcut`.
 ///
-/// The Window and Pick Color entries carry the ids and defaults their Capture features bind
-/// (`ShortcutBindings`): a combination recorded for one before its feature binds a handler is
-/// kept and used the moment the handler is registered.
+/// A combination recorded for the Window or Pick Color Shortcut before its feature binds a
+/// handler (`ShortcutBindings`) is kept and used the moment the handler is registered.
 enum ShortcutCatalog {
     struct Entry {
         let shortcut: AppShortcut
@@ -16,17 +15,11 @@ enum ShortcutCatalog {
         let title: String
     }
 
-    /// Window Capture, ⌃⌥⌘5 by default.
-    static let window = AppShortcut(
-        id: "capture-window", defaultKeyCode: kVK_ANSI_5, defaultModifiers: [.control, .option, .command])
-    /// The Color picker, unassigned by default.
-    static let pickColor = AppShortcut(id: "pick-color", defaultKeyCode: nil, defaultModifiers: [])
-
     static let entries: [Entry] = [
         Entry(shortcut: .area, title: "Area"),
-        Entry(shortcut: window, title: "Window"),
+        Entry(shortcut: .window, title: "Window"),
         Entry(shortcut: .screen, title: "Screen"),
-        Entry(shortcut: pickColor, title: "Pick Color"),
+        Entry(shortcut: .pickColor, title: "Pick Color"),
     ]
 
     static func entry(id: String) -> Entry? { entries.first { $0.shortcut.id == id } }
