@@ -8,7 +8,9 @@ import Foundation
 /// afterwards: the mapping is gone when `publish` returns.
 @MainActor
 enum CaptureHandoff {
-    private static var nextNumber = 1
+    /// Starts at a number no earlier run of the menu bar app used (milliseconds since 1970), so a
+    /// helper that outlived a crashed menu bar app never mistakes a new Capture for one of its own.
+    private static var nextNumber = Int(Date().timeIntervalSince1970 * 1000)
     private static var latestNumber: Int?
 
     /// Writes `screen` as the next Capture's file and removes the one before it. Returns its number.

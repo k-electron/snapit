@@ -71,6 +71,10 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-press <N> <item id>` | runs a top toolbar item's action (`copy`, `delete-capture`, ...), as its button does |
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
+| `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
+
+`editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
+view (a layer-backed view would report `layer-backed`).
 
 The menu bar app tells the helper to open a Capture with `open-capture <N>`; the pixels reach it
 through the Capture file `<root>/captures/capture-<N>.pixels` (memory-mapped, never the socket).

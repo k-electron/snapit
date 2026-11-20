@@ -20,10 +20,12 @@ enum EditorHelperLauncher {
         Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/snapit Editor.app", isDirectory: true)
     }
 
-    static func start() async throws {
+    /// Starts the helper. `activates` asks macOS to bring it forward as it launches; a helper
+    /// that only warms up, hidden, does not.
+    static func start(activates: Bool = false) async throws {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = [AppIdentity.startedBySnapitArgument]
-        configuration.activates = false
+        configuration.activates = activates
         if let root = TestMode.root {
             configuration.environment = [TestMode.rootVariable: root.path]
             // Parallel scripted runs must never activate another copy of the helper.
@@ -59,7 +61,8 @@ enum EditorHelperLauncher {
     private static func ensureRunning() async throws {
         let path = AppIdentity.editorSocketPath
         if await CommandSocketClient.isListening(at: path) { return }
-        try await start()
+        // A scripted run never takes focus from what the user is doing.
+        try await start(activates: !TestMode.isActive)
         let deadline = ContinuousClock.now + .seconds(10)
         while ContinuousClock.now < deadline {
             if await CommandSocketClient.isListening(at: path) { return }

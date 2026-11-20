@@ -15,6 +15,9 @@ nonisolated extension SocketCommand {
     /// `editor-toolbar <N>`: one line per toolbar item and tool, `<kind> <id> <slot or order> <tooltip>`.
     /// Test mode only.
     static let editorToolbar = SocketCommand("editor-toolbar")
+    /// Replies with the helper's main menu, one line per menu: `<title>: <item>|<item>|...`
+    /// (`-` for a separator). Test mode only.
+    static let mainMenu = SocketCommand("main-menu")
     /// Replies with the names of the Export pipeline's steps, in the order they run. Test mode only.
     static let exportStages = SocketCommand("export-stages")
 }
@@ -25,6 +28,12 @@ extension SocketCommandRegistry {
 
         register(.editors) { _ in
             EditorSessions.shared.captureNumbers.map(String.init).joined(separator: "\n")
+        }
+        register(.mainMenu) { _ in
+            (NSApp.mainMenu?.items ?? []).map { top in
+                let titles = (top.submenu?.items ?? []).map { $0.isSeparatorItem ? "-" : $0.title }
+                return "\(top.title): \(titles.joined(separator: "|"))"
+            }.joined(separator: "\n")
         }
         register(.exportStages) { _ in
             ExportPipeline.stageIDs.joined(separator: "\n")
@@ -84,7 +93,9 @@ extension SocketCommandRegistry {
             ("dpi", "\(info.dpi)"),
             ("window", window.map { $0.isVisible ? "visible" : "hidden" } ?? "none"),
             ("window-title", window?.title ?? ""),
-            ("canvas", canvas.map { $0.wantsLayer && $0.layer != nil ? "layer-hosted" : "plain" } ?? "none"),
+            // A layer-backed view is its layer's delegate and AppKit draws into it; a layer-hosting
+            // view's layer belongs to the app and AppKit never draws into it.
+            ("canvas", canvas.map { view in view.layer.map { $0.delegate === view ? "layer-backed" : "layer-hosted" } ?? "plain" } ?? "none"),
             ("tool", session.selectedToolID),
             ("activation", NSApp.activationPolicy() == .regular ? "regular" : "accessory"),
             ("pid", "\(ProcessInfo.processInfo.processIdentifier)"),
