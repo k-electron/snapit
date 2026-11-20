@@ -36,6 +36,7 @@ extension SocketCommandRegistry {
     func registerAreaTestCommands() {
         guard TestMode.isActive else { return }
         registerActionBarTestCommands()
+        registerTimedCaptureTestCommands()
 
         register(.fixtureExtraDisplay) { request in
             let arguments = request.arguments
@@ -61,7 +62,9 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.overlayScreensChanged) { _ in
-            guard AreaCaptureFlow.activeOverlay != nil else { return "error no overlay" }
+            guard AreaCaptureFlow.activeOverlay != nil || AreaCaptureFlow.countdown != nil else {
+                return "error no overlay"
+            }
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
@@ -164,11 +167,13 @@ extension AreaOverlayController {
             && containers.allSatisfy { $0.wantsUpdateLayer && $0.subviews.first === $0.sceneView }
         return [
             "displays=\(displays.count)",
+            "mode=\(mode == .window ? "window" : "area")",
             "state=\(state.rawValue)",
             "display=\(activeIndex)",
             "display-ids=\(displays.map { String($0.displayID) }.joined(separator: ","))",
             "cursor=\(format(cursor.x)),\(format(cursor.y))",
             "hover=\(describe(hoveredWindow))",
+            "hover-window=\(hoveredOnScreenWindow.map { String($0.id) } ?? "none")",
             "selection=\(selectionIndex.map(String.init) ?? "none") \(describe(selection))",
             "view=\(layerHosted ? "layer-hosted-scene" : "drawn")",
             "after-selecting=\(CapturingSettings.afterSelectingArea.rawValue)",

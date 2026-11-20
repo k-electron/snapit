@@ -5,6 +5,7 @@ extension EditorSession {
     /// under the Export name. The drag takes the file from the returned handle when the pointer
     /// has moved far enough; nil while the Editor has no Capture.
     func startDragOutFile() -> PendingDragFile? {
+        commitTextEditing()
         guard let document else { return nil }
         return PendingDragFile(
             job: document.makeExportJob(level: .fast), captureNumber: document.captureNumber,

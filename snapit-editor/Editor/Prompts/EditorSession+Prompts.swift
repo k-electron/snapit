@@ -4,10 +4,11 @@ import AppKit
 /// only for an Editor that is not the Last Capture's (the Last Capture can be reopened) and has
 /// edits that were never Exported. Delete Capture, Copy and Save never ask (`close()`).
 extension EditorSession {
-    /// Finishes whatever is still being typed or dragged in the Editor, so it counts as an edit
-    /// before the rule looks at the document. Called before every count of unexported edits (a
-    /// close, a Quit).
-    func commitPendingEdits() {}
+    /// Finishes the text still being typed, so it counts as an edit before the rule looks at the
+    /// document. Called before every count of unexported edits (a close, a Quit).
+    func commitPendingEdits() {
+        commitTextEditing(refocus: false)
+    }
 
     /// True when closing this Editor would lose edits the user never Exported and cannot reopen.
     var closeWouldLoseWork: Bool {

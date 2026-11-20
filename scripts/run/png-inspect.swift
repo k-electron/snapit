@@ -43,9 +43,24 @@
 //   png-inspect pixel <file> <x> <y>            `r g b` of one pixel, read in sRGB
 //   png-inspect overlay-windows <pid>           one line per on-screen window of the process at the
 //                                               screen-saver level (the Area overlay's panels)
+//   png-inspect rgba-pixel <file> <x> <y>      `r,g,b,a` of one pixel exactly as the PNG stores it (straight, not
+//                                               premultiplied; a = 255 for an RGB PNG), from a decoder of its own
+//   png-inspect verify-window <file> <w> <h> <scale>
+//                                               the file is the fixture window of w x h pixels at that display
+//                                               scale (transparent rounded corners): alpha exact everywhere,
+//                                               colour exact where opaque, within 2 where half transparent
+//   png-inspect verify-window-scaled <file> <w> <h> <scale> <factor>
+//                                               the same window averaged down by a whole factor (a 1x Export of
+//                                               a Retina window): premultiplied averages, then straight, within 3
 //   png-inspect general-pasteboard             changeCount of the general pasteboard (never its contents)
 //   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
 //                                               `<width>x<height> onscreen|offscreen`; no names, so no TCC prompt
+//
+// The fixture window (see FixtureWindowCaptureSource.swift), `w` x `h` pixels, scale `s`, R = 8 * s: the
+// fixture colour below, alpha 255 except in the four R x R corner squares, where
+// d2 = (2x + 1 - 2R)^2 + (2y + 1 - 2R)^2 (mirrored for the right and bottom squares) decides:
+// d2 <= (2R - 2)^2 is 255, d2 >= (2R + 2)^2 is 0, anything between 128. Stored premultiplied as
+// (c * alpha + 127) / 255.
 //
 // The fixture formula (see FixtureCaptureSource.swift), `w` x `h` pixels:
 //   R = x * 255 / (w - 1)   G = y * 255 / (h - 1)   B = 40 if (x / 8 + y / 8) is even else 200
@@ -125,6 +140,69 @@ func readPixels(_ image: CGImage) -> CGContext {
     context.setBlendMode(.copy)
     context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     return context
+}
+
+/// A PNG decoded by hand (8-bit, RGB or RGBA, not interlaced): width, height, bytes per pixel and the
+/// straight pixel bytes, filters undone. No ImageIO: what comes out is what the file stores.
+func decodePNG(_ file: Data) -> (width: Int, height: Int, channels: Int, pixels: [UInt8]) {
+    let chunks = readChunks(file)
+    let ihdr = [UInt8](chunks.first { $0.type == "IHDR" }!.data)
+    func be32(_ at: Int) -> Int { ihdr[at ..< at + 4].reduce(0) { $0 << 8 | Int($1) } }
+    let width = be32(0), height = be32(4)
+    guard ihdr[8] == 8, ihdr[12] == 0, ihdr[9] == 2 || ihdr[9] == 6 else { fail("decodePNG: only 8-bit RGB or RGBA, not interlaced") }
+    let channels = ihdr[9] == 6 ? 4 : 3
+    let zlib = chunks.filter { $0.type == "IDAT" }.reduce(Data()) { $0 + $1.data }
+    let deflate = zlib.dropFirst(2).dropLast(4)
+    let rowBytes = width * channels
+    var raw = [UInt8](repeating: 0, count: (rowBytes + 1) * height)
+    let written = raw.withUnsafeMutableBufferPointer { out in
+        deflate.withUnsafeBytes { input in
+            compression_decode_buffer(out.baseAddress!, out.count, input.bindMemory(to: UInt8.self).baseAddress!, input.count, nil, COMPRESSION_ZLIB)
+        }
+    }
+    guard written == raw.count else { fail("decodePNG: inflated \(written) bytes, expected \(raw.count)") }
+    var pixels = [UInt8](repeating: 0, count: rowBytes * height)
+    for y in 0..<height {
+        let filter = raw[y * (rowBytes + 1)]
+        for i in 0..<rowBytes {
+            let x = Int(raw[y * (rowBytes + 1) + 1 + i])
+            let a = i >= channels ? Int(pixels[y * rowBytes + i - channels]) : 0
+            let b = y > 0 ? Int(pixels[(y - 1) * rowBytes + i]) : 0
+            let c = i >= channels && y > 0 ? Int(pixels[(y - 1) * rowBytes + i - channels]) : 0
+            let predictor: Int
+            switch filter {
+            case 0: predictor = 0
+            case 1: predictor = a
+            case 2: predictor = b
+            case 3: predictor = (a + b) / 2
+            default:
+                let p = a + b - c
+                let pa = abs(p - a), pb = abs(p - b), pc = abs(p - c)
+                predictor = pa <= pb && pa <= pc ? a : (pb <= pc ? b : c)
+            }
+            pixels[y * rowBytes + i] = UInt8((x + predictor) & 0xFF)
+        }
+    }
+    return (width, height, channels, pixels)
+}
+
+/// The fixture window's alpha at (x, y): see the header.
+func windowAlpha(_ x: Int, _ y: Int, _ width: Int, _ height: Int, _ scale: Int) -> Int {
+    let radius = 8 * scale
+    func offset(_ v: Int, _ extent: Int) -> Int? {
+        if v < radius { return 2 * v + 1 - 2 * radius }
+        if v >= extent - radius { return 2 * v + 1 - 2 * (extent - radius) }
+        return nil
+    }
+    guard let dx = offset(x, width), let dy = offset(y, height) else { return 255 }
+    let distance = dx * dx + dy * dy
+    if distance <= (2 * radius - 2) * (2 * radius - 2) { return 255 }
+    if distance >= (2 * radius + 2) * (2 * radius + 2) { return 0 }
+    return 128
+}
+
+func windowColour(_ x: Int, _ y: Int, _ width: Int, _ height: Int) -> (Int, Int, Int) {
+    (x * 255 / max(width - 1, 1), y * 255 / max(height - 1, 1), (x / 8 + y / 8) % 2 == 0 ? 40 : 200)
 }
 
 let arguments = CommandLine.arguments
@@ -238,6 +316,65 @@ case "verify-fixture-scaled":
             let at = pixels + (y * width + x) * 4
             if Int(at[0]) != expected.0 || Int(at[1]) != expected.1 || Int(at[2]) != expected.2 {
                 if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
+                mismatches += 1
+            }
+        }
+    }
+    print("size=\(width)x\(height)")
+    print("mismatches=\(mismatches)")
+    if mismatches > 0 { print("first_mismatch=\(first)") }
+
+case "rgba-pixel":
+    guard arguments.count == 5, let x = Int(arguments[3]), let y = Int(arguments[4]), let file = FileManager.default.contents(atPath: arguments[2])
+    else { fail("rgba-pixel <file> <x> <y>") }
+    let png = decodePNG(file)
+    guard x >= 0, y >= 0, x < png.width, y < png.height else { fail("pixel outside the \(png.width)x\(png.height) image") }
+    let at = (y * png.width + x) * png.channels
+    print("\(png.pixels[at]),\(png.pixels[at + 1]),\(png.pixels[at + 2]),\(png.channels == 4 ? Int(png.pixels[at + 3]) : 255)")
+
+case "verify-window", "verify-window-scaled":
+    let scaled = arguments[1] == "verify-window-scaled"
+    guard arguments.count == (scaled ? 7 : 6), let sourceWidth = Int(arguments[3]), let sourceHeight = Int(arguments[4]),
+        let scale = Int(arguments[5]), let factor = scaled ? Int(arguments[6]) : 1, factor >= 1,
+        sourceWidth % factor == 0, sourceHeight % factor == 0, let file = FileManager.default.contents(atPath: arguments[2])
+    else { fail("verify-window <file> <w> <h> <scale> | verify-window-scaled <file> <w> <h> <scale> <factor>") }
+    let png = decodePNG(file)
+    let width = sourceWidth / factor, height = sourceHeight / factor
+    print("color_type=\(png.channels == 4 ? 6 : 2)")
+    guard png.width == width, png.height == height else {
+        print("size=\(png.width)x\(png.height)")
+        print("mismatches=all")
+        exit(0)
+    }
+    func premultiplied(_ x: Int, _ y: Int) -> [Int] {
+        let a = windowAlpha(x, y, sourceWidth, sourceHeight, scale)
+        let c = windowColour(x, y, sourceWidth, sourceHeight)
+        return [(c.0 * a + 127) / 255, (c.1 * a + 127) / 255, (c.2 * a + 127) / 255, a]
+    }
+    var mismatches = 0
+    var first = ""
+    let block = factor * factor
+    for y in 0..<height {
+        for x in 0..<width {
+            var sum = [0, 0, 0, 0]
+            for dy in 0..<factor {
+                for dx in 0..<factor {
+                    let p = premultiplied(factor * x + dx, factor * y + dy)
+                    for i in 0..<4 { sum[i] += p[i] }
+                }
+            }
+            let averaged = sum.map { (2 * $0 + block) / (2 * block) }
+            let a = averaged[3]
+            let expected = [0, 1, 2].map { a == 0 ? 0 : min(255, (averaged[$0] * 255 + a / 2) / a) } + [a]
+            let at = (y * width + x) * png.channels
+            let got = (0..<4).map { png.channels == 4 || $0 < 3 ? Int(png.pixels[at + $0]) : 255 }
+            // No slack for an opaque or a transparent pixel; a little where alpha is partial, because
+            // the premultiplied byte keeps only 8 bits.
+            let slack = a == 255 || a == 0 ? 0 : (scaled ? 3 : 2)
+            let alphaSlack = scaled ? 1 : 0
+            let colourOK = (0..<3).allSatisfy { abs(got[$0] - expected[$0]) <= slack }
+            if !colourOK || abs(got[3] - expected[3]) > alphaSlack {
+                if mismatches == 0 { first = "\(x),\(y) got \(got) want \(expected)" }
                 mismatches += 1
             }
         }

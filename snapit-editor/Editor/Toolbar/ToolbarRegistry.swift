@@ -10,14 +10,18 @@ enum ToolbarRegistry {
         ApplyCropToolbarItem(),
         CancelCropToolbarItem(),
         CloseToolbarItem(),
+        ColorSwatchesToolbarItem(),
+        ColorWheelToolbarItem(),
         CopyToolbarItem(),
         DeleteAnnotationToolbarItem(),
         DeleteCaptureToolbarItem(),
+        EyedropperToolbarItem(),
         DragOutToolbarItem(),
         SaveToolbarItem(),
         RedoToolbarItem(),
         ShapeFillToolbarItem(),
         UndoToolbarItem(),
+        SizeToolbarItem(),
     ]
 
     /// The items of one slot, in order.

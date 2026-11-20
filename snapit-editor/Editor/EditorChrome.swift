@@ -15,6 +15,15 @@ final class NoFirstMouseHost<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// Holds the text view of a text being typed, over the canvas. It takes no click itself: a click
+/// on the canvas under it reaches the canvas, and only the text view is hit.
+final class TextHostView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+}
+
 /// Lays its children out itself and lets a drag on its empty parts move the window.
 final class EditorContentView: NSView {
     var onLayout: (() -> Void)?
@@ -40,7 +49,11 @@ final class EditorChrome {
     let canvas: CanvasView
     private let content = EditorContentView(frame: .zero)
     private let rail: NSView
+    private let textHost = TextHostView(frame: .zero)
     private let topLeading: NSView?
+    /// The content width at which the options pill fits in the title bar row beside the others; below
+    /// it, the pill moves to a second row under them.
+    private var singleRowWidth: CGFloat = 0
     private let topTrailing: NSView?
     private let topDestructive: NSView?
 
@@ -48,6 +61,7 @@ final class EditorChrome {
         canvas = CanvasView(frame: .zero)
         canvas.padding = Self.canvasPadding
         canvas.session = session
+        canvas.textHost = textHost
 
         func host<V: View>(_ view: V, firstMouse: Bool = true) -> NSView {
             let host: NSHostingView<V> = firstMouse ? FirstMouseHost(rootView: view) : NoFirstMouseHost(rootView: view)
@@ -65,9 +79,16 @@ final class EditorChrome {
         topTrailing = hostIfAny([.history, .export])
         topDestructive = hostIfAny([.destructive], firstMouse: false)
 
-        let toolbarWidth = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
-        // The traffic lights take the first 82 points; the pills' shadow margins overlap by 6.
-        minimumContent.width = max(Self.baseMinimumContent.width, 82 + toolbarWidth + 6)
+        // On one row the pills sit side by side after the traffic lights; narrower than that the
+        // options pill takes a second row, right of the tool rail. (The traffic lights take the first
+        // 82 points; the pills' shadow margins overlap by 6.)
+        let rightWidth = [topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
+        let optionsWidth = topLeading?.frame.width ?? 0
+        singleRowWidth = 82 + optionsWidth + rightWidth + 6
+        minimumContent.width = max(Self.baseMinimumContent.width, 82 + rightWidth + 6, rail.frame.maxX + optionsWidth + Self.margin)
+        // The tool rail hangs from the title bar row and must fit whole, whatever the registry holds.
+        let barHeight = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.height }.max() ?? 0
+        minimumContent.height = max(Self.baseMinimumContent.height, rail.frame.height + barHeight + Self.margin)
 
         window = EditorWindow(
             contentRect: NSRect(origin: .zero, size: minimumContent),
@@ -87,7 +108,7 @@ final class EditorChrome {
         window.toolbarStyle = .unified
         window.contentMinSize = minimumContent
         window.contentView = content
-        for view in [canvas, rail, topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
+        for view in [canvas, textHost, rail, topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
             content.addSubview(view)
         }
         content.onLayout = { [weak self] in self?.layoutAll() }
@@ -118,15 +139,14 @@ final class EditorChrome {
         let visible = screen.visibleFrame
         let rail = self.rail.frame.width
         let top = topTrailing?.frame.height ?? topLeading?.frame.height ?? 62
-        let extra = NSSize(
-            width: rail + Self.margin + 2 * Self.canvasPadding, height: top + Self.margin + 2 * Self.canvasPadding)
         let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: minimumContent)).size
         let maxWidth = visible.width * 0.8 - (chrome.width - minimumContent.width)
         let maxHeight = visible.height * 0.8 - (chrome.height - minimumContent.height)
+        let width = max(minimumContent.width, min(capture.width + rail + Self.margin + 2 * Self.canvasPadding, maxWidth))
+        let rows = width < singleRowWidth ? secondRowHeight : 0
+        let extraHeight = top + rows + Self.margin + 2 * Self.canvasPadding
         window.setContentSize(
-            NSSize(
-                width: max(minimumContent.width, min(capture.width + extra.width, maxWidth)),
-                height: max(minimumContent.height, min(capture.height + extra.height, maxHeight))))
+            NSSize(width: width, height: max(minimumContent.height, min(capture.height + extraHeight, maxHeight))))
         // Cascaded: the first diagonal step (28 points down and to the right of the centre) that no
         // other Editor's window already sits on, so closing one in the middle never makes the next
         // one stack on top of another.
@@ -145,6 +165,26 @@ final class EditorChrome {
         }
         window.setFrameOrigin(origin(step: free ?? 0))
     }
+
+    /// The toolbar's pills hold other controls now (the Crop tool swaps the color and size controls for
+    /// Apply and Cancel): once SwiftUI has shown them, the hosts take the size of what they hold. Two
+    /// run-loop turns, because the new controls are not there until SwiftUI's own update has run.
+    func refitToolbars() {
+        func refit() {
+            for host in [topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
+                host.layoutSubtreeIfNeeded()
+                if host.frame.size != host.fittingSize { host.frame.size = host.fittingSize }
+            }
+            content.needsLayout = true
+        }
+        DispatchQueue.main.async {
+            refit()
+            DispatchQueue.main.async { refit() }
+        }
+    }
+
+    /// How much taller the content must be when the options pill has a row of its own.
+    private var secondRowHeight: CGFloat { max(0, (topLeading?.frame.height ?? 0) - 16) }
 
     /// Positions the toolbars and the canvas for the current content size.
     private func layoutAll() {
@@ -171,16 +211,25 @@ final class EditorChrome {
             right = right + 10 - trailing.frame.width
             place(trailing, x: right, y: barY)
         }
-        if let leading = topLeading { place(leading, x: leadX - 10, y: barY) }
-
+        var canvasTop = barY - 2
         let railTop = min(bounds.maxY - barHeight + 6, barY + 4)
         place(rail, x: 4, y: railTop - rail.frame.height)
         let canvasX = rail.frame.maxX
-        let canvasTop = barY - 2
+        if let leading = topLeading {
+            if bounds.width >= singleRowWidth {
+                place(leading, x: leadX - 10, y: barY)
+            } else {
+                // A row of its own under the others, level with the canvas's left edge.
+                let rowY = barY + 16 - leading.frame.height
+                place(leading, x: canvasX - 10, y: rowY)
+                canvasTop = rowY + 10 - 2
+            }
+        }
         let frame = NSRect(
             x: canvasX, y: Self.margin, width: max(1, bounds.width - canvasX - Self.margin),
             height: max(1, canvasTop - Self.margin))
         if canvas.frame != frame { canvas.frame = frame }
+        if textHost.frame != frame { textHost.frame = frame }
     }
 
     private func place(_ view: NSView, x: CGFloat, y: CGFloat) {
