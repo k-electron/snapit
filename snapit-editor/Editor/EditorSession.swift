@@ -48,6 +48,8 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The running Copy or Save, so a caller can wait for it.
     @ObservationIgnored var copyTask: Task<Void, Never>?
 
+    /// Set while this is the Last Capture's Editor: it keeps the state file current.
+    @ObservationIgnored var lastCapture: LastCapturePersistence?
     @ObservationIgnored private(set) var chrome: EditorChrome?
     @ObservationIgnored var onClosed: ((EditorSession) -> Void)?
     @ObservationIgnored private var isClosing = false
@@ -136,7 +138,15 @@ final class EditorSession: NSObject, NSWindowDelegate {
         guard let number = document?.captureNumber else { return close() }
         // The helper may quit as this window closes, so the menu bar app hears first; the
         // main thread never waits for the reply.
+        EditorSessions.shared.markDeleted(captureNumber: number)
         Task {
+            // The Capture's state is not written again (not even by the close below), and a write
+            // already queued has run or been dropped before the files are removed.
+            if isLastCapture {
+                stopBeingLastCapture()
+                LastCaptureStore.shared.supersede()
+                await LastCaptureStore.shared.fence()
+            }
             _ = try? await CommandSocketClient.send(
                 .deleteCapture, arguments: [String(number)], to: AppIdentity.appSocketPath)
             close()
@@ -150,10 +160,14 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        // Nothing half-done goes into the Last Capture's state: the typed text is committed and a color
+        // drag's Undo step is closed before it is stored.
         commitTextEditing(refocus: false)
+        endColorGesture()
         ColorPanelController.shared.sessionClosed(self)
         isClosing = true
         if let number = document?.captureNumber { SaveFailureSignal.forget(captureNumber: number) }
+        saveLastCaptureOnClose()
         onClosed?(self)
         // A button's own action may be what closed the window: free everything one run-loop
         // turn later, once that action has returned.
