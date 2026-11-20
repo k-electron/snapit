@@ -255,6 +255,8 @@ if pair; then
   chmod 500 "$SAVE_DIR"
   send_slow "$EDITOR_SOCK" "editor-press $A save" >/dev/null
   chmod 700 "$SAVE_DIR"
+  # The failed Save shows the folder Permission guide, a window of its own that would keep the helper alive: close it.
+  send "$EDITOR_SOCK" "guide-close folder" >/dev/null
   send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
   if pr_wait_shown; then pass "a Save that failed does not count as an Export: closing asks"; else fail "a failed Save cleared the unexported state"; fi
   pr_answer cancel
