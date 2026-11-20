@@ -4,7 +4,7 @@ import SwiftUI
 /// It applies to the selected Rectangle or Oval and to the ones drawn next, and is remembered
 /// across launches. Both are plain buttons (the whole tile is the hit area, the first click on
 /// a background Editor works, each has its tooltip).
-struct ShapeFillToolbarItem: EditorToolbarItem {
+struct AnnotationFillToolbarItem: EditorToolbarItem {
     let id = "annotation-fill"
     let slot = ToolbarSlot.options
     let order = 300
@@ -20,11 +20,11 @@ struct ShapeFillToolbarItem: EditorToolbarItem {
     }
 
     func makeView(session: EditorSession) -> AnyView {
-        AnyView(ShapeFillControl(session: session))
+        AnyView(AnnotationFillControl(session: session))
     }
 }
 
-private struct ShapeFillControl: View {
+private struct AnnotationFillControl: View {
     let session: EditorSession
 
     var body: some View {

@@ -24,12 +24,6 @@ final class UserGuideModel {
         }
     }
 
-    struct ButtonSpec {
-        let id: String
-        let title: String
-        let tooltip: String
-    }
-
     let document: GuideDocument
     private(set) var selectedID: String
     private(set) var query = ""
@@ -104,8 +98,8 @@ final class UserGuideModel {
     let windowTitle = "User Guide"
     let searchPrompt = "Search the User Guide"
     let clearSearchTooltip = "Clear the search"
-    let previousButton = ButtonSpec(id: "previous", title: "Previous", tooltip: "Go to the previous section")
-    let nextButton = ButtonSpec(id: "next", title: "Next", tooltip: "Go to the next section")
+    let previousButton = HelperButton(id: "previous", title: "Previous", tooltip: "Go to the previous section")
+    let nextButton = HelperButton(id: "next", title: "Next", tooltip: "Go to the next section")
 
     func sidebarTooltip(for section: GuideSection) -> String { "Show \(section.title)" }
 }
