@@ -41,6 +41,8 @@ nonisolated struct ExportJob: Sendable {
     let standardResolution: Bool
     /// The Annotations, in the order they are drawn, in the Capture's image points.
     var annotations: [Annotation] = []
+    /// The crop rectangle in the Capture's image points; nil for the whole Capture.
+    var crop: CGRect?
 }
 
 /// One step of the Export pipeline.

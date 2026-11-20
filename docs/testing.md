@@ -102,7 +102,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-drag-thumbnail <N>` | the thumbnail view: `view=<w>x<h> thumbnail=<w>x<h>\|none` |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
 | `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a mouse event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The point is placed by asking the canvas's layer tree where it is, and the event goes through the window's `sendEvent`, as a click does |
-| `editor-keystroke <N> undo\|redo\|delete\|<character>` | ⌘Z, ⇧⌘Z, ⌫ or a plain key (a tool's key) as the window receives it |
+| `editor-keystroke <N> undo\|redo\|delete\|enter\|<character>` | ⌘Z, ⇧⌘Z, ⌫, Return or a plain key (a tool's key) as the window receives it |
 | `editor-style <N> fill outline\|solid`, `width <points>`, `color <RRGGBB>` | what the style controls do: the selected Annotation and the next ones, remembered through `AppDefaults.store` |
 | `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=`. For setup and for the zoom precondition; assertions are on pixels and on which items are enabled |
 | `editor-menu-keys` | the key equivalent each Edit menu item shows: `<title> key=<hex codes> modifiers=<mask>` |
@@ -110,7 +110,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-controls <N>` | one line per toolbar control, `control <tooltip> <x> <y>`: its centre in window coordinates. Test mode puts an invisible marker view behind each control (`ControlMarker`) |
 | `editor-background <N>` | makes another Editor's window key, so Editor N is a background Editor; replies `ok key=yes\|no` |
 | `editor-click <N> tool <id>`, `item <id>`, `canvas <x> <y>` | a click (press and release through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture. With `editor-background` first, it is the first click on a background Editor: the window refuses it for Delete Capture and accepts it everywhere else |
-| `editor-preview <N>` | renders the canvas's own layers (no selection) at the Capture's pixel size, writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export |
+| `editor-preview <N> [overlay]` | renders the canvas's own layers (no selection) at the pixel size of what the canvas shows (the Capture, or what an applied crop keeps), writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export (`max_diff=0` for Redactions). `overlay` keeps the selection's and the crop rectangle's shade and handles in the picture |
 | `editor-inject-effect <N> <x1> <y1> <x2> <y2>` | adds an Annotation of a test kind that Export's Annotations stage does not draw (as Redaction will not), to check it lies beneath the others in the canvas and in hit testing |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
@@ -146,9 +146,12 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 ## Adding a flow to the scripted run
 
+`SNAPIT_FLOWS="38 40" scripts/check-run.sh <app>` runs only the flows whose names start with those numbers, for
+working on one flow (flows share state, so `scripts/test.sh` always runs them all).
+
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -161,7 +164,7 @@ versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variab
 process's windows: `png-inspect windows <pid>`, the Area overlay's panels: `png-inspect overlay-windows <pid>`, reads one pixel in sRGB: `png-inspect pixel <file> <x> <y>` (`r g b`) or in the PNG's own color space: `png-inspect raw-pixel <file> <x> <y>` (`r,g,b`), and
 compares a PNG with the fixture: `png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]` prints how
 many pixels changed, their bounding box and how many lie inside and outside a rectangle, and compares two
-PNGs: `png-inspect compare <a> <b>`). A flow that draws in
+PNGs: `png-inspect compare <a> <b>`, and for a Redaction `png-inspect verify-redaction ...`, which recomputes every block mean from the fixture formula, and for a crop `png-inspect diff-crop ...`, `diff-fixture` for the pixels of the fixture that start at an origin; `scripts/run/png-inspect.swift` has the arguments). A flow that draws in
 the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`, `preview_png`,
 `click_on`, `expect_enabled`, `fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
 
@@ -340,6 +343,37 @@ feature filters `job.annotations` by `kind` (Redaction's `RedactionStage` takes 
 sets `drawnByAnnotationStage` false). Tools are shared by every open Editor, so their state (`EditorSession+Annotations.swift`) never lives in a tool. The Annotation color, width and fill used last are remembered in
 `AnnotationSettings` (`annotationColor` as `RRGGBB`, `annotationWidth`, `annotationFilled`).
 
+### Redaction and Crop
+
+A Redaction (`Annotations/RedactionAnnotationKind.swift`, `drawnByAnnotationStage` false) pixelates in
+the engine (`snapit_pixelate`, `Shared/Engine/Engine+Pixelate.swift`): it reads a window of the Capture and
+writes the area's block means into another buffer, never in place. The canvas's preview layer
+(`RedactionPreviewLayer`, a buffer of exactly the area made from `AnnotationRenderContext.capture`) and
+`RedactionStage` make the same call, so the preview is the Export bit for bit; the flow compares them with
+`max_diff=0`. The Export writes into the window of its own buffer, and every Redaction reads the *original*
+Capture, so Redactions that overlap look the same in both and the pixels beneath one are overwritten, never
+kept.
+
+The rule (`RedactionGeometry`), which the flow works out again on its own: the box in image points snaps
+to device pixels, each edge to the nearest pixel, and is cut to the Capture. The block is a third of its
+short side, between 14 and 48 points, at least 4 pixels. The grid of blocks starts at the corner of the
+part of the box that is inside the image shown (the Capture, or what a crop kept). It has side / block
+blocks across and down (at least one), and what is left over at the right and bottom edge is folded into
+the last block of its row or column, so the edge blocks are between `block` and `2 * block - 1` pixels
+wide and never a sliver or a lone pixel (a side shorter than one block is a single block). Every pixel of
+a block is the floored mean of the original pixels in it, per channel. Blocks are 40 pixels for a 60 point
+box at 2x; a 201 x 121 pixel Redaction has 40 pixel blocks with a last column and row 41 pixels wide.
+`png-inspect verify-redaction` works the grid out from this paragraph alone and reports `survivors=` (an
+original pixel left under the Redaction) and `smallest_tile=`.
+
+Crop: `DocumentState.crop` is a rectangle in image points, set by Apply Crop (Enter or the toolbar item, one
+Undo step) after the Crop tool's handles (`EditorSession+Crop.swift`, `Canvas/CropOverlayLayers.swift`). It is
+stored already snapped to device pixels (`CropGeometry.pixelRect`, the one snap rule for the canvas, Apply and
+`CropStage`). `CropStage` copies the part into a buffer of its own with `snapit_crop` and sets
+`ExportImage.origin` in pixels; `AnnotationStage` and `RedactionStage` subtract it. The canvas moves
+the layers under a clip instead of redrawing, so Annotations stay in the Capture's own coordinates. Undo and
+Redo and Esc (which cancels a pending crop first) follow the document's state.
+
 ## Adding a Shortcut
 
 Add an `AppShortcut` in its own file (`snapit/Shortcuts/AppShortcut.swift` shows the shape), bind
@@ -347,7 +381,8 @@ it with one line in `ShortcutBindings`, and press it in a flow with `press-short
 
 ## Engine tests
 
-`engine/tests/*.rs` call the C-ABI functions directly. `engine/tests/support/mod.rs` has the fixture
+`engine/tests/*.rs` call the C-ABI functions directly (`pixelate.rs`: the averaged-block pixelate, with its
+own independent block-mean reference, non-tight strides, edge blocks, windows, invalid and overlapping buffers). `engine/tests/support/mod.rs` has the fixture
 builder (any stride, padding filled with garbage that must never reach the output) and a PNG chunk
 reader that does not use the encoder under test. A new engine function gets a test file with:
 a round trip, a non-tight stride, invalid arguments (null pointers, zero sizes, overflow) and its
