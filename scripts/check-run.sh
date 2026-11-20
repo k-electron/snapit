@@ -6,7 +6,7 @@
 #
 # Usage: scripts/check-run.sh path/to/snapit.app
 # Optional: SNAPIT_IDLE_SECONDS (default 15) sets the idle window; SNAPIT_FOOTPRINT_MB_MAX
-# (default 25) the menu bar app's footprint ceiling.
+# (default 20) the menu bar app's footprint ceiling.
 set -uo pipefail
 
 APP="${1:?usage: check-run.sh path/to/snapit.app}"
@@ -15,7 +15,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_EXE="$APP/Contents/MacOS/snapit"
 HELPER_EXE="$APP/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit Editor"
 IDLE_SECONDS="${SNAPIT_IDLE_SECONDS:-15}"
-FOOTPRINT_MB_MAX="${SNAPIT_FOOTPRINT_MB_MAX:-25}"
+FOOTPRINT_MB_MAX="${SNAPIT_FOOTPRINT_MB_MAX:-20}"
 
 # A short path: a Unix socket path holds at most 103 bytes.
 RUN_ROOT="$(mktemp -d /tmp/snapit-run.XXXXXX)"
@@ -69,6 +69,8 @@ APP_PID="$(pid_of "$APP_EXE")"
 expect_equal "menu lists the engine version and Quit snapit" \
   "Engine $EXPECTED_VERSION"$'\n-\nQuit snapit' "$(send "$APP_SOCK" menu-titles)"
 expect_equal "engine version round-trips through the C ABI in the menu bar app" "$EXPECTED_VERSION" "$(send "$APP_SOCK" engine-version)"
+expect_equal "an engine panic comes back as a status code in the menu bar app" "panic" "$(send "$APP_SOCK" engine-probe-panic)"
+expect_equal "the menu bar app survives an engine panic" "$EXPECTED_VERSION" "$(send "$APP_SOCK" engine-version)"
 expect_equal "unknown commands are refused" "error unknown command nope" "$(send "$APP_SOCK" nope)"
 
 # 3. It is an agent app: no Dock icon.
@@ -106,6 +108,8 @@ else
   fail "Editor helper is not an agent"
 fi
 expect_equal "engine version round-trips through the C ABI in the Editor helper" "$EXPECTED_VERSION" "$(send "$EDITOR_SOCK" engine-version)"
+expect_equal "an engine panic comes back as a status code in the Editor helper" "panic" "$(send "$EDITOR_SOCK" engine-probe-panic)"
+expect_equal "the Editor helper survives an engine panic" "$EXPECTED_VERSION" "$(send "$EDITOR_SOCK" engine-version)"
 expect_equal "Editor helper replies ok to quit" "ok" "$(send "$EDITOR_SOCK" quit)"
 if wait_until 5 gone "$HELPER_PID"; then pass "Editor helper quits when told to"; else fail "Editor helper is still running after quit"; fi
 

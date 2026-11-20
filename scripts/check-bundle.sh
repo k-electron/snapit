@@ -40,6 +40,8 @@ check "helper has the same icon name" equal "$(plist "$HELPER" CFBundleIconFile)
 check "helper icon file is identical" cmp -s "$APP/Contents/Resources/AppIcon.icns" "$HELPER/Contents/Resources/AppIcon.icns"
 check "helper has the same version" equal "$(plist "$HELPER" CFBundleShortVersionString)" "$(plist "$APP" CFBundleShortVersionString)"
 check "helper bundle id extends the app's" equal "$(plist "$HELPER" CFBundleIdentifier)" "$(plist "$APP" CFBundleIdentifier).editor"
+check "app package type is APPL" equal "$(plist "$APP" CFBundlePackageType)" "APPL"
+check "helper package type is APPL" equal "$(plist "$HELPER" CFBundlePackageType)" "APPL"
 check "deployment target is macOS 26.0" equal "$(plist "$APP" LSMinimumSystemVersion)" "26.0"
 check "app is arm64 only" equal "$(lipo -archs "$APP/Contents/MacOS/snapit")" "arm64"
 check "helper is arm64 only" equal "$(lipo -archs "$HELPER/Contents/MacOS/snapit Editor")" "arm64"
