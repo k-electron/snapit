@@ -70,3 +70,17 @@ Read where snapit runs from at any time with
 - Quit snapit and the Editor helper, eject the DMG (`diskutil eject /Volumes/<name>`), delete the DMG and any build you made.
 - Unregister every copy: `lsregister -u /Applications/snapit.app`, the build folder copies, and each `Contents/Helpers/snapit Editor.app`, with `lsregister` from `/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/`.
 - Remove `/Applications/snapit.app` if you installed it for the check.
+
+## Area overlay on real displays (#18)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/`. The scripted run drives the overlay over fixture displays; only a real screen shows ScreenCaptureKit's frames, Retina scaling and several displays.
+
+1. Press ⌃⌥⌘4 on a Retina display. The overlay appears at once (well under a blink), the frozen frame looks identical to the live screen (no color shift, no scale jump), the crosshair spans the display and the loupe follows the pointer.
+2. Hover over a few windows. The window under the pointer is highlighted, the front one when they overlap.
+3. Drag an Area and let go. The Editor opens on exactly that Area at native pixels. Paste it somewhere and zoom in: the edges are where the selection's edges were.
+4. Click a highlighted window without dragging: that window is captured. Press ⌃⌥⌘4 again and press Esc: the overlay goes and nothing opens.
+5. With two displays (ideally one Retina, one not), start a drag on one and move the pointer onto the other: the selection stops at the edge of the display it started on. Repeat starting on the other display.
+6. Memory, with `footprint <pid>` (or Activity Monitor): note snapit's resting footprint (about 15 MB). With the overlay up it should be at most the resting footprint plus width x height x 4 bytes for every display (a 3024 x 1964 display is 24 MB) plus about 10 MB, and it returns to the resting footprint a moment after the Capture or Esc. The scripted run proves this only for IOSurface-backed fixture frames, the best case; if the real ScreenCaptureKit images cost more (Core Animation copying them), this is where it shows. While here, record the layout of the real frame: set a breakpoint or an `NSLog` where `ScreenCaptureKitSource.capture(filter:)` gets `output.sdrImage` and note its `alphaInfo`, `bitsPerPixel` and `bitmapInfo`. `premultipliedFirst`, 32 bits, little-endian is the layout the engine crops in place; anything else is cropped through its fallback, which copies the whole display once.
+7. Start the overlay on a display showing a full-screen app in its own Space (the menu bar and the notch are covered): the overlay covers the whole display, menu bar and notch included, and Esc and a drag both work.
+8. With another app frontmost, press ⌃⌥⌘4 and then Esc: the overlay goes and that app is frontmost again, with the keyboard.
+9. Plug in or unplug a display (or change the arrangement) while the overlay is up: the overlay ends.
