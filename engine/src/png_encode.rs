@@ -1,5 +1,11 @@
 //! PNG encoding of BGRA pixels, with the physical size and color profile a Capture carries.
 //!
+//! The pixels are premultiplied BGRA. An image whose every pixel is opaque (every Capture of a
+//! screen) becomes an RGB PNG. An image with any transparent or translucent pixel (a Window
+//! Capture's rounded corners) becomes an RGBA PNG whose colours are un-premultiplied, as PNG
+//! stores them. The engine looks at the pixels to decide, so the decision survives the Capture
+//! file, the Export pipeline and a Save that is encoded in another process.
+//!
 //! Three entry points share one encoder: [`snapit_png_encode`] (the original, bytes out),
 //! [`snapit_png_encode_ex`] (bytes out, with the 1x downscale) and [`snapit_png_encode_to_fd`]
 //! (streamed into a file, for Save and drag-out). The downscale is made in the same pass as the
@@ -93,6 +99,61 @@ impl From<io::Error> for EncodeError {
     }
 }
 
+/// True when some pixel of `source` has an alpha below 255. Reads only the pixels of each row,
+/// never the padding, and stops at the first row that has one.
+fn has_transparency(source: &Source) -> bool {
+    (0..source.height).any(|y| {
+        let row = &source.pixels[y * source.stride..][..source.width * SNAPIT_BYTES_PER_PIXEL];
+        // AND of every pixel as one word: the alpha byte stays 0xFF only if every alpha is.
+        let (words, _) = row.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
+        words
+            .iter()
+            .fold(u32::MAX, |all, w| all & u32::from_le_bytes(*w))
+            >> 24
+            != 0xFF
+    })
+}
+
+/// A premultiplied channel as the PNG stores it: divided by alpha (rounded), clamped to 255.
+fn straight(channel: u8, alpha: u8) -> u8 {
+    match alpha {
+        255 => channel,
+        0 => 0,
+        _ => ((u32::from(channel) * 255 + u32::from(alpha) / 2) / u32::from(alpha)).min(255) as u8,
+    }
+}
+
+/// Premultiplied BGRA pixels as RGB (opaque pixels: alpha is 255 and nothing changes).
+fn bgra_to_rgb(bgra: &[u8], rgb: &mut [u8]) {
+    let (out, _) = rgb.as_chunks_mut::<3>();
+    let (pixels, _) = bgra.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
+    for (dst, src) in out.iter_mut().zip(pixels) {
+        *dst = [src[2], src[1], src[0]];
+    }
+}
+
+/// Premultiplied BGRA pixels as straight RGBA.
+fn bgra_to_rgba(bgra: &[u8], rgba: &mut [u8]) {
+    let (out, _) = rgba.as_chunks_mut::<4>();
+    let (pixels, _) = bgra.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
+    for (dst, src) in out.iter_mut().zip(pixels) {
+        let a = src[3];
+        *dst = [
+            straight(src[2], a),
+            straight(src[1], a),
+            straight(src[0], a),
+            a,
+        ];
+    }
+}
+
+impl Job<'_> {
+    /// Bytes per pixel of the PNG: 4 with alpha, 3 without.
+    fn channels(&self) -> usize {
+        if self.has_alpha { 4 } else { 3 }
+    }
+}
+
 impl EncodeError {
     fn status(&self) -> SnapitStatus {
         match self {
@@ -106,6 +167,8 @@ impl EncodeError {
 /// A validated call: the source pixels and how to encode them.
 struct Job<'a> {
     source: Source<'a>,
+    /// Some pixel of the source is not opaque: the PNG carries an alpha channel.
+    has_alpha: bool,
     level: u32,
     dpi: u32,
     out_width: usize,
@@ -123,7 +186,12 @@ fn encode_into<W: Write>(sink: W, job: &Job) -> Result<(), EncodeError> {
         ..
     } = *job;
     let mut info = Info::with_size(w as u32, h as u32);
-    info.color_type = ColorType::Rgb;
+    let channels = job.channels();
+    info.color_type = if job.has_alpha {
+        ColorType::Rgba
+    } else {
+        ColorType::Rgb
+    };
     info.bit_depth = BitDepth::Eight;
     let ppm = pixels_per_metre(job.dpi);
     info.pixel_dims = Some(PixelDimensions {
@@ -144,21 +212,24 @@ fn encode_into<W: Write>(sink: W, job: &Job) -> Result<(), EncodeError> {
     let mut writer = encoder.write_header()?;
     {
         let mut stream = writer.stream_writer()?;
-        let mut row = vec![0u8; w * 3];
+        let mut row = vec![0u8; w * channels];
+        let convert = if job.has_alpha {
+            bgra_to_rgba
+        } else {
+            bgra_to_rgb
+        };
         if (w, h) == (source.width, source.height) {
             for y in 0..h {
                 let pixels = &source.pixels[y * source.stride..][..w * SNAPIT_BYTES_PER_PIXEL];
-                let (out, _) = row.as_chunks_mut::<3>();
-                let (pixels, _) = pixels.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
-                for (dst, src) in out.iter_mut().zip(pixels) {
-                    *dst = [src[2], src[1], src[0]];
-                }
+                convert(pixels, &mut row);
                 stream.write_all(&row)?;
             }
         } else {
             let mut scaler = Downscaler::new(source, w, h);
+            let mut averaged = vec![0u8; w * SNAPIT_BYTES_PER_PIXEL];
             for y in 0..h {
-                scaler.row_rgb(y, &mut row);
+                scaler.row_bgra(y, &mut averaged);
+                convert(&averaged, &mut row);
                 stream.write_all(&row)?;
             }
         }
@@ -206,13 +277,15 @@ unsafe fn make_job<'a>(
         // SAFETY: the caller guarantees `icc` is readable for `icc_len` bytes.
         unsafe { slice::from_raw_parts(p.icc, p.icc_len) }
     };
+    let source = Source {
+        pixels,
+        width: width as usize,
+        height: height as usize,
+        stride,
+    };
     Ok(Job {
-        source: Source {
-            pixels,
-            width: width as usize,
-            height: height as usize,
-            stride,
-        },
+        has_alpha: has_transparency(&source),
+        source,
         level: p.level,
         dpi: p.dpi,
         out_width: p.out_width as usize,
@@ -231,11 +304,11 @@ struct MappedSink {
 
 impl MappedSink {
     fn new(job: &Job) -> Result<Self, EncodeError> {
-        // Raw RGB rows with a filter byte each, plus generous room for compression framing,
-        // chunk headers and the profile.
+        // Raw rows (RGB or RGBA) with a filter byte each, plus generous room for compression
+        // framing, chunk headers and the profile.
         let raw = job
             .out_height
-            .checked_mul(job.out_width * 3 + 1)
+            .checked_mul(job.out_width * job.channels() + 1)
             .ok_or(EncodeError::OutOfMemory)?;
         let bound = raw
             .checked_add(raw / 8 + job.icc.len() + 64 * 1024)
@@ -310,7 +383,8 @@ fn encode_to_bytes(job: &Job, out: *mut SnapitBytes) -> SnapitStatus {
     SNAPIT_STATUS_OK
 }
 
-/// Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
+/// Encodes premultiplied BGRA pixels as a PNG and stores the bytes in `out`: RGB when every pixel
+/// is opaque, RGBA (colours un-premultiplied) when any is not.
 ///
 /// * `stride` is the distance in bytes between rows and must be at least `width * 4`; bytes
 ///   between the end of a row and the start of the next are never read into the image.
