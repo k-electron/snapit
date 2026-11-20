@@ -23,6 +23,15 @@ enum CaptureHandoff {
         return number
     }
 
+    /// Writes the pixel rectangle `area` of a frozen display's `screen` (an Area Capture) as the
+    /// next Capture's file: the engine crops it straight into the file.
+    static func publish(_ screen: CapturedScreen, cropping area: PixelRect) async throws -> Int {
+        let number = nextNumber
+        nextNumber += 1
+        try await write(number: number, screen: screen, area: area)
+        return number
+    }
+
     /// Capture N is open in the Editor: it is now the Last Capture, and the one before goes.
     static func didOpen(number: Int) {
         if let previous = latestNumber, previous != number { CaptureFiles.remove(number: previous) }
@@ -49,5 +58,10 @@ enum CaptureHandoff {
     @concurrent
     private static func write(number: Int, screen: CapturedScreen) async throws {
         try CaptureFiles.write(number: number, image: screen.image, scale: screen.scale)
+    }
+
+    @concurrent
+    private static func write(number: Int, screen: CapturedScreen, area: PixelRect) async throws {
+        try CaptureFiles.write(number: number, image: screen.image, cropping: area, scale: screen.scale)
     }
 }
