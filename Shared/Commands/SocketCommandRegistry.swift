@@ -8,7 +8,10 @@ final class SocketCommandRegistry {
 
     private var handlers: [SocketCommand: Handler] = [:]
 
+    /// A command has one handler: a second registration would silently replace the first (the
+    /// way a feature's `quit` once replaced the built-in one), so it stops a debug build.
     func register(_ command: SocketCommand, handler: @escaping Handler) {
+        assert(handlers[command] == nil, "the command \(command.name) is registered twice")
         handlers[command] = handler
     }
 

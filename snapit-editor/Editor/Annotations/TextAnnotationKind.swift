@@ -30,6 +30,14 @@ nonisolated struct TextAnnotationKind: AnnotationKind {
         bounds(of: annotation).insetBy(dx: -Self.reach, dy: -Self.reach).contains(point)
     }
 
+    /// A Text with its string (two lines, a non-ASCII letter) and a text size that is not the default.
+    func sampleAnnotation(id: Int, origin: CGPoint, index: Int) -> Annotation {
+        let style = AnnotationStyle(
+            color: AnnotationColor(red: 0.2 + Double(index % 5) * 0.1, green: 0.4, blue: 0.7),
+            width: 5, filled: false, textSize: CGFloat(13 + index % 9))
+        return Annotation(id: id, kind: self.id, start: origin, end: origin, style: style, text: "Sample \(index)\nsecond line é")
+    }
+
     /// A text is resized with its text size, never by a handle.
     func handles(of annotation: Annotation) -> [CGPoint] { [] }
     func moveHandle(_ index: Int, to point: CGPoint, in annotation: Annotation) -> Annotation { annotation }

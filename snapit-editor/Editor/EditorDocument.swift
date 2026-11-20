@@ -16,12 +16,21 @@ final class EditorDocument {
     @ObservationIgnored private(set) var history: AnnotationHistory
     /// Runs after every change to `history`, so the canvas can show it.
     @ObservationIgnored var onChange: (() -> Void)?
+    /// Runs after every change to `history` and to the exported flag: what the Last Capture's
+    /// state file keeps (`LastCapturePersistence`).
+    @ObservationIgnored var onPersistableChange: (() -> Void)?
     private(set) var exportedRevision = 0
 
-    init(captureNumber: Int, capture: OpenedCapture, history: AnnotationHistory = AnnotationHistory()) {
+    /// `exported` says the Capture had no unexported changes when `history` was stored: a Reopen
+    /// brings the document back exported (or not) as it was.
+    init(
+        captureNumber: Int, capture: OpenedCapture, history: AnnotationHistory = AnnotationHistory(),
+        exported: Bool = false
+    ) {
         self.captureNumber = captureNumber
         self.capture = capture
         self.history = history
+        exportedRevision = exported ? history.revision : 0
     }
 
     /// Bumped by every change the user makes (and every Undo and Redo); Export copies it into
@@ -35,6 +44,7 @@ final class EditorDocument {
     func edit(_ body: (inout AnnotationHistory) -> Void) {
         body(&history)
         onChange?()
+        onPersistableChange?()
     }
 
     /// The Capture's size in points.
@@ -43,7 +53,10 @@ final class EditorDocument {
     /// True when the user changed the document since its last Export.
     var hasUnexportedChanges: Bool { revision != exportedRevision }
 
-    func markExported() { exportedRevision = revision }
+    func markExported() {
+        exportedRevision = revision
+        onPersistableChange?()
+    }
 
     func makeExportJob(level: PNGLevel) -> ExportJob {
         let info = capture.info
