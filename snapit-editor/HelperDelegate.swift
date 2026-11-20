@@ -37,6 +37,7 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             commandServer = server
+            if CommandLine.arguments.contains(AppIdentity.warmArgument) { EditorSessions.shared.warmUp() }
         } catch {
             NSLog("snapit Editor: command socket failed to start: \(error)")
             NSApplication.shared.terminate(nil)

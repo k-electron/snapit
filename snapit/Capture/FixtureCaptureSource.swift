@@ -32,7 +32,12 @@ final class FixtureCaptureSource: CaptureSource {
     /// 1x, an odd width so every row of engine memory carries padding.
     var display = Display(scale: 1, pointWidth: 301, pointHeight: 187)
 
+    /// How long a Capture takes, standing in for the time a user spends choosing an Area
+    /// (`fixture-delay`).
+    var delay = Duration.zero
+
     func captureDisplayUnderPointer() async throws -> CapturedScreen {
+        if delay > .zero { try await Task.sleep(for: delay) }
         let display = display
         return CapturedScreen(image: try Self.makeImage(display), scale: Double(display.scale))
     }
