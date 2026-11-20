@@ -6,6 +6,7 @@ extension EditorSession {
     /// Editor after Copy" is on.
     func startCopy() {
         guard !isExporting, document != nil else { return }
+        commitTextEditing()
         isExporting = true
         copyTask = Task { await copy() }
     }

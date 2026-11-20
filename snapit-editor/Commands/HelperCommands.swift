@@ -8,6 +8,8 @@ extension SocketCommandRegistry {
         registerWarmUpCommands()
         registerEditorTestCommands()
         registerEditorToolTestCommands()
+        registerEditorTextTestCommands()
+        registerEditorColorTestCommands()
         registerInstallHelperCommands()
     }
 }

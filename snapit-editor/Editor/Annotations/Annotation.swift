@@ -65,20 +65,24 @@ nonisolated struct AnnotationStyle: Codable, Equatable, Sendable {
     var width: CGFloat = 5
     /// Rectangle and Oval: a solid fill in the Annotation color instead of an outline.
     var filled = false
+    /// Text: the font size in points.
+    var textSize: CGFloat = 20
 
-    init(color: AnnotationColor = .red, width: CGFloat = 5, filled: Bool = false) {
+    init(color: AnnotationColor = .red, width: CGFloat = 5, filled: Bool = false, textSize: CGFloat = 20) {
         self.color = color
         self.width = width
         self.filled = filled
+        self.textSize = textSize
     }
 
-    private enum CodingKeys: String, CodingKey { case color, width, filled }
+    private enum CodingKeys: String, CodingKey { case color, width, filled, textSize }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         color = try container.decodeIfPresent(AnnotationColor.self, forKey: .color) ?? .red
         width = try container.decodeIfPresent(CGFloat.self, forKey: .width) ?? 5
         filled = try container.decodeIfPresent(Bool.self, forKey: .filled) ?? false
+        textSize = try container.decodeIfPresent(CGFloat.self, forKey: .textSize) ?? 20
     }
 }
 
@@ -86,23 +90,27 @@ nonisolated struct AnnotationStyle: Codable, Equatable, Sendable {
 ///
 /// `start` and `end` are in image points, origin at the top left, the Capture's own coordinates
 /// whatever the zoom: an Arrow runs from its tail to its tip, a Rectangle and an Oval from one
-/// corner of their box to the opposite one.
+/// corner of their box to the opposite one, a Text starts at the top left of its first line
+/// (`end` equals `start`).
 nonisolated struct Annotation: Codable, Equatable, Identifiable, Sendable {
     var id: Int
     var kind: AnnotationKindID
     var start: CGPoint
     var end: CGPoint
     var style: AnnotationStyle
+    /// Text: what it says, lines separated by "\n". Empty for every other kind.
+    var text: String = ""
 
-    init(id: Int, kind: AnnotationKindID, start: CGPoint, end: CGPoint, style: AnnotationStyle) {
+    init(id: Int, kind: AnnotationKindID, start: CGPoint, end: CGPoint, style: AnnotationStyle, text: String = "") {
         self.id = id
         self.kind = kind
         self.start = start
         self.end = end
         self.style = style
+        self.text = text
     }
 
-    private enum CodingKeys: String, CodingKey { case id, kind, start, end, style }
+    private enum CodingKeys: String, CodingKey { case id, kind, start, end, style, text }
 
     /// A field added later is decoded with `decodeIfPresent` and a default, like `style`.
     init(from decoder: Decoder) throws {
@@ -112,6 +120,7 @@ nonisolated struct Annotation: Codable, Equatable, Identifiable, Sendable {
         start = try container.decode(CGPoint.self, forKey: .start)
         end = try container.decode(CGPoint.self, forKey: .end)
         style = try container.decodeIfPresent(AnnotationStyle.self, forKey: .style) ?? AnnotationStyle()
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
     }
 
     /// The box `start` and `end` span.

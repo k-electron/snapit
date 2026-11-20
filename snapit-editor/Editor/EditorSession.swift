@@ -20,6 +20,10 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The style a new Annotation starts with: the color, width and fill used last, which
     /// `AnnotationSettings` remembers across launches.
     var annotationStyle = AnnotationSettings.style
+    /// The thickness a new Highlighter gets (it is remembered apart from the line width).
+    var highlighterWidth = AnnotationSettings.highlighterWidth
+    /// True while the eyedropper waits for a click inside the Capture (see `EditorSession+Color`).
+    var isPickingColor = false
     /// What the toolbar shows about the Annotations. Changes when a gesture starts or ends, a
     /// selection changes or Undo history changes, never while the pointer moves, so the toolbar
     /// pills are not rebuilt on every mouse move.
@@ -49,10 +53,16 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var window: EditorWindow? { chrome?.window }
     var canvas: CanvasView? { chrome?.canvas }
 
-    var currentTool: any EditorTool { ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial }
+    /// The tool the pointer drives: the eyedropper while it is picking, else the selected tool.
+    var currentTool: any EditorTool {
+        isPickingColor ? EyedropperTool() : (ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial)
+    }
 
     func selectTool(id: String) {
         guard ToolRegistry.tool(id: id) != nil else { return }
+        commitTextEditing()
+        cancelPickingColor()
+        endColorGesture()
         abortAnnotationGesture()
         selectedToolID = id
         // A drawing tool starts from nothing selected: its options (the fill) are then the
@@ -69,6 +79,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
         self.document = document
         // A warmed-up Editor was built before the last style was chosen.
         annotationStyle = AnnotationSettings.style
+        highlighterWidth = AnnotationSettings.highlighterWidth
         chrome?.attach(document)
         document.onChange = { [weak self] in self?.annotationsDidChange() }
         annotationsDidChange()
@@ -95,6 +106,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     func discard() {
         guard !isClosing else { return }
         isClosing = true
+        ColorPanelController.shared.sessionClosed(self)
         chrome?.tearDown()
         chrome = nil
     }
@@ -102,6 +114,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// Esc: closes the Editor without exporting. A tool with something pending (text being
     /// typed, a crop) finishes that first, before this closes.
     func escape() {
+        if commitTextEditing() || cancelPickingColor() { return }
         close()
     }
 
@@ -119,6 +132,8 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        commitTextEditing(refocus: false)
+        ColorPanelController.shared.sessionClosed(self)
         isClosing = true
         onClosed?(self)
         // A button's own action may be what closed the window: free everything one run-loop
