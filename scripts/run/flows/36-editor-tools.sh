@@ -272,13 +272,10 @@ if capture_into_editor "menu-click capture.screen"; then
     if [[ -f "$CAPTURE_FILE" ]]; then pass "the first click on Delete Capture in a background Editor leaves the Capture in place"; else fail "Delete Capture deleted the Capture on a background Editor's first click"; fi
     expect_equal "and leaves both Editors open" "$(printf '%s\n%s' "$FIRST_N" "$SECOND_N")" "$(open_editors)"
     expect_contains "the click was on a background Editor" "key-before=no" "$FIRST_CLICK"
-    # What the window server does with that click is bring the window forward (a synthetic event
-    # cannot): the Editor is in front for the next click, which deletes at once, with no question.
-    background_editor "$FIRST_N"
-    click_on "$SECOND_N" item delete-capture >/dev/null
-    if wait_until 5 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$FIRST_N' ]]"; then pass "the next click on Delete Capture deletes: the Editor closes at once"; else fail "a second click on Delete Capture did not close the Editor"; fi
-    if [[ ! -e "$CAPTURE_FILE" ]]; then pass "and its Capture is removed"; else fail "the Capture is still there after Delete Capture"; fi
-    expect_equal "and no question was asked" "none" "$(send "$EDITOR_SOCK" editor-prompt)"
+    expect_equal "and it asked no question either" "none" "$(send "$EDITOR_SOCK" editor-prompt)"
+    # Delete Capture on this Editor (the Last Capture's) and on the other is covered by `55-`: it
+    # deletes at once, with no question, however many edits are unexported.
+    send "$EDITOR_SOCK" "editor-key $SECOND_N escape" >/dev/null
     send "$EDITOR_SOCK" "editor-key $FIRST_N escape" >/dev/null
     wait_until 10 gone "$HELPER_PID"
   fi
