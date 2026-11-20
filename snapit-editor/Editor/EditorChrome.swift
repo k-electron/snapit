@@ -127,13 +127,23 @@ final class EditorChrome {
             NSSize(
                 width: max(minimumContent.width, min(capture.width + extra.width, maxWidth)),
                 height: max(minimumContent.height, min(capture.height + extra.height, maxHeight))))
-        let others = NSApp.windows.filter { $0 is EditorWindow && $0.isVisible }.count
-        let step = CGFloat(others % 12) * 28
-        var origin = NSPoint(
-            x: visible.midX - window.frame.width / 2 + step, y: visible.midY - window.frame.height / 2 - step)
-        origin.x = max(visible.minX, min(visible.maxX - window.frame.width, origin.x))
-        origin.y = max(visible.minY, min(visible.maxY - window.frame.height, origin.y))
-        window.setFrameOrigin(origin)
+        // Cascaded: the first diagonal step (28 points down and to the right of the centre) that no
+        // other Editor's window already sits on, so closing one in the middle never makes the next
+        // one stack on top of another.
+        let taken = NSApp.windows.filter { $0 is EditorWindow && $0 !== window && $0.isVisible }.map(\.frame.origin)
+        func origin(step: Int) -> NSPoint {
+            let offset = CGFloat(step) * 28
+            let point = NSPoint(
+                x: visible.midX - window.frame.width / 2 + offset, y: visible.midY - window.frame.height / 2 - offset)
+            return NSPoint(
+                x: max(visible.minX, min(visible.maxX - window.frame.width, point.x)),
+                y: max(visible.minY, min(visible.maxY - window.frame.height, point.y)))
+        }
+        let free = (0..<24).first { step in
+            let candidate = origin(step: step)
+            return !taken.contains { abs($0.x - candidate.x) < 1 && abs($0.y - candidate.y) < 1 }
+        }
+        window.setFrameOrigin(origin(step: free ?? 0))
     }
 
     /// Positions the toolbars and the canvas for the current content size.

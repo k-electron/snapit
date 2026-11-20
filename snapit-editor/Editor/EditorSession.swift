@@ -44,7 +44,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     @ObservationIgnored var lastCapture: LastCapturePersistence?
     @ObservationIgnored private(set) var chrome: EditorChrome?
     @ObservationIgnored var onClosed: ((EditorSession) -> Void)?
-    @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private(set) var isClosing = false
 
     override init() {
         super.init()
@@ -90,11 +90,13 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     /// Brings an open Editor in front of every other window and makes it key.
     func bringForward() {
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
         HelperLifecycle.activate()
     }
 
-    /// Closes the Editor. Nothing is asked and nothing is exported.
+    /// Closes the Editor. Nothing is asked and nothing is exported. What the user asks for (the
+    /// close button, ⌘W, Esc) is `requestClose()`; Delete Capture, Copy and Save close this way.
     func close() {
         guard !isClosing else { return }
         window?.close()
@@ -108,11 +110,11 @@ final class EditorSession: NSObject, NSWindowDelegate {
         chrome = nil
     }
 
-    /// Esc: closes the Editor without exporting. A tool with something pending (text being
-    /// typed, a crop) finishes that first, before this closes.
+    /// Esc: closes the Editor without exporting, asking first when `closeWouldLoseWork`. A tool
+    /// with something pending (text being typed, a crop) finishes that first, before this closes.
     func escape() {
         if cancelCropIfCropping() { return }
-        close()
+        requestClose()
     }
 
     /// Delete Capture: closes the Editor at once and has the menu bar app remove the Capture file.
@@ -135,8 +137,15 @@ final class EditorSession: NSObject, NSWindowDelegate {
         }
     }
 
+    /// The close button: asks first when the Editor holds unexported edits.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        requestClose()
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        EditorPrompts.shared.dismiss(for: self)
         isClosing = true
         if let number = document?.captureNumber { SaveFailureSignal.forget(captureNumber: number) }
         saveLastCaptureOnClose()

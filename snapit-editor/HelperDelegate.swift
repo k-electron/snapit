@@ -3,6 +3,8 @@ import AppKit
 /// Process-level lifecycle of the Editor helper.
 final class HelperDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
+    /// The user was asked about a quit and chose to discard.
+    private var confirmedTermination = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         HelperMainMenu.install(quitTarget: self, quitAction: #selector(quitSnapit(_:)))
@@ -11,9 +13,11 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     /// "Quit snapit" in the helper's menu quits snapit, not just the helper: to the user there
     /// is one app. The menu bar app quits the helper with it.
     @objc func quitSnapit(_ sender: Any?) {
-        // The same preparation the `quit` command makes (the Last Capture stops writing its state)
-        // goes first; the menu bar app then removes the files and quits the helper.
+        // An Editor with unexported edits is asked about first (the user may keep snapit open). The
+        // same preparation the `quit` command makes (the Last Capture stops writing its state) goes
+        // next; the menu bar app then removes the files and quits the helper.
         Task {
+            guard await QuitPreparation.confirm() else { return }
             await QuitPreparation.run()
             CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
             NSApplication.shared.terminate(nil)
@@ -50,6 +54,18 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A quit that nobody has been asked about (the Dock's Quit) with Editors holding unexported
+        // edits asks first, and goes on only when the user discards them. The helper's own quits
+        // (the last window closed, a warm-up cancelled, the `quit` command) have asked already or
+        // have nothing to ask about.
+        if !QuitPreparation.hasRun, !confirmedTermination, !EditorSessions.shared.editorsAtRisk().isEmpty {
+            Task {
+                guard await QuitPreparation.confirm() else { return }
+                confirmedTermination = true
+                NSApplication.shared.terminate(nil)
+            }
+            return .terminateCancel
+        }
         // Stop answering first: a menu bar app that sends a Capture from here on starts a
         // new helper instead of handing it to this dying one.
         stopServing()
