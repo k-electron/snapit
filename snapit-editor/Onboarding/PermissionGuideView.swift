@@ -40,10 +40,8 @@ struct PermissionGuideView: View {
                         Task { _ = await model.press(button.id) }
                     } label: {
                         Text(button.title)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
                     }
-                    .buttonStyle(ChromeButtonStyle(look: button.id == model.openSystemSettingsButton.id ? .prominent : .plain, radius: 12))
+                    .windowButton(prominent: button.id == model.openSystemSettingsButton.id)
                     .help(button.tooltip)
                 }
             }

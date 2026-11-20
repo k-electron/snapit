@@ -10,7 +10,7 @@
 #   SNAPIT_BUILD_NUMBER  CFBundleVersion (default 1; the workflow passes the run number)
 #   SNAPIT_DIST_DIR      where the files land (default build/release)
 # Writes to SNAPIT_DIST_DIR: snapit-VERSION.dmg, snapit-VERSION.dmg.sha256, release-notes.md.
-# Needs: Xcode 26 or later, rustup, cbindgen 0.29.4 on PATH (as for scripts/test.sh), python3 3.11+.
+# Needs: Xcode 27, rustup, cbindgen 0.29.4 on PATH (as for scripts/test.sh), python3 3.11+.
 set -euo pipefail
 
 TAG="${1:?usage: package-release.sh VERSION (for example v1.2.3 or v1.2.3-beta.1)}"
