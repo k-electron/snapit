@@ -7,7 +7,6 @@ struct HelperButton {
     let id: String
     let title: String
     let tooltip: String
-    var isEnabled = true
 }
 
 /// The Screen Recording Permission guide: what it says, which drawing it plays and what its buttons

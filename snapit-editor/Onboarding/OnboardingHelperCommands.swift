@@ -56,6 +56,7 @@ extension SocketCommandRegistry {
             CATransaction.flush()
             return "ok"
         }
+        register(.helperOwner) { _ in WarmHelper.launchPID.map { String($0) } ?? "none" }
         register(.showPermissionGuide) { request in
             guard let kind = request.arguments.first.flatMap(PermissionGuideKind.init(rawValue:)) else {
                 return "error show-permission-guide screen-recording"
