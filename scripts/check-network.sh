@@ -16,8 +16,8 @@
 #      fails here until someone has read it and added it below.
 #
 # WebKit: a web view can load anything, so `import WebKit` fails unless the file is listed in
-# WEBKIT_ALLOWED. The User Guide (a bundled local page) is the one expected user: add its file
-# only once its navigation delegate refuses everything but file URLs of the bundle.
+# WEBKIT_ALLOWED. The list is empty: the User Guide is a bundled Markdown file drawn natively
+# (snapit-editor/UserGuide/), so no web view is needed.
 #
 #   scripts/check-network.sh
 set -euo pipefail

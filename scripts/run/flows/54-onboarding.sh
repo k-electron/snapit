@@ -186,8 +186,10 @@ expect_equal "going back from Done does not start Onboarding over" "finished" "$
 onb_press next >/dev/null
 wait_until 10 onb_is try-it "Try it: press ⌃⌥⌘4"
 expect_equal "Done says what to try" "Try it: press ⌃⌥⌘4" "$(onb try-it)"
-expect_equal "the User Guide link is absent until the User Guide window sets its hook" "unavailable" "$(onb user-guide)"
+expect_equal "the User Guide link shows without any fixture: the helper sets its hook when it launches" "available" "$(onb user-guide)"
 expect_equal "Done has a Done button and no Continue" "button done|Done|Close Onboarding" "$(onb_button done)"
+send "$EDITOR_SOCK" "onboarding-user-guide-fixture off" >/dev/null
+expect_equal "the User Guide link is absent while no hook is set" "unavailable" "$(onb user-guide)"
 send "$EDITOR_SOCK" "onboarding-user-guide-fixture on" >/dev/null
 expect_equal "the User Guide link shows once the hook is set" "button user-guide|Open the User Guide|Open the User Guide" "$(onb_button user-guide)"
 rm -f "$RUN_ROOT/user-guide-opened"
