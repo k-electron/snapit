@@ -27,6 +27,7 @@ final class AnnotationLayers {
     private var annotations: [Annotation] = []
     private var selected: Annotation?
     private var zoom: CGFloat = 1
+    private var cropPixels: PixelRect?
 
     private static let accent = CGColor(srgbRed: 0.04, green: 0.52, blue: 1, alpha: 1)
 
@@ -50,8 +51,9 @@ final class AnnotationLayers {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        let zoomChanged = context.zoom != zoom
+        let zoomChanged = context.zoom != zoom || context.cropPixels != cropPixels
         zoom = context.zoom
+        cropPixels = context.cropPixels
         self.annotations = annotations
         self.selected = selected
 
@@ -93,7 +95,7 @@ final class AnnotationLayers {
     /// The canvas's zoom or Capture changed (the window was resized): the layers that depend on
     /// it are updated and the selection is drawn again.
     func contextChanged(_ context: AnnotationRenderContext) {
-        guard context.zoom != zoom else { return }
+        guard context.zoom != zoom || context.cropPixels != cropPixels else { return }
         show(annotations, selected: selected, context: context)
     }
 
