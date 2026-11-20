@@ -21,6 +21,9 @@ final class AreaOverlayPanel: NSPanel {
         animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         setFrame(frame, display: false)
+        // A scripted run sends its events straight to the panel; the user's own mouse passes
+        // through it, and it never takes the keyboard.
+        ignoresMouseEvents = TestMode.isActive
     }
 }
 
@@ -64,7 +67,7 @@ final class AreaOverlayView: NSView {
     override func cursorUpdate(with event: NSEvent) { controller?.updateCursor() }
     override func mouseEntered(with event: NSEvent) {
         guard controller?.acceptsPointer(on: index) ?? false else { return }
-        window?.makeKey()
+        if !TestMode.isActive { window?.makeKey() }
         controller?.mouseMoved(index, point(event))
     }
     override func mouseMoved(with event: NSEvent) {

@@ -141,6 +141,8 @@ if [[ -n "${EDITOR_N:-}" ]]; then
   area_png_check "Area at 2x" 2 201 120 602 374 41 61 "Display P3" "$P3_SHA_AREA" 5669
 fi
 
+# (The fixture's windows also include one crossing the first display's left edge and one crossing its
+# top edge, for the displays at negative coordinates in 6b.)
 # 4. A click on a highlighted window captures that window; below 3 pt a press is still a click.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
@@ -206,6 +208,55 @@ if [[ -n "${EDITOR_N:-}" ]]; then
 fi
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 
+# 6b. Displays at negative coordinates: a second display to the left of, and one above, the first.
+#     The fixture's window list is in the primary display's top-left space; a window that crosses
+#     the primary's edge shows up on the second display only if the AppKit-to-window-list
+#     conversion of its origin is right.
+send "$APP_SOCK" "fixture-extra-display 1 200 150 left" >/dev/null
+area_start "press-shortcut capture-area" >/dev/null
+expect_equal "a display to the left: two panels" "2" "$(overlay_panels | grep -c .)"
+mouse move 1 150 50 >/dev/null
+expect_equal "left display: the window that crosses the edge is highlighted on it, cut at the edge" "140,30 60x60" "$(fact hover)"
+mouse move 0 5 50 >/dev/null
+expect_equal "left display: and on the first display" "0,30 20x60" "$(fact hover)"
+send "$APP_SOCK" "overlay-key escape" >/dev/null
+send_slow "$APP_SOCK" overlay-wait >/dev/null
+send "$APP_SOCK" "fixture-extra-display 1 200 150 above" >/dev/null
+area_start "press-shortcut capture-area" >/dev/null
+mouse move 1 130 120 >/dev/null
+expect_equal "a display above: the window that crosses the edge is highlighted on it, cut at the edge" "100,110 60x40" "$(fact hover)"
+mouse move 0 130 20 >/dev/null
+expect_equal "above: and on the first display" "100,0 60x40" "$(fact hover)"
+mouse down 1 20 30 >/dev/null
+mouse drag 1 90 100 >/dev/null
+mouse up 1 90 100 >/dev/null
+if area_result; then pass "an Area on the display above is captured"; else fail "the display above's Capture finished with '$AREA_REPLY'"; fi
+if [[ -n "${EDITOR_N:-}" ]]; then
+  area_png_check "Area on the display above (1x)" 1 70 70 200 150 20 30 "sRGB IEC61966-2.1" "$SRGB_SHA_AREA" 2835
+fi
+send "$APP_SOCK" "fixture-extra-display none" >/dev/null
+
+# 6c. A frozen frame that is not premultiplied BGRA (BGRX from a plain bitmap, the fourth byte 0):
+#     the engine's in-place crop does not take it, so the Capture goes through the fallback, and
+#     every pixel must still be the fixture's, opaque.
+send "$APP_SOCK" "fixture-pixel-layout skip-first" >/dev/null
+for scale in 1 2; do
+  send "$APP_SOCK" "fixture-display $scale 301 187" >/dev/null
+  area_start "press-shortcut capture-area" >/dev/null
+  area_drag 0 20.3 30.4 120.8 90.6
+  if area_result; then pass "skip-first frame at ${scale}x: Capture $EDITOR_N opens in the Editor"; else fail "skip-first frame at ${scale}x: the Capture finished with '$AREA_REPLY'"; fi
+  if [[ -n "${EDITOR_N:-}" ]]; then
+    if ((scale == 1)); then
+      # 20.3,30.4 to 120.8,90.6 points at 1x is pixels 20,30 to 121,91: 101 x 61.
+      area_png_check "skip-first frame at 1x" 1 101 61 301 187 20 30 "sRGB IEC61966-2.1" "$SRGB_SHA_AREA" 2835
+    else
+      area_png_check "skip-first frame at 2x" 2 201 120 602 374 41 61 "Display P3" "$P3_SHA_AREA" 5669
+    fi
+  fi
+done
+send "$APP_SOCK" "fixture-pixel-layout alpha-first" >/dev/null
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+
 # 7. Memory returns to baseline over repeated Captures, and nothing runs while the overlay is up
 #    or after it. A 2560 x 1600 pixel display (16 MB of pixels): a retained frozen frame or Capture
 #    would show.
@@ -243,6 +294,50 @@ else
   fail "the overlay's peak is ${OVERLAY_PEAK} MB over a ${AREA_BASELINE} MB base: more than one copy of a 16 MB frame"
 fi
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Editors closed"; else fail "an Editor helper is still running"; fi
+
+# 8. The budget: about 25 MB or less in the overlay, measured on a 1920 x 1080 display at 1x (an 8 MB
+#    frame, the condition the prototype was measured in). The app's resting footprint in test mode
+#    (AREA_AT_REST) is a little above the 15 MB of a real run, so the ceiling moves with it.
+send "$APP_SOCK" "fixture-display 1 1920 1080" >/dev/null
+area_start "press-shortcut capture-area" >/dev/null
+mouse move 0 900 500 >/dev/null
+OVERLAY_1080="$(footprint_mb "$APP_PID")"
+OVERLAY_LIMIT="$(awk -v rest="$AREA_AT_REST" 'BEGIN { extra = rest - 15; if (extra < 0) extra = 0; print 25 + extra }')"
+echo "     1920 x 1080 overlay: ${OVERLAY_1080} MB (limit ${OVERLAY_LIMIT} MB, ${AREA_AT_REST} MB at rest)"
+if awk -v now="$OVERLAY_1080" -v max="$OVERLAY_LIMIT" 'BEGIN { exit !(now > 0 && now <= max) }'; then
+  pass "the overlay on a 1920 x 1080 display stays within the budget (${OVERLAY_1080} MB, limit ${OVERLAY_LIMIT} MB)"
+else
+  fail "the overlay on a 1920 x 1080 display is ${OVERLAY_1080} MB (limit ${OVERLAY_LIMIT} MB)"
+fi
+
+# 9. Moving the pointer redraws nothing: 200 synthetic moves leave memory flat, cost bounded CPU, and
+#    reach the layers (the scene updated), while no view draws.
+UPDATES_BEFORE="$(fact scene-updates)"
+CPU_BEFORE="$(cpu_seconds "$APP_PID")"
+for i in $(seq 1 200); do mouse move 0 $((100 + i * 7 % 1700)) $((100 + i * 13 % 800)) >/dev/null; done
+CPU_AFTER="$(cpu_seconds "$APP_PID")"
+OVERLAY_AFTER_MOVES="$(footprint_mb "$APP_PID")"
+UPDATES_AFTER="$(fact scene-updates)"
+if awk -v a="$UPDATES_AFTER" -v b="$UPDATES_BEFORE" 'BEGIN { exit !(a - b >= 100) }'; then
+  pass "the moves reached the overlay's layers (${UPDATES_BEFORE} to ${UPDATES_AFTER} scene updates)"
+else
+  fail "the moves did not update the scene (${UPDATES_BEFORE} to ${UPDATES_AFTER})"
+fi
+expect_contains "no view draws after the moves" "view=layer-hosted" "$(send "$APP_SOCK" overlay-facts)"
+if awk -v a="$OVERLAY_AFTER_MOVES" -v b="$OVERLAY_1080" 'BEGIN { exit !(a - b <= 2) }'; then
+  pass "memory stays flat over 200 pointer moves (${OVERLAY_1080} MB before, ${OVERLAY_AFTER_MOVES} MB after)"
+else
+  fail "memory grew from ${OVERLAY_1080} MB to ${OVERLAY_AFTER_MOVES} MB over 200 pointer moves"
+fi
+echo "     200 moves used $(awk -v a="$CPU_BEFORE" -v b="$CPU_AFTER" 'BEGIN { printf "%.2f", b - a }') s of CPU (the socket commands included)"
+if awk -v a="$CPU_BEFORE" -v b="$CPU_AFTER" 'BEGIN { exit !(b - a <= 2.0) }'; then
+  pass "200 pointer moves cost bounded CPU"
+else
+  fail "200 pointer moves used too much CPU ($CPU_BEFORE s to $CPU_AFTER s)"
+fi
+send "$APP_SOCK" "overlay-key escape" >/dev/null
+send_slow "$APP_SOCK" overlay-wait >/dev/null
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 
 area_start "press-shortcut capture-area" >/dev/null
 assert_idle_cpu "menu bar app with the overlay showing" "$APP_PID" 4

@@ -15,6 +15,8 @@ final class OverlayLoupe {
     private let zone = CALayer()
     private let points: OverlayLabel
     private let pixels: OverlayLabel
+    /// The image layer's contents are set once, on the first move, and kept until `releaseFrame`.
+    private var hasFrame = false
 
     init(scale: CGFloat) {
         points = OverlayLabel(scale: scale)
@@ -92,7 +94,10 @@ final class OverlayLoupe {
             image.frame = CGRect(
                 x: (visible.minX - wanted.minX) * Self.zoom, y: zoneHeight - top - visible.height * Self.zoom,
                 width: visible.width * Self.zoom, height: visible.height * Self.zoom)
-            image.contents = cgImage
+            if !hasFrame {
+                image.contents = cgImage
+                hasFrame = true
+            }
             // `contentsRect` measures y from the bottom of the image.
             image.contentsRect = CGRect(
                 x: visible.minX / widthPx, y: 1 - visible.maxY / heightPx, width: visible.width / widthPx,
@@ -110,5 +115,8 @@ final class OverlayLoupe {
     func hide() { layer.isHidden = true }
 
     /// Lets go of the frozen frame the image layer samples.
-    func releaseFrame() { image.contents = nil }
+    func releaseFrame() {
+        image.contents = nil
+        hasFrame = false
+    }
 }

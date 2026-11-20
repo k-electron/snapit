@@ -21,7 +21,7 @@ the real system is replaced:
 |---|---|---|---|
 | cache folder and sockets | `~/Library/Caches/dev.snapit.snapit` | the root | `Shared/AppIdentity.swift` |
 | Capture source | ScreenCaptureKit | fixture images, 1x sRGB or 2x Display P3 | `snapit/Capture/` |
-| Area Capture source (frozen displays, the pointer) | one ScreenCaptureKit screenshot per display | the fixture image for each fake display, the pointer in the middle of the first | `snapit/Area/AreaCaptureSource.swift` |
+| Area Capture source (frozen displays, the pointer) | one ScreenCaptureKit capture per display | the fixture image for each fake display, the pointer in the middle of the first | `snapit/Area/AreaCaptureSource.swift` |
 | window list (hover highlight) | the window server's on-screen list | two fixed overlapping windows over the first fake display | `snapit/Area/OnScreenWindowSource.swift` |
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
@@ -57,7 +57,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
-| `fixture-extra-display <scale> <w> <h>` or `none` | adds a second fake display to the right of the first, with its own scale and size (the Area overlay gets one panel per display) |
+| `fixture-extra-display <scale> <w> <h> [right\|left\|above]` or `none` | adds a second fake display next to the first, with its own scale and size; left and above put it at negative coordinates (the Area overlay gets one panel per display) |
+| `fixture-pixel-layout alpha-first\|skip-first` | the layout of the first fake display's frozen image: premultiplied BGRA (the engine's in-place crop) or BGRX from a plain bitmap (the crop's fallback) |
 | `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished. The Area Shortcut's action finishes when the overlay is showing; the rest is the scripted run's mouse |
 | `bound-shortcuts` | the ids of the Shortcuts that are bound |
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
@@ -150,15 +151,17 @@ is the model to copy. Edges both processes need live in `Shared/Edges/`; their c
 
 ## The Area overlay
 
-The overlay is the menu bar app's (`snapit/Area/`). Every display is frozen with one screenshot,
+The overlay is the menu bar app's (`snapit/Area/`). Every display is frozen with one capture,
 the overlay shows it in persistent Core Animation layers (`AreaOverlayScene`) updated in a
 transaction with actions disabled, and letting go of the mouse crops the frozen frame in the
 engine (`snapit_crop`) straight into the Capture file. Test mode shows the same panels over the
 fixture displays, a little in from the main screen's bottom-left corner and only as big as the
 fake display, so a run never covers the user's screen. A scripted run never activates snapit or
-takes the keyboard. `FixtureWindowSource` has two overlapping windows over the first fake display
-(front 60,40 100x60; back 20,20 200x130 points) to aim a hover at. The fixture frames are
-IOSurface-backed like a ScreenCaptureKit screenshot, so Core Animation shows them without copying
+takes the keyboard, and its panels ignore the real mouse. `FixtureWindowSource` has two
+overlapping windows over the first fake display (front 60,40 100x60; back 20,20 200x130 points)
+to aim a hover at, and two that cross its left and top edges (for a second display at negative
+coordinates). The fixture frames are
+IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
 
 ## Adding to the Editor

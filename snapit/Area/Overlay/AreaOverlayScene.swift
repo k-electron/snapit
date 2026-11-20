@@ -58,7 +58,7 @@ final class AreaOverlayScene {
         let bounds = CGRect(origin: .zero, size: size)
 
         imageLayer.frame = bounds
-        // The layer shows the screenshot as it is; the loupe samples the same image.
+        // The layer shows the captured frame as it is; the loupe samples the same image.
         frameImage = display.image
         imageLayer.contents = frameImage
         imageLayer.contentsGravity = .resize
@@ -111,7 +111,12 @@ final class AreaOverlayScene {
         defer { CATransaction.commit() }
         updateCount += 1
 
-        let selection = state.selection
+        // The selection is drawn where its device pixels are, which is what the Capture holds.
+        let pixels = state.selection.flatMap {
+            AreaGeometry.pixelRect(
+                of: $0, scale: display.scale, width: display.image.width, height: display.image.height)
+        }
+        let selection = pixels.map { AreaGeometry.points(of: $0, scale: display.scale) }
         let hover = selection == nil ? state.hoveredWindow : nil
         setDim(cutout: selection ?? hover)
         // A path is rebuilt only when its rectangle changes.
@@ -128,11 +133,9 @@ final class AreaOverlayScene {
         }
         ringedSelection = selection
 
-        if let selection {
-            let pixels = AreaGeometry.pixelRect(
-                of: selection, scale: display.scale, width: display.image.width, height: display.image.height)
+        if let selection, let pixels {
             sizeLabel.set(
-                "\(pixels?.width ?? 0) × \(pixels?.height ?? 0)", fontSize: 12, weight: .semibold, color: .white,
+                "\(pixels.width) × \(pixels.height)", fontSize: 12, weight: .semibold, color: .white,
                 padX: 8, padY: 4, background: NSColor(white: 0, alpha: 0.8))
             var origin = CGPoint(x: selection.maxX + 8, y: selection.maxY + 8)
             if origin.x + sizeLabel.size.width > size.width - 4 {

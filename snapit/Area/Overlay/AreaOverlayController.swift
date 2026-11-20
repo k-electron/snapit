@@ -25,6 +25,7 @@ final class AreaOverlayController {
     private(set) var panels: [AreaOverlayPanel] = []
     private(set) var views: [AreaOverlayView] = []
     private var monitor: Any?
+    private var screenObserver: NSObjectProtocol?
 
     /// Called once, on a later turn of the run loop (never from inside an event handler of one of
     /// the overlay's own windows, which the caller is about to close).
@@ -58,7 +59,7 @@ final class AreaOverlayController {
     /// Puts a panel on every display. `takesFocus` is false in a scripted run, which never
     /// activates snapit or takes the keyboard from what the user is doing.
     func show(takesFocus: Bool) {
-        activeIndex = displays.firstIndex { $0.frame.contains(pointer) } ?? 0
+        activeIndex = displays.firstIndex { NSMouseInRect(pointer, $0.frame, false) } ?? 0
         let active = displays[activeIndex]
         cursor = AreaGeometry.clamp(
             CGPoint(x: pointer.x - active.frame.minX, y: active.frame.maxY - pointer.y), to: active.bounds)
@@ -84,6 +85,13 @@ final class AreaOverlayController {
         } else {
             panels[activeIndex].orderFrontRegardless()
         }
+        // The frozen frames belong to the displays as they were: a display plugged in, unplugged
+        // or rearranged while the overlay is up ends it.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancel() }
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self, !self.isFinished else { return event }
             return self.handle(event) ? nil : event
@@ -96,6 +104,8 @@ final class AreaOverlayController {
     func teardown() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        screenObserver = nil
         for view in views { view.scene.releaseFrame() }
         for panel in panels {
             panel.contentView = nil
