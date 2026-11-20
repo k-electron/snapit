@@ -208,7 +208,7 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `46-` the Color picker, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `44-` the Color picker, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -319,11 +319,11 @@ uppercase hex through `AppPasteboard.current` and `ColorToast` shows "Copied #RR
 non-activating panel of its own (the overlay has closed): its fade and its removal are one-shot delays,
 and a new toast replaces the old one.
 
-`46-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
+`44-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
 frame's corners, on a second display at negative coordinates (left and above), with a BGRX frame,
 under either "After selecting an Area" setting, reads the outlined cell and the swatch back from
 `overlay-snapshot`, and holds memory, CPU, the toast's lifetime and the missing warm-up to the budget.
-`SNAPIT_FLOWS="10 20 40 42 46"` runs just those flows (each builds on the helpers of the ones before it).
+`SNAPIT_FLOWS="10 20 40 42 44"` runs just those flows (each builds on the helpers of the ones before it).
 
 ## Adding to the Area overlay
 
