@@ -38,6 +38,8 @@ INSPECT="$RUN_ROOT/png-inspect"
 source "$ROOT_DIR/scripts/run/lib.sh"
 # shellcheck source=run/editor.sh
 source "$ROOT_DIR/scripts/run/editor.sh"
+# shellcheck source=run/install.sh
+source "$ROOT_DIR/scripts/run/install.sh"
 
 cleanup() {
   # Quit whatever is still running from this bundle, then remove the run root.
@@ -46,6 +48,10 @@ cleanup() {
   done
   sleep 0.5
   pkill -f "$APP/Contents/" 2>/dev/null
+  # Copies a flow relaunched from the run's fixture Applications folder.
+  pkill -f "$(basename "$RUN_ROOT")/Applications/" 2>/dev/null
+  unregister_fixture_apps
+  chmod -R u+w "$RUN_ROOT" 2>/dev/null
   rm -rf "$RUN_ROOT"
 }
 trap cleanup EXIT

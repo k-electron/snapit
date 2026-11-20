@@ -55,8 +55,10 @@ nonisolated final class CommandSocketServer: @unchecked Sendable {
 
     /// Stops listening and removes the socket file before returning.
     func stop() {
-        source?.cancel()
-        source = nil
+        // Already stopped: the path may by now belong to a newer process.
+        guard let source else { return }
+        source.cancel()
+        self.source = nil
         unlink(path)
     }
 

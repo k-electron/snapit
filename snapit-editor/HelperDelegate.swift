@@ -37,6 +37,7 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             commandServer = server
+            if CommandLine.arguments.contains(AppIdentity.warmArgument) { WarmHelper.warmUp(menuBarPID: WarmHelper.launchPID) }
         } catch {
             NSLog("snapit Editor: command socket failed to start: \(error)")
             NSApplication.shared.terminate(nil)
@@ -46,9 +47,15 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Stop answering first: a menu bar app that sends a Capture from here on starts a
         // new helper instead of handing it to this dying one.
+        stopServing()
+        return .terminateNow
+    }
+
+    /// Stops answering commands and removes the socket. A connection already accepted still gets
+    /// its reply.
+    func stopServing() {
         commandServer?.stop()
         commandServer = nil
-        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
