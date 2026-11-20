@@ -12,11 +12,6 @@ extension SocketCommandRegistry {
         register(.engineVersion) { _ in
             (try? Engine.version()) ?? "error engine"
         }
-        register(.engineProbePanic) { _ in
-            Engine.probePanic().map { "\($0)" } ?? "unknown"
-        }
-        register(.echo) { request in
-            request.arguments.joined(separator: "\n")
-        }
+        registerTestModeCommands()
     }
 }

@@ -9,6 +9,7 @@ final class MenuModel {
     static let shared = MenuModel()
 
     var sections: [any MenuSection] = [
+        CaptureMenu(),
         EngineVersionMenu(),
         QuitMenu(),
     ]

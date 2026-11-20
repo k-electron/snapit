@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             commandServer = server
+            // Only the copy that owns the menu bar listens for Shortcuts.
+            ShortcutBindings.registerAll()
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.
             NSApplication.shared.terminate(nil)
@@ -22,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // A copy that never owned the menu bar must not free the owner's private pasteboard.
+        if commandServer != nil { AppPasteboard.releaseIfPrivate() }
         commandServer?.stop()
         // The Editor helper never outlives the menu bar app. The process is ending, so a
         // short blocking send is fine here.
