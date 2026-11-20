@@ -40,8 +40,13 @@ enum EditorHelperLauncher {
 
     /// Opens Capture N in the Editor: reuses the running helper, or starts one first. Returns
     /// once the Editor window is showing and the helper has been asked to come forward.
-    static func open(capture number: Int) async throws {
+    ///
+    /// `command` is `open-capture` for a Capture just taken (it uses the warm Editor and ends the
+    /// warm-up) or `reopen-capture` for the Last Capture (it restores the stored Annotations and
+    /// leaves a warm-up alone).
+    static func open(capture number: Int, command: SocketCommand = .openCapture) async throws {
         var failure: Error = EditorHelperError.didNotStart
+        let isNew = command == .openCapture
         // A helper being warmed up is the one to use: never start a second.
         await EditorWarmUp.settle()
         // Twice: a helper that was quitting when the first send arrived is replaced by a new one.
@@ -49,9 +54,9 @@ enum EditorHelperLauncher {
             do {
                 try await ensureRunning(activates: EditorActivation.current.activateAtLaunch)
                 let reply = try await CommandSocketClient.send(
-                    .openCapture, arguments: [String(number)], to: AppIdentity.editorSocketPath, timeoutSeconds: 10)
+                    command, arguments: [String(number)], to: AppIdentity.editorSocketPath, timeoutSeconds: 10)
                 guard reply == "ok" else { throw EditorHelperError.refused(reply) }
-                EditorWarmUp.didOpen()
+                if isNew { EditorWarmUp.didOpen() }
                 await bringForward()
                 return
             } catch let error as EditorHelperError {
