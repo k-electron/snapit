@@ -4,6 +4,9 @@ nonisolated extension SocketCommand {
     /// `login-item-simulate enabled|notRegistered|requiresApproval|notFound`: sets the fake
     /// login item's status, as the user doing it in System Settings would. Test mode only.
     static let loginItemSimulate = SocketCommand("login-item-simulate")
+    /// Runs what the launch does for Open at Login, with the install location the run pretends
+    /// (`install-pretend-bundle`): replies `applied` or `not-applied`. Test mode only.
+    static let loginItemDefault = SocketCommand("login-item-default")
 }
 
 extension SocketCommandRegistry {
@@ -37,6 +40,7 @@ extension SocketCommandRegistry {
             return "ok"
         }
         guard TestMode.isActive else { return }
+        register(.loginItemDefault) { _ in LoginItemDefault.applyIfEligible() ? "applied" : "not-applied" }
         register(.loginItemSimulate) { request in
             guard let status = request.arguments.first.flatMap(LoginItemStatus.init(rawValue:)) else {
                 return "error login-item-simulate enabled|notRegistered|requiresApproval|notFound"

@@ -129,6 +129,11 @@ struct SettingsView: View {
                         }
                     }
                 }
+                if model.recordingID == entry.shortcut.id, let hint = model.recordingHint {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 if let note = model.note(for: entry) {
                     Text(note)
                         .font(.caption)
@@ -157,11 +162,14 @@ struct SettingsView: View {
         return Button {
             if recording { model.cancelRecording() } else { model.beginRecording(entry) }
         } label: {
-            Text(recording ? "Type a Shortcut" : model.combo(for: entry)?.displayString ?? "Record Shortcut")
-                .frame(minWidth: 130)
-                .padding(.vertical, 2)
+            Text(
+                !model.shortcutsLoaded ? "…" : recording ? "Type a Shortcut" : model.combo(for: entry)?.displayString ?? "Record Shortcut"
+            )
+            .frame(minWidth: 130)
+            .padding(.vertical, 2)
         }
         .buttonStyle(.glass)
+        .disabled(!model.shortcutsLoaded)
         .tint(recording ? .accentColor : nil)
         .help(control.tooltip)
     }
@@ -180,10 +188,17 @@ struct SettingsView: View {
 
     private var about: some View {
         Section(SettingsSection.about.rawValue) {
-            LabeledContent(SettingsControl.version.title, value: model.versionText)
-                .help(SettingsControl.version.tooltip)
-            LabeledContent(SettingsControl.engineVersion.title, value: model.engineVersionText)
-                .help(SettingsControl.engineVersion.tooltip)
+            ForEach(AboutRows.all, id: \.control.id) { row in
+                switch row.content {
+                case .text(let text):
+                    LabeledContent(row.control.title, value: text())
+                        .help(row.control.tooltip)
+                case .button(let action):
+                    Button(row.control.title) { action(model) }
+                        .buttonStyle(.glass)
+                        .help(row.control.tooltip)
+                }
+            }
         }
     }
 

@@ -27,7 +27,7 @@ the real system is replaced:
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist`, read and written straight through under a file lock (`FileBackedDefaults`): both processes see each other's writes at once | `Shared/Edges/AppDefaults.swift` |
-| Open at Login | `SMAppService.mainApp` (menu bar app) | a status held in memory, starting `notFound` like a fresh install (the first launch from a normal place registers it: on by default); the real login items are never touched | `snapit/Settings/LoginItem.swift` |
+| Open at Login | `SMAppService.mainApp` (menu bar app) | a status kept in the run's defaults (so it survives a relaunch as the real one does), starting `notFound` like a fresh install; a copy that runs from an Applications folder registers it on launch (on by default); the real login items are never touched | `snapit/Settings/LoginItem.swift` |
 | macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5 | `Shared/Edges/SystemShortcutClashes.swift` |
 | System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
@@ -50,7 +50,8 @@ through `AppDefaults.store`, and sends a socket command; the menu bar app then a
 `Shortcuts.current.setCombo(_:for:)`. `ShortcutRegistrar` also has `combo(for:)` and
 `menuShortcut(for:)` (the menu item's glyph follows the current Shortcut). A Shortcut that is
 unassigned by default, like Pick Color, has `defaultKeyCode: nil`. Test mode never touches
-KeyboardShortcuts: `InjectedShortcuts` keeps the combos in a dictionary.
+KeyboardShortcuts: `InjectedShortcuts` keeps the handlers in a dictionary and the combos in the run's
+defaults, so a recorded Shortcut survives a relaunch of the menu bar app.
 
 Test mode adds socket commands (they exist only while test mode is on). The scripted run sends them
 to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper), one line each:
@@ -74,7 +75,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
-| `login-item-status`, `login-item-set on\|off`, `login-item-simulate <status>` | the (fake) login item Settings drives: read its status, register or unregister it, set the status as System Settings would (`enabled`, `notRegistered`, `requiresApproval`, `notFound`) |
+| `login-item-status`, `login-item-set on\|off`, `login-item-simulate <status>`, `login-item-default` | the (fake) login item Settings drives: read its status, register or unregister it, set the status as System Settings would (`enabled`, `notRegistered`, `requiresApproval`, `notFound`) |
 | `apply-shortcut <id> none\|<key code> [<modifier>,...]`, `shortcut-combos` | what the helper's recorder sends: rebinds a Shortcut of `ShortcutCatalog` (and the menu glyph follows); and what Settings asks when it opens: one `<id> <combo>` line per Shortcut, from the registrar |
 | `menu-enabled <id>` | `yes` or `no`: whether a menu item is enabled now (Reopen Last Capture is `no` while there is no Last Capture) |
 | `last-capture` | the Last Capture's number, or `none` |
@@ -216,7 +217,7 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `44-` Window Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `44-` Window Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -481,8 +482,8 @@ Redo and Esc (which cancels a pending crop first) follow the document's state.
 Add an `AppShortcut` in its own file (`Shared/Shortcuts/AppShortcut.swift` shows the shape; the
 type is shared because Settings in the helper lists the Shortcuts), bind it with one line in
 `ShortcutBindings`, and press it in a flow with `press-shortcut <id>`. A Shortcut the user may
-record in Settings is also an `Entry` in `Shared/Shortcuts/ShortcutCatalog.swift` (the Window and
-Pick Color Shortcuts are defined there). `Shortcuts.current` is an `ObservedShortcuts`: a menu
+record in Settings is also an `Entry` in `Shared/Shortcuts/ShortcutCatalog.swift` (`AppShortcut.window`
+and `AppShortcut.pickColor` are in their own files beside `AppShortcut.swift`). `Shortcuts.current` is an `ObservedShortcuts`: a menu
 section that reads `menuShortcut(for:)` follows `setCombo`, so a rebound Shortcut's glyph changes
 with no code of its own.
 
@@ -493,22 +494,29 @@ instance; a second request brings it forward and reads Open at Login again), `Se
 single `Form`, one `Section` per `SettingsSection`) and `SettingsModel` (what it shows; every
 change is written through `AppDefaults.store` at once, and the Editor, the Area flow and Save read
 their key when they need it, so nothing waits for a relaunch). `SettingsControls.swift` holds each
-control's id, title and tooltip, which the view and `settings-facts` both read.
+control's id, title and tooltip, which the view and `settings-facts` both read. The About section is
+a list: a row is one file (`VersionAboutRow.swift`: its `SettingsControl` and an `AboutRow`, text or
+button) and one line in `AboutRows.all`; the view and `settings-facts` draw from the list.
 
 | To add | Do |
 |---|---|
 | a setting | a key and a reader in `Shared/Settings/<Name>Settings.swift` (the reader falls back to the default); a `SettingsControl` in `SettingsControls.swift`; a setter in `SettingsModel`; a row in `SettingsView`; a line in `SettingsFacts.describe()` and a case in `SettingsFacts.press` |
 | something Settings needs from the menu bar app | a `SocketCommand` in `Shared/Commands/SettingsCommands.swift` and its handler in `snapit/Settings/SettingsAppCommands.swift` (Open at Login and applying a Shortcut do this) |
-| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…, User Guide and Check for Updates… |
+| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…; User Guide and Check for Updates… are each a `MenuSection` file and one line in `MenuModel.sections` after it (`QuitMenu` brings the separator before Quit snapit) |
 
 Open at Login lives in the menu bar app (`LoginItem.current`: `SMAppService.mainApp`, or the fake
 in test mode); the helper sends `login-item-status` (and `shortcut-combos`) when Settings opens or
 comes forward and `login-item-set` when the switch is flipped. Nothing polls. `LoginItemDefault`
-registers the login item once, on the first launch from a normal place (the flag
-`openAtLoginDefaultApplied`), so a later Off survives relaunches. The Shortcut recorders use `ShortcutRecorder`, a local
-key monitor that exists only while one waits; the result goes to `ShortcutSettings` (the key
-`shortcut.<id>` in `AppDefaults.store`) and to the menu bar app with `apply-shortcut`. A
-combination that macOS also uses (`SystemShortcuts.current`) or another Shortcut already has
+registers the login item on the launch of a copy that runs from an Applications folder with no
+move or fix pending (`InstallCheck.plan() == .stay`), and records the flag `openAtLoginDefaultApplied`
+only once registering worked, so a later Off survives relaunches (`login-item-default` runs it with
+the install location the run pretends; flows 52 and 80 use it). The Shortcut recorders use
+`ShortcutRecorder`, a local key monitor that exists only while one waits. It refuses what every app
+depends on (⌘ alone with a letter or number, ⌥ or ⌥⇧ alone, ⇧ alone) with a hint and a beep, and ignores
+key repeats; the result goes to the menu bar app with `apply-shortcut`. The menu bar app's registrar
+is the only copy of a combination: Settings asks `shortcut-combos` when it opens (Onboarding does the
+same). Two Shortcuts never share keys: recording a combination another Shortcut has removes it
+from that one ("Removed from Area."). A combination macOS also uses (`SystemShortcuts.current`)
 carries a note under its recorder; it is still accepted.
 
 While developing one flow, `SNAPIT_FLOWS="20 40 45 52" scripts/check-run.sh <app>` runs only

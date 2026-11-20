@@ -21,8 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SocketOwnership.adopt(server)
             // Where this copy runs from: a mounted disk image or a translocated path needs a move.
             Task {
-                // A copy that must move first (a disk image) is not the one to open at login.
-                if await InstallCheck.runAtLaunch() == .none { LoginItemDefault.applyOnce() }
+                await InstallCheck.runAtLaunch()
+                LoginItemDefault.applyIfEligible()
             }
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.

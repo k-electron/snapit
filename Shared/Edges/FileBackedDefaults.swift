@@ -8,6 +8,11 @@ import Foundation
 /// its own reads. Settings (in the Editor helper) and the Area flow, Save and Shortcuts (in the
 /// menu bar app) must agree at once, as they do through the real domain, so this store reads the
 /// file every time. The plist is small and written by hand-driven commands only.
+///
+/// It covers what snapit uses: `object`, `string`, `bool`, `integer`, `double`, `float`, `url`,
+/// `array`, `stringArray`, `dictionary`, `data`, `set`, `removeObject` and
+/// `dictionaryRepresentation`. `register(defaults:)`, key-value observing and
+/// `UserDefaults.didChangeNotification` are not supported: read the key where it is needed.
 nonisolated final class FileBackedDefaults: UserDefaults {
     private let file: URL
     private let lockFile: URL
@@ -53,6 +58,9 @@ nonisolated final class FileBackedDefaults: UserDefaults {
         withLock { load()[defaultName] }
     }
 
+    // The typed readers convert as UserDefaults does: a number reads as a string, and a string that
+    // holds a number or "true"/"false"/"yes"/"no" reads as a number or Bool.
+
     override func string(forKey defaultName: String) -> String? {
         switch object(forKey: defaultName) {
         case let text as String: text
@@ -61,20 +69,28 @@ nonisolated final class FileBackedDefaults: UserDefaults {
         }
     }
 
-    override func bool(forKey defaultName: String) -> Bool {
-        (object(forKey: defaultName) as? NSNumber)?.boolValue ?? false
+    private func number(forKey defaultName: String) -> NSNumber? {
+        switch object(forKey: defaultName) {
+        case let number as NSNumber:
+            return number
+        case let text as String:
+            switch text.lowercased() {
+            case "true", "yes": return NSNumber(value: true)
+            case "false", "no": return NSNumber(value: false)
+            default: return Double(text).map { NSNumber(value: $0) }
+            }
+        default:
+            return nil
+        }
     }
 
-    override func integer(forKey defaultName: String) -> Int {
-        (object(forKey: defaultName) as? NSNumber)?.intValue ?? 0
-    }
+    override func bool(forKey defaultName: String) -> Bool { number(forKey: defaultName)?.boolValue ?? false }
+    override func integer(forKey defaultName: String) -> Int { number(forKey: defaultName)?.intValue ?? 0 }
+    override func double(forKey defaultName: String) -> Double { number(forKey: defaultName)?.doubleValue ?? 0 }
+    override func float(forKey defaultName: String) -> Float { number(forKey: defaultName)?.floatValue ?? 0 }
 
-    override func double(forKey defaultName: String) -> Double {
-        (object(forKey: defaultName) as? NSNumber)?.doubleValue ?? 0
-    }
-
-    override func float(forKey defaultName: String) -> Float {
-        (object(forKey: defaultName) as? NSNumber)?.floatValue ?? 0
+    override func url(forKey defaultName: String) -> URL? {
+        (object(forKey: defaultName) as? String).flatMap(URL.init(string:))
     }
 
     override func array(forKey defaultName: String) -> [Any]? { object(forKey: defaultName) as? [Any] }
@@ -91,6 +107,10 @@ nonisolated final class FileBackedDefaults: UserDefaults {
     // MARK: Writing
 
     override func set(_ value: Any?, forKey defaultName: String) {
+        if let value, !PropertyListSerialization.propertyList(value, isValidFor: .xml) {
+            assertionFailure("FileBackedDefaults: \(defaultName) is not a property list value")
+            return
+        }
         update { $0[defaultName] = value }
     }
 

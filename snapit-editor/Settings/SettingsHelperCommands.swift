@@ -104,7 +104,10 @@ enum SettingsFacts {
                 for entry in ShortcutCatalog.entries {
                     let combo = model.combo(for: entry)
                     let recording = model.recordingID == entry.shortcut.id
-                    control(.shortcut(entry), "recorder", recording ? "recording" : ShortcutCombo.wire(combo))
+                    control(
+                        .shortcut(entry), "recorder",
+                        !model.shortcutsLoaded ? "unknown" : recording ? "recording" : ShortcutCombo.wire(combo))
+                    if recording, let hint = model.recordingHint { lines.append("hint \(entry.shortcut.id)|\(hint)") }
                     if let combo { lines.append("display \(entry.shortcut.id)|\(combo.displayString)") }
                     if let note = model.note(for: entry) { lines.append("note \(entry.shortcut.id)|\(note)") }
                 }
@@ -112,8 +115,12 @@ enum SettingsFacts {
             case .export:
                 control(.standardResolution, "switch", onOff(model.standardResolution))
             case .about:
-                control(.version, "text", model.versionText)
-                control(.engineVersion, "text", model.engineVersionText)
+                for row in AboutRows.all {
+                    switch row.content {
+                    case .text(let text): control(row.control, "text", text())
+                    case .button: control(row.control, "button", "")
+                    }
+                }
             }
         }
         return lines.joined(separator: "\n")

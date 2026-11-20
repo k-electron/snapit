@@ -45,7 +45,7 @@ extension ShortcutCombo {
         let status = CFDataGetBytePtr(layout).withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) {
             UCKeyTranslate(
                 $0, UInt16(keyCode), UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
-                OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, characters.count, &length, &characters)
+                OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, characters.count, &length, &characters)
         }
         guard status == noErr, length > 0 else { return "Key \(keyCode)" }
         return String(utf16CodeUnits: characters, count: length).uppercased()

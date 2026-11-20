@@ -15,8 +15,8 @@ final class ShortcutRecorder {
         /// Delete: unassign the Shortcut.
         case clear
         case accept(ShortcutCombo)
-        /// A plain key: a Shortcut needs ⌘, ⌃ or ⌥ (or to be a function key).
-        case needsModifier
+        /// Not a key combination a global Shortcut may take; the text says what to press instead.
+        case rejected(String)
     }
 
     private var monitor: Any?
@@ -24,6 +24,8 @@ final class ShortcutRecorder {
     func start(_ handler: @escaping @MainActor (Result) -> Void) {
         stop()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // A key held down repeats; only the first press counts.
+            guard !event.isARepeat else { return nil }
             let result = Self.interpret(keyCode: Int(event.keyCode), flags: event.modifierFlags)
             MainActor.assumeIsolated { handler(result) }
             return nil
@@ -35,15 +37,22 @@ final class ShortcutRecorder {
         monitor = nil
     }
 
-    /// What a key press means to a recorder.
+    /// What a key press means to a recorder. A global Shortcut takes its keys from every app, so
+    /// the ones typing and the editing commands depend on are refused: ⌘ alone with a letter or
+    /// number (⌘C, ⌘V, ⌘Q, ⌘W, ⌘Z), and ⌥ or ⌥⇧ alone with a printable key (they type å or é on many
+    /// layouts). A Shortcut has ⌃, or ⌘ with another modifier, or is a function key.
     static func interpret(keyCode: Int, flags: NSEvent.ModifierFlags) -> Result {
         let modifiers = flags.intersection([.control, .option, .shift, .command])
         if modifiers.isEmpty {
             if keyCode == kVK_Escape { return .cancel }
             if keyCode == kVK_Delete || keyCode == kVK_ForwardDelete { return .clear }
         }
-        let strong = !modifiers.intersection([.control, .option, .command]).isEmpty
-        guard strong || ShortcutCombo.isFunctionKey(keyCode) else { return .needsModifier }
+        if ShortcutCombo.isFunctionKey(keyCode) { return .accept(ShortcutCombo(keyCode: keyCode, modifiers: modifiers)) }
+        let hasControl = modifiers.contains(.control)
+        let commandWithAnother = modifiers.contains(.command) && !modifiers.subtracting(.command).isEmpty
+        guard hasControl || commandWithAnother else {
+            return .rejected("Hold ⌃, or ⌘ with ⌥ or ⇧, as well. A key combination like this one is used by every app.")
+        }
         return .accept(ShortcutCombo(keyCode: keyCode, modifiers: modifiers))
     }
 }
