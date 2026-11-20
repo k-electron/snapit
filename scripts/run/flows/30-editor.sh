@@ -43,6 +43,12 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_in_order "the Export pipeline runs crop, Redactions, Annotations, 1x, PNG" \
     "$(send "$EDITOR_SOCK" export-stages)" "crop" "redaction" "annotations" "standard-resolution" "png"
 
+  # While regular, the helper has its own menus in the menu bar.
+  MENUS="$(send "$EDITOR_SOCK" main-menu)"
+  expect_contains "the helper has its own app menu" "snapit: About snapit|-|Hide snapit|-|Quit snapit" "$MENUS"
+  expect_contains "the helper's Edit menu has Copy" "Edit: Copy" "$MENUS"
+  expect_contains "the helper's Window menu has Minimize and Close" "Window: Minimize|Close" "$MENUS"
+
   # An open Editor costs nothing at rest.
   sleep 2
   assert_idle_cpu "the Editor helper with an Editor open" "$HELPER_PID" 5
