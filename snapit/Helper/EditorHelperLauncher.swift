@@ -59,7 +59,7 @@ enum EditorHelperLauncher {
 
     /// Asks LaunchServices to activate the running helper (see `EditorActivation`). Reaches a
     /// helper that was already running; its reopen handler does nothing of its own.
-    private static func bringForward() async {
+    static func bringForward() async {
         guard EditorActivation.current.activateAfterOpen else { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -68,7 +68,7 @@ enum EditorHelperLauncher {
 
     /// Waits until the helper's socket answers, starting the helper when it is not running.
     /// The wait is bounded and happens only while a Capture opens, never at rest.
-    private static func ensureRunning() async throws {
+    static func ensureRunning() async throws {
         let path = AppIdentity.editorSocketPath
         if await CommandSocketClient.isListening(at: path) { return }
         try await start(activates: EditorActivation.current.activateAtLaunch)
