@@ -75,6 +75,10 @@ _Avoid_: Output folder, destination, save path
 The first-run walkthrough that gets the permissions and shortcuts snapit needs in place.
 _Avoid_: OOBE, setup wizard, welcome flow
 
+**Permission guide**:
+A screen that shows, with a short animation, how to grant one permission snapit needs. It is a step of Onboarding, and it also appears on its own whenever that permission later goes missing. Not the same thing as a permission prompt, which is macOS's own dialog.
+_Avoid_: Permission screen, permission prompt, setup step
+
 **User Guide**:
 The help that ships inside snapit and walks through every flow the user can take.
 _Avoid_: Manual, docs, help pages, README
