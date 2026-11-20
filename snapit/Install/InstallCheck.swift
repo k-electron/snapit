@@ -38,6 +38,8 @@ enum InstallCheck {
             return .none
         case .fixInPlace(let copy):
             guard Quarantine.isApproved(at: copy.path) else { return .notApproved }
+            // Nothing to strip: a relaunch cannot change anything, and would repeat on every launch.
+            guard Quarantine.flaggedCount(under: copy) > 0 else { return .none }
             do {
                 try await MoveToApplications.fixInPlace(copy: copy, environment: environment)
                 return .fixedInPlace
