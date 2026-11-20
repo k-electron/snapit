@@ -73,6 +73,11 @@ if open_editor; then
   expect_contains "Crop has its tooltip and key" "tool crop 800 Crop (C)" "$TOOLBAR"
   expect_contains "Apply Crop has its tooltip" "item crop-apply options Apply Crop (↩)" "$TOOLBAR"
   expect_contains "Cancel Crop has its tooltip" "item crop-cancel options Cancel Crop (Esc)" "$TOOLBAR"
+  # Every control of the top toolbar can be clicked: no two are on top of each other, even in the
+  # smallest window (this Capture is small, so the window is at its smallest).
+  CONTROLS="$(send "$EDITOR_SOCK" "editor-controls $EDITOR_N")"
+  CLOSEST="$(printf '%s\n' "$CONTROLS" | awk '{ x[NR] = $(NF-1); y[NR] = $NF } END { min = 9999; for (i = 1; i <= NR; i++) for (j = i + 1; j <= NR; j++) if (y[i] == y[j]) { d = x[i] - x[j]; if (d < 0) d = -d; if (d < min) min = d } print min }')"
+  if ((CLOSEST >= 30)); then pass "no two controls of the top toolbar overlap (the closest centres are $CLOSEST points apart)"; else fail "two controls of the top toolbar overlap: centres $CLOSEST points apart"; fi
   expect_disabled "Apply Crop is disabled until the Crop tool is chosen" crop-apply
   expect_disabled "Cancel Crop is disabled until the Crop tool is chosen" crop-cancel
 
@@ -498,3 +503,46 @@ if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Reda
 assert_idle_cpu "menu bar app after the Redaction and crop cycles" "$APP_PID" 3
 send "$APP_SOCK" pasteboard-clear >/dev/null
 send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
+
+# 16. Save and the drag-out file go through the same pipeline: the saved PNG and the dragged file are the
+#     cropped, redacted Export, pixel for pixel.
+SAVE_DIR="$RUN_ROOT/save"
+mkdir -p "$SAVE_DIR"
+send "$APP_SOCK" "defaults-set closeEditorAfterSave false" >/dev/null
+if open_editor; then
+  keystroke x >/dev/null
+  drag 60 40 140 100 >/dev/null
+  keystroke c >/dev/null
+  drag 0 0 20.15 15.35 >/dev/null
+  drag 301 187 170.65 120.8 >/dev/null
+  keystroke enter >/dev/null
+  # The drag-out thumbnail is the Export too: 96 pixels on its long side, the crop's proportions
+  # (301 x 211), and the whole Capture's (602 x 374: 96 x 60) once the crop is undone.
+  thumbnail_size() { send "$EDITOR_SOCK" "editor-drag-thumbnail $EDITOR_N" | sed -n 's/.*thumbnail=\([0-9x]*\).*/\1/p'; }
+  thumbnail_is() { [[ "$(thumbnail_size)" == "$1" ]]; }
+  if wait_until 10 thumbnail_is 96x67; then pass "the drag-out thumbnail follows the crop: 96 x 67 pixels"; else fail "the drag-out thumbnail is $(thumbnail_size), expected 96x67 for the crop"; fi
+  keystroke undo >/dev/null
+  if wait_until 10 thumbnail_is 96x60; then pass "and goes back to the whole Capture's proportions after Undo (96 x 60)"; else fail "the drag-out thumbnail is $(thumbnail_size) after Undo, expected 96x60"; fi
+  keystroke redo >/dev/null
+  wait_until 10 thumbnail_is 96x67 >/dev/null
+  send_slow "$EDITOR_SOCK" "editor-key $EDITOR_N save" >/dev/null
+  saved_name() { ls "$SAVE_DIR" 2>/dev/null | grep '^snapit-.*\.png$' | head -1; }
+  save_done() { [[ "$(send "$APP_SOCK" save-pending)" == "0" && -n "$(saved_name)" ]]; }
+  if wait_until 10 save_done; then
+    SAVED="$SAVE_DIR/$(saved_name)"
+    expect_redacted "the saved PNG is the cropped Export with the Redaction pixelated" "$SAVED" 301 211 $W $H 40 31 80 49 240 169 "$(redaction_block 160 120 2)"
+    expect_equal "the saved PNG is the crop's size" "301x211" "$(png_field "$("$INSPECT" info "$SAVED")" width)x$(png_field "$("$INSPECT" info "$SAVED")" height)"
+  else
+    fail "the Save did not finish"
+  fi
+  DRAGGED="$(send_slow "$EDITOR_SOCK" "editor-drag-file $EDITOR_N")"
+  if [[ "$DRAGGED" == ok\ * ]]; then
+    expect_redacted "the file dragged out is the cropped Export with the Redaction pixelated" "${DRAGGED#ok }" 301 211 $W $H 40 31 80 49 240 169 "$(redaction_block 160 120 2)"
+  else
+    fail "the drag-out file failed: $DRAGGED"
+  fi
+  close_editor
+fi
+find "$SAVE_DIR" -mindepth 1 -delete 2>/dev/null
+rm -rf "$RUN_ROOT/drag-out"  # the file dragged out above, so the next flow starts with none
+send "$APP_SOCK" "defaults-set closeEditorAfterSave true" >/dev/null

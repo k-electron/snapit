@@ -31,7 +31,10 @@ final class EditorContentView: NSView {
 final class EditorChrome {
     static let margin: CGFloat = 12
     static let canvasPadding: CGFloat = 6
-    static let minimumContent = NSSize(width: 560, height: 320)
+    static let baseMinimumContent = NSSize(width: 560, height: 320)
+    /// The smallest content size: wide enough that the toolbars' pills never overlap, however many
+    /// controls the registry puts in them.
+    private(set) var minimumContent = EditorChrome.baseMinimumContent
 
     let window: EditorWindow
     let canvas: CanvasView
@@ -62,8 +65,12 @@ final class EditorChrome {
         topTrailing = hostIfAny([.history, .export])
         topDestructive = hostIfAny([.destructive], firstMouse: false)
 
+        let toolbarWidth = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
+        // The traffic lights take the first 82 points; the pills' shadow margins overlap by 6.
+        minimumContent.width = max(Self.baseMinimumContent.width, 82 + toolbarWidth + 6)
+
         window = EditorWindow(
-            contentRect: NSRect(origin: .zero, size: Self.minimumContent),
+            contentRect: NSRect(origin: .zero, size: minimumContent),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.session = session
@@ -78,7 +85,7 @@ final class EditorChrome {
         let toolbar = NSToolbar(identifier: "snapit.editor")
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        window.contentMinSize = Self.minimumContent
+        window.contentMinSize = minimumContent
         window.contentView = content
         for view in [canvas, rail, topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
             content.addSubview(view)
@@ -113,13 +120,13 @@ final class EditorChrome {
         let top = topTrailing?.frame.height ?? topLeading?.frame.height ?? 62
         let extra = NSSize(
             width: rail + Self.margin + 2 * Self.canvasPadding, height: top + Self.margin + 2 * Self.canvasPadding)
-        let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: Self.minimumContent)).size
-        let maxWidth = visible.width * 0.8 - (chrome.width - Self.minimumContent.width)
-        let maxHeight = visible.height * 0.8 - (chrome.height - Self.minimumContent.height)
+        let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: minimumContent)).size
+        let maxWidth = visible.width * 0.8 - (chrome.width - minimumContent.width)
+        let maxHeight = visible.height * 0.8 - (chrome.height - minimumContent.height)
         window.setContentSize(
             NSSize(
-                width: max(Self.minimumContent.width, min(capture.width + extra.width, maxWidth)),
-                height: max(Self.minimumContent.height, min(capture.height + extra.height, maxHeight))))
+                width: max(minimumContent.width, min(capture.width + extra.width, maxWidth)),
+                height: max(minimumContent.height, min(capture.height + extra.height, maxHeight))))
         let others = NSApp.windows.filter { $0 is EditorWindow && $0.isVisible }.count
         let step = CGFloat(others % 12) * 28
         var origin = NSPoint(
