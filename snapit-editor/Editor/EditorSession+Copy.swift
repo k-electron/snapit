@@ -16,9 +16,11 @@ extension EditorSession {
         guard let document else { return }
         do {
             let job = document.makeExportJob(level: .fast)
+            let snapshot = document.history.state
+            await ExportTestGate.shared.wait()
             let png = try await ExportPipeline.runInBackground(job)
             AppPasteboard.write(png, as: .png)
-            document.markExported()
+            document.markExported(snapshot)
             if EditorSettings.closeAfterCopy { close() }
         } catch {
             NSLog("snapit Editor: Copy failed: \(error)")

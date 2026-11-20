@@ -105,11 +105,13 @@ if pair; then
   PROMPT="$(pr_prompt)"
   expect_contains "the prompt is about closing that Editor" "shown close editor=$A" "$PROMPT"
   expect_contains "it names the Capture" "title=Discard this Capture?" "$PROMPT"
-  expect_contains "it says why, in the glossary's words" "Annotations haven't been exported" "$PROMPT"
+  expect_contains "it says why, in the glossary's words" "edits haven't been Exported" "$PROMPT"
   expect_contains "its buttons are Cancel and Discard" "buttons=Cancel,Discard" "$PROMPT"
   expect_contains "Esc is Cancel" "escape=Cancel" "$PROMPT"
   expect_contains "Discard has a key of its own, ⌘D (read back once the sheet is up)" "command-d=Discard" "$PROMPT"
   expect_contains "both buttons have a tooltip" "tooltips=Keep this Editor open|Discard this Capture and close its Editor" "$PROMPT"
+  expect_contains "the view under Delete Capture's button refuses the first click" "accepts-first-mouse=no" "$(send "$EDITOR_SOCK" "editor-first-mouse $A item delete-capture")"
+  expect_contains "the view under Undo's button takes it" "accepts-first-mouse=yes" "$(send "$EDITOR_SOCK" "editor-first-mouse $A item undo")"
   expect_equal "the Editor stays open while it asks" "$(printf '%s\n%s' "$A" "$B")" "$(open_editors)"
   expect_equal "the question is on that Editor's window: it is in front" "$A" "$(send "$EDITOR_SOCK" editor-front)"
   pr_answer cancel
@@ -188,10 +190,12 @@ if pair; then
 fi
 if pair; then
   edit "$A"
+  send "$EDITOR_SOCK" "editor-drop $A begin" >/dev/null
   expect_equal "a drop nobody took is refused" "ok" "$(send "$EDITOR_SOCK" "editor-drop $A refused")"
   send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
   if pr_wait_shown; then pass "a refused drop does not count as an Export: closing asks"; else fail "a refused drop cleared the unexported state"; fi
   pr_answer cancel
+  send "$EDITOR_SOCK" "editor-drop $A begin" >/dev/null
   expect_equal "a drop that was taken" "ok" "$(send "$EDITOR_SOCK" "editor-drop $A taken")"
   send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
   wait_until 5 pr_is_closed "$A"
@@ -209,7 +213,39 @@ if pair; then
   pr_answer cancel
   keystroke undo >/dev/null
   send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
-  if pr_wait_shown; then pass "Undo back to the exported Annotations is a change from the Export: asks"; else fail "Undo after an Export did not ask"; fi
+  wait_until 5 pr_is_closed "$A"
+  expect_equal "edited back to exactly what was Exported, the Editor closes without a prompt" "$B" "$(open_editors)"
+  end_pair
+fi
+# 4b. An edit made while an Export is still running (a Save waiting on a folder prompt) is not
+#     covered by it: the Export took its snapshot first.
+for kind in save copy; do
+  if pair; then
+    edit "$A"
+    send "$EDITOR_SOCK" "export-hold on" >/dev/null
+    send_slow "$EDITOR_SOCK" "editor-press $A $kind" >"$RUN_ROOT/export-bg.txt" 2>&1 &
+    EXPORT_PID=$!
+    sleep 1
+    EDITOR_N="$A"
+    keystroke r >/dev/null
+    drag 150 30 200 70 >/dev/null
+    send "$EDITOR_SOCK" "export-hold off" >/dev/null
+    wait "$EXPORT_PID"
+    send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
+    if pr_wait_shown; then pass "an edit made while a ${kind} was running still asks on close"; else fail "an edit made while a ${kind} was running was marked Exported"; fi
+    pr_answer cancel
+    end_pair
+  fi
+done
+if pair; then
+  edit "$A"
+  send "$EDITOR_SOCK" "editor-drop $A begin" >/dev/null
+  EDITOR_N="$A"
+  keystroke r >/dev/null
+  drag 150 30 200 70 >/dev/null
+  send "$EDITOR_SOCK" "editor-drop $A taken" >/dev/null
+  send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
+  if pr_wait_shown; then pass "an edit made while a drag was in progress still asks on close"; else fail "an edit made after a drag began was marked Exported"; fi
   pr_answer cancel
   end_pair
 fi
@@ -326,6 +362,18 @@ if capture_into_editor "menu-click capture.screen"; then
   else
     fail "the helper's footprint varies from ${CYCLE_MIN} to ${CYCLE_MAX} MB over cycles of opening and closing 5K Editors"
   fi
+  # Windows as big as they get (80% of the screen) still cascade onto spots of their own.
+  ORIGINS="$(send "$EDITOR_SOCK" "editor-facts $KEEP" | sed -n 's/^window-origin=//p')"
+  BIG_EDITORS="$KEEP"
+  for i in 1 2 3 4 5; do
+    capture_into_editor "menu-click capture.screen"
+    ORIGINS="$ORIGINS
+$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N" | sed -n 's/^window-origin=//p')"
+    BIG_EDITORS="$BIG_EDITORS $EDITOR_N"
+  done
+  expect_equal "six big Editors are on six different spots" "6" "$(printf '%s\n' "$ORIGINS" | sort -u | wc -l | tr -d ' ')"
+  for n in $BIG_EDITORS; do [[ "$n" == "$KEEP" ]] || send_slow "$EDITOR_SOCK" "editor-press $n delete-capture" >/dev/null; done
+  wait_until 10 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$KEEP' ]]"
   sleep 1
   assert_idle_cpu "the helper with a 5K Editor open after the cycles" "$KEEP_HELPER" 3
   send_slow "$EDITOR_SOCK" "editor-key $KEEP escape" >/dev/null
@@ -346,7 +394,7 @@ if pair; then
   if pr_wait_shown; then pass "Quit snapit with an older Editor holding unexported edits asks"; else fail "Quit snapit did not ask"; fi
   PROMPT="$(pr_prompt)"
   expect_contains "the prompt is the Quit prompt, about the older Editor" "shown quit editor=$A title=Quit snapit?" "$PROMPT"
-  expect_contains "it counts the Capture" "This Capture has Annotations you haven't exported" "$PROMPT"
+  expect_contains "it counts the Capture" "This Capture has edits you haven't Exported" "$PROMPT"
   expect_contains "its buttons are Cancel and Discard and Quit" "buttons=Cancel,Discard and Quit" "$PROMPT"
   expect_equal "that Editor was brought forward first" "$A" "$(send "$EDITOR_SOCK" editor-front)"
   expect_equal "snapit is still running while it asks" "yes" "$(kill -0 "$OLD_APP" 2>/dev/null && echo yes)"
@@ -389,7 +437,7 @@ if capture_into_editor "menu-click capture.screen"; then
   pr_wait_shown
   PROMPT="$(pr_prompt)"
   expect_contains "with several Editors holding unexported edits the oldest is asked about" "shown quit editor=$X" "$PROMPT"
-  expect_contains "the prompt counts them (the Last Capture's Editor does not count)" "2 Captures have Annotations you haven't exported" "$PROMPT"
+  expect_contains "the prompt counts them (the Last Capture's Editor does not count)" "2 Captures have edits you haven't Exported" "$PROMPT"
   expect_equal "the oldest of them was brought forward" "$X" "$(send "$EDITOR_SOCK" editor-front)"
   pr_answer cancel
   wait "$QUIT_PID"
@@ -400,7 +448,7 @@ if capture_into_editor "menu-click capture.screen"; then
   quit_menu_bg
   pr_wait_shown
   expect_contains "after the oldest was Exported the next one is asked about" "shown quit editor=$Y" "$(pr_prompt)"
-  expect_contains "and it is one Capture" "This Capture has Annotations" "$(pr_prompt)"
+  expect_contains "and it is one Capture" "This Capture has edits" "$(pr_prompt)"
   pr_answer cancel
   wait "$QUIT_PID"
   # Nothing at risk once the other is Exported too: Quit goes straight through, no prompt.
@@ -411,6 +459,79 @@ if capture_into_editor "menu-click capture.screen"; then
   wait_until 10 bash -c "[[ -z \"\$(pgrep -f '$HELPER_EXE' | head -1)\" ]]"
   expect_equal "the helper quit with it" "" "$(helper_pid)"
   restart_app
+fi
+
+# 7b. A quit nobody was asked about (logout, `osascript` quit, Activity Monitor) is an AppleEvent to
+#     the menu bar app: it asks the helper first, and Cancel leaves everything running. Two askers at
+#     once (the system quits both processes at logout) get one question and the same answer.
+if pair; then
+  edit "$A"
+  OLD_APP="$APP_PID"
+  OLD_HELPER="$HELPER_PID"
+  expect_equal "the quit AppleEvent is sent to the menu bar app" "ok" "$(send "$APP_SOCK" quit-event)"
+  if pr_wait_shown; then pass "a quit AppleEvent with an older Editor holding unexported edits asks"; else fail "a quit AppleEvent quit snapit without asking"; fi
+  expect_contains "the Quit prompt, about the older Editor" "shown quit editor=$A" "$(pr_prompt)"
+  expect_equal "that Editor was brought forward" "$A" "$(send "$EDITOR_SOCK" editor-front)"
+  pr_answer cancel
+  sleep 1
+  expect_equal "Cancel leaves the menu bar app running" "yes" "$(kill -0 "$OLD_APP" 2>/dev/null && echo yes)"
+  expect_equal "and the helper" "yes" "$(kill -0 "$OLD_HELPER" 2>/dev/null && echo yes)"
+  expect_equal "and both Editors" "$(printf '%s\n%s' "$A" "$B")" "$(open_editors)"
+  # Two askers at once: the AppleEvent to the menu bar app and the helper's own Quit.
+  send "$APP_SOCK" quit-event >/dev/null
+  send "$EDITOR_SOCK" editor-menu-quit >/dev/null
+  pr_wait_shown
+  sleep 0.5
+  expect_equal "two askers get one question" "1" "$(pr_prompt | grep -c '^shown')"
+  pr_answer cancel
+  sleep 1
+  expect_equal "and Cancel answers both: snapit is still running" "yes" "$(kill -0 "$OLD_APP" 2>/dev/null && echo yes)"
+  expect_equal "and the helper" "yes" "$(kill -0 "$OLD_HELPER" 2>/dev/null && echo yes)"
+  # Discard through the AppleEvent: the whole of snapit goes and the Last Capture with it.
+  send "$APP_SOCK" quit-event >/dev/null
+  pr_wait_shown
+  send "$EDITOR_SOCK" "editor-prompt-answer discard" >/dev/null
+  if wait_until 15 gone "$OLD_APP"; then pass "Discard and Quit after a quit AppleEvent quits snapit"; else fail "snapit is still running after Discard and Quit"; fi
+  if wait_until 10 gone "$OLD_HELPER"; then pass "and the helper"; else fail "the helper did not quit"; fi
+  sleep 1
+  expect_equal "the Last Capture is gone" "none" "$(ls -A "$PCAPS" 2>/dev/null || echo none)"
+  restart_app
+fi
+# The helper's own AppleEvent (the Dock's Quit): the same question, and it quits snapit as a whole.
+if pair; then
+  edit "$A"
+  OLD_APP="$APP_PID"
+  OLD_HELPER="$HELPER_PID"
+  expect_equal "the quit AppleEvent is sent to the helper" "ok" "$(send "$EDITOR_SOCK" quit-event)"
+  if pr_wait_shown; then pass "a quit AppleEvent to the helper asks"; else fail "the helper quit without asking"; fi
+  pr_answer cancel
+  sleep 1
+  expect_equal "Cancel leaves the helper running" "yes" "$(kill -0 "$OLD_HELPER" 2>/dev/null && echo yes)"
+  expect_equal "and the menu bar app" "yes" "$(kill -0 "$OLD_APP" 2>/dev/null && echo yes)"
+  send "$EDITOR_SOCK" quit-event >/dev/null
+  pr_wait_shown
+  send "$EDITOR_SOCK" "editor-prompt-answer discard" >/dev/null
+  if wait_until 15 gone "$OLD_HELPER"; then pass "Discard and Quit quits the helper"; else fail "the helper is still running after Discard and Quit"; fi
+  if wait_until 15 gone "$OLD_APP"; then pass "and snapit with it: to the user it is one app"; else fail "the menu bar app outlived the helper's Quit"; fi
+  sleep 1
+  expect_equal "the Last Capture is gone" "none" "$(ls -A "$PCAPS" 2>/dev/null || echo none)"
+  restart_app
+fi
+# Two `confirm-quit` at once (the helper is what both processes ask) share one question.
+if pair; then
+  edit "$A"
+  send_slow "$EDITOR_SOCK" confirm-quit >"$RUN_ROOT/confirm-1.txt" 2>&1 &
+  CONFIRM_1=$!
+  pr_wait_shown
+  send_slow "$EDITOR_SOCK" confirm-quit >"$RUN_ROOT/confirm-2.txt" 2>&1 &
+  CONFIRM_2=$!
+  sleep 0.7
+  expect_equal "two confirm-quit commands show one question" "1" "$(pr_prompt | grep -c '^shown')"
+  pr_answer cancel
+  wait "$CONFIRM_1" "$CONFIRM_2"
+  expect_equal "the first asker is told cancel" "cancel" "$(cat "$RUN_ROOT/confirm-1.txt")"
+  expect_equal "and the second the same" "cancel" "$(cat "$RUN_ROOT/confirm-2.txt")"
+  end_pair
 fi
 
 # 8. The helper's own "Quit snapit" asks the same, and Cancel keeps snapit running.
