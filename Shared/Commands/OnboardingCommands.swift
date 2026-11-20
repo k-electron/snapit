@@ -21,6 +21,10 @@ nonisolated extension SocketCommand {
     /// The helper asks the menu bar app to relaunch itself (the "Relaunch snapit" button). Replies
     /// `ok` just before it quits, or `error <why>`.
     static let relaunchSnapit = SocketCommand("relaunch-snapit")
+    /// The helper replies with the process ID of the menu bar app that started it, or `none`. A
+    /// menu bar app that finds a helper of another copy on its socket (the old copy, still quitting
+    /// after a relaunch) retires it, and a quitting copy leaves a helper that is not its own alone.
+    static let helperOwner = SocketCommand("helper-owner")
 }
 
 /// The Permission guides there are. A guide for another permission adds a case, its drawing and

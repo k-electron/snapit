@@ -58,9 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The Editor helper never outlives the menu bar app. The process is ending, so a short
         // blocking send is fine here. It goes first: the helper stops writing the Last Capture's
         // state before it answers, so nothing recreates a file after the removal below.
-        // A relaunch has quit it already, and the relaunched copy may be serving a helper of its own on
-        // that socket by now.
-        if !SnapitRelaunch.hasQuitHelper { CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath) }
+        // Only a helper this copy started: a relaunched copy may be serving a helper of its own on that
+        // socket by now.
+        let owner = CommandSocketClient.queryBeforeExit(.helperOwner, to: AppIdentity.editorSocketPath).flatMap { Int32($0) }
+        if owner == nil || owner == getpid() { CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath) }
         AppPasteboard.releaseIfPrivate()
         CaptureHandoff.removeAll()
         ExportFiles.removeAll()

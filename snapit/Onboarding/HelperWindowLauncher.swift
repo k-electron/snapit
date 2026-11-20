@@ -8,6 +8,7 @@ enum HelperWindowLauncher {
     /// when the first send arrived is replaced by a new one. Returns whether the window shows.
     @discardableResult
     static func show(_ command: SocketCommand, arguments: [String] = []) async -> Bool {
+        await retireHelperOfAnotherCopy()
         var failure: Error = EditorHelperError.didNotStart
         for _ in 0..<2 {
             do {
@@ -23,5 +24,28 @@ enum HelperWindowLauncher {
         }
         NSLog("snapit: could not show \(command.name): \(failure)")
         return false
+    }
+
+    /// A helper on the socket that another copy of snapit started (the old copy, quitting after a
+    /// relaunch or a Move to Applications) goes away with that copy: it is told to quit and waited
+    /// for, and a helper of this copy starts in its place. Without this the window would be shown by
+    /// a helper that is about to quit.
+    private static func retireHelperOfAnotherCopy() async {
+        let path = AppIdentity.editorSocketPath
+        guard let owner = try? await CommandSocketClient.send(.helperOwner, to: path), let pid = Int32(owner),
+            pid != getpid()
+        else { return }
+        await quitRunningHelper()
+    }
+
+    /// Tells the helper on the socket to quit and waits (briefly) until its socket is gone.
+    static func quitRunningHelper() async {
+        let path = AppIdentity.editorSocketPath
+        guard await CommandSocketClient.isListening(at: path) else { return }
+        _ = try? await CommandSocketClient.send(.quit, to: path)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while ContinuousClock.now < deadline, await CommandSocketClient.isListening(at: path) {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 }

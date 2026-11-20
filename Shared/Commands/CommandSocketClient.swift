@@ -37,6 +37,13 @@ nonisolated enum CommandSocketClient {
         _ = try? exchange(SocketRequest(command: command, arguments: arguments), path: path, timeoutSeconds: 1)
     }
 
+    /// Blocking send that returns the reply, for the last moments of a process. Nil when no process
+    /// listens on `path`.
+    static func queryBeforeExit(_ command: SocketCommand, to path: String) -> String? {
+        guard isListeningBlocking(at: path) else { return nil }
+        return try? exchange(SocketRequest(command: command), path: path, timeoutSeconds: 1)
+    }
+
     private static func exchange(_ request: SocketRequest, path: String, timeoutSeconds: Int) throws -> String {
         var address = try UnixSocket.address(path: path)
         let descriptor = try UnixSocket.makeSocket()
