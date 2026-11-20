@@ -407,7 +407,7 @@ area_drag 0 100 60 300 160
 expect_equal "back at Show Action bar the next release keeps the selection" "adjusting" "$(fact state)"
 area_cancel
 
-# 13. A second display (800 x 300 at 2x, wide enough for the whole bar): the selection and its bar stay on the display where the drag
+# 13. A second display (800 x 300 at 2x, the bar is about 450 pt wide, and over 570 pt with Pick Color): the selection and its bar stay on the display where the drag
 #     started, and each display has its own ID.
 send "$APP_SOCK" "fixture-extra-display 2 800 300" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null

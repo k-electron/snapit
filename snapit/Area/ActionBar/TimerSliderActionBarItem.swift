@@ -48,7 +48,7 @@ enum TimerValue {
 /// anywhere on it sets the value from the pointer's x, and a drag follows the pointer even past the
 /// tile's ends.
 final class TimerSliderControl: ActionBarControl {
-    static let width: CGFloat = 112
+    static let width: CGFloat = 88
     private static let inset: CGFloat = 16
     private static let knobSize: CGFloat = 16
 

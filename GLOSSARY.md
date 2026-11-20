@@ -39,7 +39,7 @@ _Avoid_: Delayed capture, self-timer, timer capture
 
 **Color picker**:
 A tool that reads the color of a single on-screen pixel so the user can copy its value. Not the same thing as an **Annotation color**.
-_Avoid_: Eyedropper, color sampler
+_Avoid_: Color sampler
 
 ### Editing
 
@@ -53,7 +53,11 @@ _Avoid_: Shape, drawing, markup
 
 **Annotation color**:
 The color an Annotation is drawn in, chosen in the Editor. Not the same thing as the **Color picker**, which reads a pixel off the screen.
-_Avoid_: Stroke color, tint, picking a color
+_Avoid_: Stroke color, tint
+
+**Eyedropper**:
+The Editor control that takes the **Annotation color** from a pixel of the Capture, never from the screen. Not the same thing as the **Color picker**.
+_Avoid_: Color picker (for this control)
 
 **Redaction**:
 An Annotation that hides the content beneath it by pixelating it, and irreversibly destroys those pixels on Export.

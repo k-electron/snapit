@@ -4,6 +4,11 @@ import QuartzCore
 /// A borderless panel of the countdown: above everything, on every Space, never key, never
 /// activating snapit. Only the badge takes clicks; the border and the tooltip are click-through.
 final class TimedPanel: NSPanel {
+    /// What the panel is meant to do with clicks: the border and the tooltip let them through. A
+    /// scripted run makes every panel ignore the mouse (the user's own must not reach it), so this
+    /// is what the run reads.
+    let isClickThrough: Bool
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
     /// A panel sits exactly where it is put, even partly off the display (a border around an Area
@@ -11,6 +16,7 @@ final class TimedPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     init(frame: CGRect, takesClicks: Bool) {
+        isClickThrough = !takesClicks
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .screenSaver
         isReleasedWhenClosed = false

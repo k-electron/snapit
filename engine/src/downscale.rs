@@ -3,9 +3,14 @@
 //! Every output pixel is the average of the source area it covers, each source pixel weighted
 //! by how much of it falls inside that area. Weights are integers (the source and output
 //! sizes are scaled to a common grid), so a 2x2 block averages exactly and a flat image stays
-//! flat at any ratio. The filter streams: only one row of accumulators (`out_width * 3` words)
+//! flat at any ratio. The filter streams: only one row of accumulators (`out_width * 4` words)
 //! is ever held, never a buffer of the downscaled image, so the PNG encoder and the thumbnail
 //! make their output in the same pass.
+//!
+//! The pixels are premultiplied BGRA, and all four channels are averaged as they are: that is the
+//! correct average of premultiplied colour (a transparent pixel adds nothing to the colour and a
+//! half-covered one counts half). An opaque image averages exactly as it did before alpha was
+//! kept, since its alpha stays 255.
 
 use std::slice;
 
@@ -66,7 +71,7 @@ pub(crate) struct Downscaler<'a> {
     column_weights: Vec<u32>,
     rows: Vec<Span>,
     row_weights: Vec<u32>,
-    /// One source row, summed horizontally into output columns (3 channels each).
+    /// One source row, summed horizontally into output columns (4 channels each).
     horizontal: Vec<u32>,
     /// The output row being built.
     accumulator: Vec<u64>,
@@ -89,8 +94,8 @@ impl<'a> Downscaler<'a> {
             column_weights,
             rows,
             row_weights,
-            horizontal: vec![0; out_width * 3],
-            accumulator: vec![0; out_width * 3],
+            horizontal: vec![0; out_width * 4],
+            accumulator: vec![0; out_width * 4],
             max_row_samples: 0,
         }
     }
@@ -103,9 +108,9 @@ impl<'a> Downscaler<'a> {
         self
     }
 
-    /// Writes output row `y` as RGB bytes (`out_width * 3` of them) into `rgb`.
-    pub(crate) fn row_rgb(&mut self, y: usize, rgb: &mut [u8]) {
-        debug_assert!(y < self.out_height && rgb.len() == self.out_width * 3);
+    /// Writes output row `y` as the average premultiplied BGRA (`out_width * 4` bytes) into `bgra`.
+    pub(crate) fn row_bgra(&mut self, y: usize, bgra: &mut [u8]) {
+        debug_assert!(y < self.out_height && bgra.len() == self.out_width * 4);
         self.accumulator.fill(0);
         let (start, weights, count) = {
             let row = &self.rows[y];
@@ -124,7 +129,7 @@ impl<'a> Downscaler<'a> {
             }
             width * self.source.height as u64
         };
-        for (byte, sum) in rgb.iter_mut().zip(&self.accumulator) {
+        for (byte, sum) in bgra.iter_mut().zip(&self.accumulator) {
             *byte = ((sum + total / 2) / total) as u8;
         }
     }
@@ -137,23 +142,23 @@ impl<'a> Downscaler<'a> {
         }
     }
 
-    /// Sums source row `j` horizontally into `self.horizontal`, as R, G, B per output column.
+    /// Sums source row `j` horizontally into `self.horizontal`, as B, G, R, A per output column.
     fn sum_source_row(&mut self, j: usize) {
         let row = &self.source.pixels[j * self.source.stride..]
             [..self.source.width * SNAPIT_BYTES_PER_PIXEL];
-        let (outputs, _) = self.horizontal.as_chunks_mut::<3>();
+        let (outputs, _) = self.horizontal.as_chunks_mut::<4>();
         for (column, out) in self.columns.iter().zip(outputs) {
             let weights = &self.column_weights[column.weights..column.weights + column.count];
             let pixels = &row[column.start * SNAPIT_BYTES_PER_PIXEL..]
                 [..column.count * SNAPIT_BYTES_PER_PIXEL];
-            let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
+            let mut sum = [0u32; 4];
             let (pixels, _) = pixels.as_chunks::<SNAPIT_BYTES_PER_PIXEL>();
             for (px, &w) in pixels.iter().zip(weights) {
-                b += w * u32::from(px[0]);
-                g += w * u32::from(px[1]);
-                r += w * u32::from(px[2]);
+                for (total, &channel) in sum.iter_mut().zip(px) {
+                    *total += w * u32::from(channel);
+                }
             }
-            *out = [r, g, b];
+            *out = sum;
         }
     }
 }
@@ -181,9 +186,9 @@ pub(crate) fn within_averaging_limit(width: u32, height: u32) -> bool {
     width <= MAX_DOWNSCALE_SOURCE && height <= MAX_DOWNSCALE_SOURCE
 }
 
-/// Averages a BGRA image down to `out_width` x `out_height` and writes it as BGRA, opaque, into
-/// `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out thumbnail; the
-/// averaging is the one the PNG encoder uses for a 1x Export.
+/// Averages a BGRA image down to `out_width` x `out_height` and writes it as premultiplied BGRA,
+/// alpha included, into `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out
+/// thumbnail; the averaging is the one the PNG encoder uses for a 1x Export.
 ///
 /// `out_width` and `out_height` must be at least 1 and no larger than the source, and the source
 /// no larger than 65535 pixels either way. `max_row_samples` limits how many source rows are read
@@ -236,15 +241,9 @@ pub unsafe extern "C" fn snapit_downscale(
         };
         let mut scaler = Downscaler::new(source, out_width as usize, out_height as usize)
             .with_row_samples(max_row_samples as usize);
-        let mut rgb = vec![0u8; out_width as usize * 3];
         for y in 0..out_height as usize {
-            scaler.row_rgb(y, &mut rgb);
             let row = &mut dst[y * dst_stride..][..out_width as usize * SNAPIT_BYTES_PER_PIXEL];
-            let (out, _) = row.as_chunks_mut::<SNAPIT_BYTES_PER_PIXEL>();
-            let (rgb, _) = rgb.as_chunks::<3>();
-            for (px, c) in out.iter_mut().zip(rgb) {
-                *px = [c[2], c[1], c[0], 255];
-            }
+            scaler.row_bgra(y, row);
         }
         SNAPIT_STATUS_OK
     })

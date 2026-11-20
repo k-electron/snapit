@@ -15,6 +15,10 @@ nonisolated extension SocketCommand {
     static let timedMouse = SocketCommand("timed-mouse")
     /// `fixture-fresh-ignores-exclusions on|off`: the fixture's fresh Capture paints snapit's windows
     /// whatever the content filter excludes, to show a Capture that let them through. Test mode only.
+    /// `timed-seconds-store <integer>|<text>`: stores that raw value (an integer, as the slider
+    /// does, however far out of range; or text that is not a number) under the timer's key, to see
+    /// how the Action bar reads it. Replies `ok`. Test mode only.
+    static let timedSecondsStore = SocketCommand("timed-seconds-store")
     static let fixtureFreshIgnoresExclusions = SocketCommand("fixture-fresh-ignores-exclusions")
 }
 
@@ -50,6 +54,15 @@ extension SocketCommandRegistry {
             if type == .mouseMoved { view.mouseMoved(with: event) } else { badge.sendEvent(event) }
             return "ok"
         }
+        register(.timedSecondsStore) { request in
+            guard let value = request.arguments.first else { return "error timed-seconds-store <integer>|<text>" }
+            if let number = Int(value) {
+                AppDefaults.store.set(number, forKey: TimedCaptureSettings.secondsKey)
+            } else {
+                AppDefaults.store.set(value, forKey: TimedCaptureSettings.secondsKey)
+            }
+            return "ok"
+        }
         register(.fixtureFreshIgnoresExclusions) { request in
             guard let mode = request.arguments.first, mode == "on" || mode == "off" else {
                 return "error fixture-fresh-ignores-exclusions on|off"
@@ -77,7 +90,8 @@ extension AreaCaptureFlow {
                 "ticking=\(timed.isTicking ? "yes" : "no")", "area=\(describe(timed.area))",
                 "border=\(describe(timed.borderRect))", "badge=\(describe(timed.badgeRect))",
                 "border-panels=\(timed.strips.count)",
-                "border-click-through=\(timed.strips.allSatisfy(\.ignoresMouseEvents) ? "yes" : "no")",
+                "border-click-through=\(timed.strips.allSatisfy(\.isClickThrough) ? "yes" : "no")",
+                "badge-click-through=\(timed.badge?.isClickThrough == false ? "no" : "yes")",
                 "tooltip=\(timed.tooltipText ?? "none")",
             ]
         } else {

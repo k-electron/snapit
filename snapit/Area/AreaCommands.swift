@@ -167,11 +167,13 @@ extension AreaOverlayController {
             && containers.allSatisfy { $0.wantsUpdateLayer && $0.subviews.first === $0.sceneView }
         return [
             "displays=\(displays.count)",
+            "mode=\(mode == .window ? "window" : "area")",
             "state=\(state.rawValue)",
             "display=\(activeIndex)",
             "display-ids=\(displays.map { String($0.displayID) }.joined(separator: ","))",
             "cursor=\(format(cursor.x)),\(format(cursor.y))",
             "hover=\(describe(hoveredWindow))",
+            "hover-window=\(hoveredOnScreenWindow.map { String($0.id) } ?? "none")",
             "selection=\(selectionIndex.map(String.init) ?? "none") \(describe(selection))",
             "view=\(layerHosted ? "layer-hosted-scene" : "drawn")",
             "after-selecting=\(CapturingSettings.afterSelectingArea.rawValue)",

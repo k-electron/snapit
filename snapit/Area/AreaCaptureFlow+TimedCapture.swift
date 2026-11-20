@@ -21,12 +21,19 @@ extension AreaCaptureFlow {
             displayID: frozen.displayID, frame: frozen.frame, scale: frozen.scale, pixels: selection.pixels)
         controller.teardown()
         // The desktop is the user's again, and what they switch to during the countdown is theirs.
-        previousApp?.activate()
+        if let previous = previousApp {
+            previous.activate()
+        } else if !TestMode.isActive {
+            NSApp.deactivate()
+        }
         previousApp = nil
 
         let timed = TimedCountdown(target: target, seconds: seconds)
         timed.onCancel = { cancelTimedCapture() }
         timed.onZero = { fireTimedCapture() }
+        // The helper that warmed up for this Capture may have quit while the seconds ran: one
+        // second before the Capture it is asked again (the Capture's warm-up began at the Shortcut).
+        timed.onLastSecond = { EditorWarmUp.revalidate() }
         countdown = timed
         timed.start()
         lastStartedAt = timed.startedAt
@@ -43,11 +50,8 @@ extension AreaCaptureFlow {
     /// The seconds ran out: a fresh Capture of the display, then the usual crop and Editor.
     private static func fireTimedCapture() {
         guard let timed = countdown else { return }
-        // The helper that warmed up for this Capture may have quit while the seconds ran.
-        EditorWarmUp.revalidate()
         let request = FreshCaptureRequest(
-            displayID: timed.target.displayID, displayFrame: timed.target.frame, ownWindows: timed.ownWindows,
-            excluding: Set(timed.ownWindows.map(\.number)))
+            displayID: timed.target.displayID, displayFrame: timed.target.frame, ownWindows: timed.ownWindows)
         Task {
             do {
                 let screen = try await TimedCaptureSources.current.captureFresh(request) { timed.hideWindows() }

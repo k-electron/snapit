@@ -8,11 +8,12 @@ import Foundation
 /// - a 4 x 4 pixel stamp at the display's top-left corner, `R = 250, G = <how many fresh Captures
 ///   so far, from 1>, B = 77` (the fixture formula's pixels there are different, and the frozen
 ///   frame has no stamp);
-/// - every window of snapit's that is on screen and not excluded, painted over the frame (the
-///   border in pink, the badge nearly black), as a real screen would show it.
+/// - every window of snapit's that is on screen and not excluded by `OwnWindowExclusion` (the
+///   decision the real content filter is built from), painted over the frame (the border in pink,
+///   the badge nearly black), as a real screen would show it.
 ///
-/// `fixture-fresh-ignores-exclusions on` paints them all whatever the request excludes, so a run
-/// can see that a Capture that lets them through would show them.
+/// `fixture-fresh-ignores-exclusions on` paints them all whatever is excluded, so a run can see
+/// that a Capture that lets them through would show them.
 @MainActor
 final class FixtureTimedCaptureSource: TimedCaptureSource {
     static let shared = FixtureTimedCaptureSource()
@@ -39,7 +40,12 @@ final class FixtureTimedCaptureSource: TimedCaptureSource {
         let display = displays[index]
         captureCount += 1
         lastCapture = .now
-        lastExcluded = request.excluding.sorted()
+        // snapit is always "listed" in the fixture's content; the same decision the real filter
+        // is built from says which of its windows are kept out.
+        let exclusion = OwnWindowExclusion.plan(
+            applicationListed: true, ownWindows: request.ownWindows.map { .init(number: $0.number, layer: $0.layer) })
+        let excluded = request.ownWindows.filter { exclusion.excludes(.init(number: $0.number, layer: $0.layer)) }
+        lastExcluded = excluded.map(\.number).sorted()
 
         let base = try FixtureCaptureSource.makeImage(display)
         let width = base.width, height = base.height
@@ -60,7 +66,7 @@ final class FixtureTimedCaptureSource: TimedCaptureSource {
             context.setFillColor(CGColor(colorSpace: display.colorSpace, components: components)!)
             context.fill(rect)
         }
-        let ownWindows = request.ownWindows.filter { ignoresExclusions || !request.excluding.contains($0.number) }
+        let ownWindows = ignoresExclusions ? request.ownWindows : request.ownWindows.filter { !excluded.contains($0) }
         for window in ownWindows {
             // The frame in device pixels, from the display's bottom-left corner like the context.
             let rect = CGRect(
