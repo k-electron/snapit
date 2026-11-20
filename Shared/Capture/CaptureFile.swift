@@ -101,18 +101,43 @@ nonisolated enum CaptureFiles {
     /// place, so the helper never sees half a file. Returns once the pixels are in the file and
     /// the mapping is gone.
     static func write(number: Int, image: CGImage, scale: Double, captureTime: Date = Date()) throws {
+        try write(
+            number: number, width: image.width, height: image.height, scale: scale,
+            colorSpace: PixelBuffer.bitmapColorSpace(for: image), captureTime: captureTime
+        ) { try $0.draw(image) }
+    }
+
+    /// Writes the pixel rectangle `area` of `image` as Capture N: the engine crops it straight
+    /// into the file's mapped buffer. The file carries the color space of `image`.
+    static func write(number: Int, image: CGImage, cropping area: PixelRect, scale: Double, captureTime: Date = Date())
+        throws
+    {
+        guard area.isInside(width: image.width, height: image.height) else {
+            throw EngineError(status: .invalidArgument, rawValue: SNAPIT_STATUS_INVALID_ARGUMENT)
+        }
+        try write(
+            number: number, width: area.width, height: area.height, scale: scale,
+            colorSpace: PixelBuffer.bitmapColorSpace(for: image), captureTime: captureTime
+        ) { try Engine.crop(image, to: area, into: $0) }
+    }
+
+    /// Writes a `width` x `height` Capture as Capture N, in the same way: `fill` puts the
+    /// pixels into the file's mapped buffer.
+    static func write(
+        number: Int, width: Int, height: Int, scale: Double, colorSpace space: CGColorSpace,
+        captureTime: Date = Date(), fill: (PixelBuffer) throws -> Void
+    ) throws {
         try FileManager.default.createDirectory(
             at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let final = url(number: number)
         let partial = URL(fileURLWithPath: final.path + partialSuffix)
         do {
-            let space = PixelBuffer.bitmapColorSpace(for: image)
             let profile = (space.copyICCData() as Data?) ?? Data()
             // The buffer unmaps the file when it goes out of scope at the end of this block.
             let pixels = try create(
-                at: partial, width: image.width, height: image.height, scale: scale, captureTime: captureTime,
+                at: partial, width: width, height: height, scale: scale, captureTime: captureTime,
                 icc: profile, colorSpace: space)
-            try pixels.draw(image)
+            try fill(pixels)
         } catch {
             unlink(partial.path)
             throw error

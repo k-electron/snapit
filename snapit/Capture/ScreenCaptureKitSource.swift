@@ -26,15 +26,23 @@ struct ScreenCaptureKitSource: CaptureSource {
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw ScreenCaptureError.noDisplay
         }
-        // snapit's own windows (a menu still fading out, later its overlay) never appear in a
-        // Capture. Its menu bar icon is a status item window, part of the screen, so it stays in.
+        return try await Self.screenshot(filter: Self.filter(for: display, in: content))
+    }
+
+    /// A filter for the whole `display`. snapit's own windows (a menu still fading out, later its
+    /// overlay) never appear in a Capture. Its menu bar icon is a status item window, part of the
+    /// screen, so it stays in.
+    static func filter(for display: SCDisplay, in content: SCShareableContent) -> SCContentFilter {
         let statusLayer = Int(CGWindowLevelForKey(.statusWindow))
         let ownWindows = content.windows.filter {
             $0.owningApplication?.bundleIdentifier == AppIdentity.mainBundleIdentifier
                 && $0.windowLayer != statusLayer
         }
-        let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
+        return SCContentFilter(display: display, excludingWindows: ownWindows)
+    }
 
+    /// One screenshot of what `filter` selects: native pixels, SDR, in the display's color space.
+    static func screenshot(filter: SCContentFilter) async throws -> CapturedScreen {
         let scale = Double(filter.pointPixelScale)
         let configuration = SCScreenshotConfiguration()
         // Native pixels: the content rect is in points.

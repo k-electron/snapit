@@ -21,6 +21,8 @@ the real system is replaced:
 |---|---|---|---|
 | cache folder and sockets | `~/Library/Caches/dev.snapit.snapit` | the root | `Shared/AppIdentity.swift` |
 | Capture source | ScreenCaptureKit | fixture images, 1x sRGB or 2x Display P3 | `snapit/Capture/` |
+| Area Capture source (frozen displays, the pointer) | one ScreenCaptureKit screenshot per display | the fixture image for each fake display, the pointer in the middle of the first | `snapit/Area/AreaCaptureSource.swift` |
+| window list (hover highlight) | the window server's on-screen list | two fixed overlapping windows over the first fake display | `snapit/Area/OnScreenWindowSource.swift` |
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
@@ -55,11 +57,17 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
-| `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished |
+| `fixture-extra-display <scale> <w> <h>` or `none` | adds a second fake display to the right of the first, with its own scale and size (the Area overlay gets one panel per display) |
+| `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished. The Area Shortcut's action finishes when the overlay is showing; the rest is the scripted run's mouse |
 | `bound-shortcuts` | the ids of the Shortcuts that are bound |
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
+| `overlay-mouse move\|down\|drag\|up <display> <x> <y>` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display) |
+| `overlay-key escape\|enter\|<key code>` | sends the overlay a key event through the application's event dispatch |
+| `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
+| `overlay-facts` | what the overlay shows: `displays`, `state`, `display`, `cursor`, `hover`, `selection`, `view` (`layer-hosted` when no view draws), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
@@ -94,14 +102,20 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `40-` Area Capture, `90-` Editor helper and Quit, which must stay last).
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
 `EDITOR_N` and `HELPER_PID`; `copy_closes_editor`, `app_type <pid>` for Foreground (Dock icon)
 versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variables `APP_SOCK`,
 `EDITOR_SOCK`, `RUN_ROOT`, `APP_PID`, `INSPECT` (the `png-inspect` tool, which also lists a
-process's windows: `png-inspect windows <pid>`).
+process's windows: `png-inspect windows <pid>`, and the Area overlay's panels:
+`png-inspect overlay-windows <pid>`).
+
+The Area flow (`40-area-capture.sh`) shows how to drive an overlay: `press-shortcut capture-area`
+shows it, `overlay-mouse` and `overlay-key` are the user's hand, `overlay-wait` returns when the
+Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w> <h> <full w>
+<full h> <x> <y>` checks a crop of the fixture pixel by pixel.
 
 1. Pick the fixture: `send "$APP_SOCK" "fixture-display 2 301 187"`.
 2. Drive the app through a command, never the real system. A Capture opens an Editor in the helper:
@@ -133,6 +147,19 @@ A feature that touches a new part of the real system adds one file for that edge
 `snapit/Capture/CaptureSource.swift` with `FixtureCaptureSource.swift` and `CaptureCommands.swift`
 is the model to copy. Edges both processes need live in `Shared/Edges/`; their commands in
 `Shared/TestMode/TestModeCommands.swift`.
+
+## The Area overlay
+
+The overlay is the menu bar app's (`snapit/Area/`). Every display is frozen with one screenshot,
+the overlay shows it in persistent Core Animation layers (`AreaOverlayScene`) updated in a
+transaction with actions disabled, and letting go of the mouse crops the frozen frame in the
+engine (`snapit_crop`) straight into the Capture file. Test mode shows the same panels over the
+fixture displays, a little in from the main screen's bottom-left corner and only as big as the
+fake display, so a run never covers the user's screen. A scripted run never activates snapit or
+takes the keyboard. `FixtureWindowSource` has two overlapping windows over the first fake display
+(front 60,40 100x60; back 20,20 200x130 points) to aim a hover at. The fixture frames are
+IOSurface-backed like a ScreenCaptureKit screenshot, so Core Animation shows them without copying
+and the run can check that the overlay holds each frame once and gives it back.
 
 ## Adding to the Editor
 

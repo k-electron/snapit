@@ -1,5 +1,7 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
+import VideoToolbox
 
 /// Test mode's Capture source: a deterministic image instead of the screen.
 ///
@@ -37,19 +39,27 @@ final class FixtureCaptureSource: CaptureSource {
         return CapturedScreen(image: try Self.makeImage(display), scale: Double(display.scale))
     }
 
-    private static func makeImage(_ display: Display) throws -> CGImage {
+    /// The fixture image, in IOSurface-backed memory like a ScreenCaptureKit screenshot: Core
+    /// Animation shows such an image without copying it, and the memory goes back the moment the
+    /// last reference to the image does. Rows are padded (64-byte aligned, never tight).
+    static func makeImage(_ display: Display) throws -> CGImage {
         let width = display.pointWidth * display.scale
         let height = display.pointHeight * display.scale
-        // Source rows deliberately wider than the pixels, as ScreenCaptureKit's can be.
-        let bytesPerRow = width * 4 + 96
-        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        guard
-            let context = CGContext(
-                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow,
-                space: display.colorSpace, bitmapInfo: bitmapInfo),
-            let base = context.data
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as [CFString: Any],
+            kCVPixelBufferBytesPerRowAlignmentKey: 64,
+        ]
+        var buffer: CVPixelBuffer?
+        guard CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &buffer) == kCVReturnSuccess,
+            let buffer
         else { throw ScreenCaptureError.noImage }
 
+        CVPixelBufferLockBaseAddress(buffer, [])
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else {
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            throw ScreenCaptureError.noImage
+        }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
         let pixels = base.bindMemory(to: UInt8.self, capacity: bytesPerRow * height)
         for y in 0..<height {
             let green = UInt8(y * 255 / max(height - 1, 1))
@@ -62,7 +72,13 @@ final class FixtureCaptureSource: CaptureSource {
                 at[3] = 255
             }
         }
-        guard let image = context.makeImage() else { throw ScreenCaptureError.noImage }
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, display.colorSpace, .shouldPropagate)
+
+        var image: CGImage?
+        guard VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image) == noErr, let image else {
+            throw ScreenCaptureError.noImage
+        }
         return image
     }
 }
