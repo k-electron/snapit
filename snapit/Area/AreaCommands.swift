@@ -26,6 +26,11 @@ nonisolated extension SocketCommand {
     static let overlayKey = SocketCommand("overlay-key")
     /// What the overlay shows now, as `key=value` lines. Replies `none` when no overlay is up.
     static let overlayFacts = SocketCommand("overlay-facts")
+    /// How many windows the app has ordered in at the overlay's level (the overlay's panels, the
+    /// Color picker's toast, a Timed Capture's border and badge): what the window server's list
+    /// (`png-inspect overlay-windows`) shows once it has caught up. The scripted run waits for the
+    /// two to agree, because the list lags AppKit's `orderFront` and `orderOut` when the machine is busy.
+    static let overlayWindowCount = SocketCommand("overlay-window-count")
     /// `overlay-snapshot <display> <path>`: renders that display's layers to a PNG inside the
     /// run's root, as the panel would show them. Replies `ok`.
     static let overlaySnapshot = SocketCommand("overlay-snapshot")
@@ -37,6 +42,7 @@ extension SocketCommandRegistry {
         guard TestMode.isActive else { return }
         registerActionBarTestCommands()
         registerPickColorTestCommands()
+        registerTimedCaptureTestCommands()
 
         register(.fixtureExtraDisplay) { request in
             let arguments = request.arguments
@@ -62,7 +68,9 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.overlayScreensChanged) { _ in
-            guard AreaCaptureFlow.activeOverlay != nil else { return "error no overlay" }
+            guard AreaCaptureFlow.activeOverlay != nil || AreaCaptureFlow.countdown != nil else {
+                return "error no overlay"
+            }
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
@@ -113,6 +121,9 @@ extension SocketCommandRegistry {
             guard let event else { return "error no key event" }
             NSApp.sendEvent(event)
             return "ok"
+        }
+        register(.overlayWindowCount) { _ in
+            String(NSApp.windows.filter { $0.isVisible && $0.level == .screenSaver }.count)
         }
         register(.overlayFacts) { _ in
             guard let controller = AreaCaptureFlow.activeOverlay else { return "none" }
@@ -170,7 +181,7 @@ extension AreaOverlayController {
             && containers.allSatisfy { $0.wantsUpdateLayer && $0.subviews.first === $0.sceneView }
         return [
             "displays=\(displays.count)",
-            "mode=\(mode == .window ? "window" : "area")",
+            "mode=\(mode)",
             "state=\(state.rawValue)",
             "display=\(activeIndex)",
             "display-ids=\(displays.map { String($0.displayID) }.joined(separator: ","))",

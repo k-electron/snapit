@@ -14,5 +14,6 @@ extension SocketCommandRegistry {
         registerEditorTextTestCommands()
         registerEditorColorTestCommands()
         registerInstallHelperCommands()
+        registerSettingsHelperCommands()
     }
 }

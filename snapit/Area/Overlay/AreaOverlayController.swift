@@ -97,13 +97,13 @@ final class AreaOverlayController: ActionBarHost {
 
     /// Puts a panel on every display. `takesFocus` is false in a scripted run, which never
     /// activates snapit or takes the keyboard from what the user is doing.
-    /// With `startsPicking` the overlay opens in the Color picker (the menu item and its Shortcut).
-    func show(takesFocus: Bool, startsPicking: Bool = false) {
+    /// In `.pickColor` mode the overlay opens in the Color picker (the menu item and its Shortcut).
+    func show(takesFocus: Bool) {
         activeIndex = displays.firstIndex { NSMouseInRect(pointer, $0.frame, false) } ?? 0
         let active = displays[activeIndex]
         cursor = AreaGeometry.clamp(
             CGPoint(x: pointer.x - active.frame.minX, y: active.frame.maxY - pointer.y), to: active.bounds)
-        if startsPicking {
+        if mode == .pickColor {
             state = .pickingColor
             picker = makePickerSession(origin: .entry)
         }

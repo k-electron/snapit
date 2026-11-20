@@ -9,9 +9,7 @@
 # coordinates, and under either "After selecting an Area" setting. No Editor is warmed up for a pick
 # from the menu or the Shortcut. Uses the helpers of 40-area-capture.sh and 42-action-bar.sh
 # (area_start, mouse, fact, overlay_panels, area_drag, area_cancel, press_tile, tile_point,
-# tooltip_is, precise_mb, area_no_helper). Sourced by scripts/check-run.sh. It runs before 45- on
-# purpose: after the Save flow's Editors the test store no longer takes a value the menu bar app
-# changes, and this flow changes "After selecting an Area".
+# tooltip_is, precise_mb, area_no_helper). Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
 # fixture_hex <scale> <points w> <points h> <pixel x> <pixel y>: the fixture's pixel as `#RRGGBB`.
@@ -58,18 +56,10 @@ picked() {
   expect_equal "$1: the toast says it was copied" "Copied $2" "$(send "$APP_SOCK" color-toast)"
 }
 
-# set_after_selecting <value>: stores the setting while no Editor helper runs (in the test store's
-# file a running helper neither sees a key another process wrote nor lets it stand; see
-# 45-save-and-drag-out.sh) and reads it back, so a dropped command shows here.
+# set_after_selecting <value>: stores the setting through the test store.
 set_after_selecting() {
-  local try
-  send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
-  wait_until 10 area_no_helper
-  for try in 1 2 3; do
-    send "$APP_SOCK" "defaults-set afterSelectingArea $1" >/dev/null
-    [[ "$(send "$APP_SOCK" "defaults-get afterSelectingArea")" == "$1" ]] && return 0
-  done
-  fail "the setting 'After selecting an Area' would not take $1 (reads '$(send "$APP_SOCK" "defaults-get afterSelectingArea")', helper '$(helper_pid)')"
+  send "$APP_SOCK" "defaults-set afterSelectingArea $1" >/dev/null
+  expect_equal "the setting 'After selecting an Area' takes $1" "$1" "$(send "$APP_SOCK" "defaults-get afterSelectingArea")"
 }
 
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null

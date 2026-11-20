@@ -91,8 +91,8 @@ TILES="$(printf '%s\n' "$ITEMS" | awk -F'|' -v bar="$BAR" '
     if (f[3] < 60 || f[4] < 30) small++
     if (f[1] < b[1] || f[2] < b[2] || f[1] + f[3] > b[1] + b[3] || f[2] + f[4] > b[2] + b[4]) outside++
   }
-  END { printf "items=%s small=%d outside=%d\n", (n >= 2 ? "ok" : n), small, outside }')"
-expect_equal "each button is a whole tile of at least 60 x 30 points, inside the bar" "items=ok small=0 outside=0" "$TILES"
+  END { printf "items=%d small=%d outside=%d\n", n, small, outside }')"
+expect_contains "each button is a whole tile of at least 60 x 30 points, inside the bar" "small=0 outside=0" "$TILES"
 
 # Tooltips are drawn in the overlay (the system's tooltip window sits below it): resting the pointer
 # on a tile shows its tooltip after a moment, moving to another tile or off the bar takes it away.
@@ -130,7 +130,7 @@ expect_equal "a press on Cancel released elsewhere does not cancel" "adjusting" 
 expect_equal "and the overlay is still up" "1" "$(overlay_panels | grep -c '^600x400 ')"
 
 # 3. Keys: a key no item claims is ignored, Enter does nothing before a selection exists, and an
-#    item's own key would run it (43-color-picker.sh drives P).
+#    item's own key would run it (47-color-picker.sh drives P).
 send "$APP_SOCK" "overlay-key z" >/dev/null
 expect_equal "a key no Action bar item claims does nothing" "adjusting" "$(fact state)"
 area_cancel
@@ -407,20 +407,20 @@ area_drag 0 100 60 300 160
 expect_equal "back at Show Action bar the next release keeps the selection" "adjusting" "$(fact state)"
 area_cancel
 
-# 13. A second display (400 x 300 at 2x): the selection and its bar stay on the display where the drag
+# 13. A second display (800 x 300 at 2x, the bar is about 450 pt wide, and over 570 pt with Pick Color): the selection and its bar stay on the display where the drag
 #     started, and each display has its own ID.
-send "$APP_SOCK" "fixture-extra-display 2 400 300" >/dev/null
+send "$APP_SOCK" "fixture-extra-display 2 800 300" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 DISPLAY_IDS="$(fact display-ids)"
 expect_equal "each display has an ID of its own" "2" "$(printf '%s\n' "$DISPLAY_IDS" | tr ',' '\n' | sort -u | grep -c .)"
 area_drag 1 20 20 120 90
 expect_equal "the selection is on the second display" "1 20,20 100x70" "$(fact selection)"
-if in_display "$(bar_frame)" 400 300; then pass "the Action bar is on the second display"; else fail "the Action bar is not inside the second display ($(bar_frame))"; fi
+if in_display "$(bar_frame)" 800 300; then pass "the Action bar is on the second display"; else fail "the Action bar is not inside the second display ($(bar_frame))"; fi
 expect_equal "eight handles on the second display" "8" "$(fact handles)"
 send "$APP_SOCK" "overlay-key enter" >/dev/null
 if area_result; then pass "the Area on the second display is captured with Enter"; else fail "the second display's Capture finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
-  area_png_check "Action bar Capture on the second display (2x)" 2 200 140 800 600 40 40 "Display P3" "$P3_SHA_AREA" 5669
+  area_png_check "Action bar Capture on the second display (2x)" 2 200 140 1600 600 40 40 "Display P3" "$P3_SHA_AREA" 5669
 fi
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 

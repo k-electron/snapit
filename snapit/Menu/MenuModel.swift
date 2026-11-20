@@ -11,7 +11,7 @@ final class MenuModel {
     var sections: [any MenuSection] = [
         CaptureMenu(),
         LastCaptureMenu(),
-        EngineVersionMenu(),
+        SettingsMenu(),
         QuitMenu(),
     ]
 
