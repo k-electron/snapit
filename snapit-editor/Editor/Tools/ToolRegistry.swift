@@ -8,6 +8,8 @@ enum ToolRegistry {
             ArrowTool(),
             RectangleTool(),
             OvalTool(),
+            TextTool(),
+            HighlighterTool(),
             RedactionTool(),
             CropTool(),
         ]

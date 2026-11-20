@@ -69,6 +69,26 @@ expect_near() {
   pass "$1"
 }
 
+# expect_within <description> <tolerance> <"r,g,b" expected> <"r,g,b" actual>: every channel within the tolerance.
+expect_within() {
+  local i want got
+  for i in 0 1 2; do
+    want="$(channel "$3" "$i")"; got="$(channel "$4" "$i")"
+    if ((got < want - $2 || got > want + $2)); then fail "$1 (expected $3 within $2, got $4)"; return; fi
+  done
+  pass "$1"
+}
+# blend <"r,g,b" under> <"r,g,b" over> <opacity in percent>: the pixel when `over` is laid on `under`.
+blend() {
+  local i under over out=""
+  for i in 0 1 2; do
+    under="$(channel "$1" "$i")"; over="$(channel "$2" "$i")"
+    out+="$(awk -v u="$under" -v o="$over" -v a="$3" 'BEGIN { printf "%d", u * (100 - a) / 100 + o * a / 100 + 0.5 }')"
+    if ((i < 2)); then out+=","; fi
+  done
+  echo "$out"
+}
+
 # item_enabled <item id>: whether a toolbar item is enabled in the open Editor.
 item_enabled() { [[ "$(send "$EDITOR_SOCK" "editor-enabled $EDITOR_N $1")" == "yes" ]]; }
 expect_enabled() { if item_enabled "$2"; then pass "$1"; else fail "$1 ('$2' is disabled)"; fi; }
