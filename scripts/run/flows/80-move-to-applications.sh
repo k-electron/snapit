@@ -49,6 +49,15 @@ ditto "$APP" "$VOLAPP"
 approve_quarantine "$VOLAPP"
 SOURCE_QUARANTINED="$(quarantine_count "$VOLAPP")"
 
+# Open at Login's default belongs to a copy in Applications: not to one on a disk image.
+login_enabled() { [[ "$(send "$APP_SOCK" login-item-status)" == "enabled" ]]; }
+send "$APP_SOCK" "login-item-simulate notFound" >/dev/null
+send "$APP_SOCK" "defaults-set openAtLoginDefaultApplied false" >/dev/null
+fake_disk_image
+expect_equal "a copy on a disk image is not opened at login" "not-applied" "$(send "$APP_SOCK" login-item-default)"
+expect_equal "so Open at Login is not turned on from a disk image" "notFound" "$(send "$APP_SOCK" login-item-status)"
+send "$APP_SOCK" install-reset >/dev/null
+
 # 2. From a disk image: the helper shows the screen. Not Now leaves everything as it is.
 fake_disk_image
 expect_equal "a fake read-only volume below /Volumes counts as a disk image" "true" "$(location_field on-disk-image)"
@@ -138,6 +147,8 @@ if [[ -n "$NEW_PID" ]] && wait_until 20 answers "$APP_SOCK"; then
 else
   fail "snapit did not relaunch from Applications"
 fi
+if wait_until 15 login_enabled; then pass "the first launch from Applications turns Open at Login on"; else fail "Open at Login is still '$(send "$APP_SOCK" login-item-status)' after the launch from Applications"; fi
+expect_equal "the default is recorded once registering worked" "1" "$(send "$APP_SOCK" "defaults-get openAtLoginDefaultApplied")"
 expect_equal "the copy in Applications has no quarantine left" "0" "$(quarantine_count "$DEST")"
 [[ ! -e "$DEST/stale-copy" ]] && pass "the move replaced the snapit that was in Applications" || fail "the old snapit is still in Applications"
 expect_equal "the move leaves no staged copy behind" "" "$(ls -A "$APPS" | grep '^\.snapit-move' || true)"
@@ -171,6 +182,7 @@ approve_quarantine "$DEST"
 fake_translocation "$DEST"
 EJECT_LINES="$(cat "$EJECTED" 2>/dev/null | wc -l | tr -d ' ')"
 OLD_APP_PID="$APP_PID"
+send "$APP_SOCK" "login-item-set off" >/dev/null
 expect_equal "an approved translocated copy is fixed in place" "fixed-in-place" "$(send "$APP_SOCK" install-check)"
 if wait_until 20 gone "$OLD_APP_PID"; then pass "the translocated snapit quits"; else fail "the translocated snapit is still running"; fi
 NEW_PID="$(wait_for_pid "$DEST/Contents/MacOS/snapit")"
@@ -181,6 +193,8 @@ else
   fail "snapit did not relaunch in place"
 fi
 expect_equal "the copy that was translocated has no quarantine left" "0" "$(quarantine_count "$DEST")"
+sleep 2
+if [[ "$(send "$APP_SOCK" login-item-status)" != "enabled" ]]; then pass "a launch from Applications leaves an Open at Login that was turned off alone"; else fail "a relaunch from Applications turned Open at Login on again"; fi
 expect_equal "the in-place fix shows no Move screen and starts no helper" "" "$(pid_of "$DEST/Contents/Helpers/")"
 expect_equal "the in-place fix ejects nothing" "$EJECT_LINES" "$(cat "$EJECTED" 2>/dev/null | wc -l | tr -d ' ')"
 expect_equal "the relaunched snapit runs from the same place" "$DEST" "$(location_field bundle)"

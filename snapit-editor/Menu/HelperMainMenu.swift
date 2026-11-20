@@ -28,6 +28,9 @@ enum HelperMainMenu {
         menu.addItem(
             withTitle: "About snapit", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        let settings = menu.addItem(withTitle: "Settings…", action: #selector(SettingsMenuTarget.showSettings(_:)), keyEquivalent: ",")
+        settings.target = SettingsMenuTarget.shared
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Hide snapit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit snapit", action: quitAction, keyEquivalent: "q")

@@ -145,3 +145,14 @@ Run after changing the Last Capture store, the Editor's state file or the menu. 
 4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
 
 Clean up: quit snapit, so the cache folder's `captures` folder is removed.
+
+## Settings (#29)
+
+Run after changing the Settings window, the recorders or Open at Login. The scripted run drives the window through its model, with the fake login item and injected Shortcuts; it cannot show a real chooser, real hot keys, the real login items or System Settings.
+
+1. **Rebind live.** Open Settings (menu bar menu, or ⌘, in the helper). Record a new Area Shortcut: the old keys stop working and the new ones start the Area Capture at once, with no relaunch, and the menu's Capture Area shows the new glyph the next time the menu opens. Record a combination another snapit Shortcut has: it is removed from that one, and only the new one fires. Press ⌘C, ⌥A and ⇧A while recording: each is refused with a beep and a hint.
+2. **Capture on release, live.** In Settings choose Capture on release, close the window, then press the Area Shortcut with no relaunch: letting go of the mouse takes the Capture. Choose Show Action bar again: the Action bar shows. (The two processes share the bundle ID's defaults through macOS; the scripted run replaces that with a file.)
+3. **Save location.** Choose… opens a folder chooser as a sheet; pick a folder, take a Capture and press ⌘S: the file lands there, and the page shows the folder (with `~`).
+4. **Open at Login.** On a fresh install in Applications, Login Items lists snapit after the first launch (there may be a "Background item added" notification). Turn Open at Login off in Settings: snapit leaves the list. Relaunch snapit: it stays off. From a build folder or a disk image the first launch registers nothing.
+5. **The deep link.** Keyboard Shortcuts in System Settings… opens System Settings on the Keyboard page; Keyboard Shortcuts… › Screenshots is one click further (the link has no anchor for it).
+6. **Look.** The page is a grouped form on macOS 26 glass; every button has a full-capsule hit area and a hover tooltip, and Settings alone shows a Dock icon that goes when it closes.
