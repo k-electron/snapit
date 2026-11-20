@@ -25,6 +25,16 @@ overlay_panels() {
   [[ -z "$lines" ]] || printf '%s\n' "$lines"
 }
 
+# scene_updates_quiet: the overlay's scene has stopped redrawing (a move's own redraw can land late on a busy
+# machine, so the count an idle check starts from is read once this holds).
+scene_updates_quiet() {
+  local before after
+  before="$(fact scene-updates)"
+  sleep 0.3
+  after="$(fact scene-updates)"
+  [[ "$before" == "$after" ]]
+}
+
 # Drags from (x1, y1) to (x2, y2) on one display, in points from its top-left corner, in a few
 # steps, and lets go.
 area_drag() {
@@ -329,6 +339,7 @@ fi
 
 # 9. Moving the pointer redraws nothing: 200 synthetic moves leave memory flat, cost bounded CPU, and
 #    reach the layers (the scene updated), while no view draws.
+wait_until 10 scene_updates_quiet
 UPDATES_BEFORE="$(fact scene-updates)"
 CPU_BEFORE="$(cpu_seconds "$APP_PID")"
 for i in $(seq 1 200); do mouse move 0 $((100 + i * 7 % 1700)) $((100 + i * 13 % 800)) >/dev/null; done

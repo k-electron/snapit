@@ -382,6 +382,7 @@ else
 fi
 area_start "press-shortcut capture-window" >/dev/null
 mouse move 0 70 50 >/dev/null
+wait_until 10 scene_updates_quiet
 UPDATES_BEFORE="$(fact scene-updates)"
 assert_idle_cpu "the menu bar app with the window overlay up" "$APP_PID" 3
 expect_equal "an idle overlay updates nothing (no polling)" "$UPDATES_BEFORE" "$(fact scene-updates)"
