@@ -1,0 +1,4 @@
+module SnapitEngineFFI {
+    header "snapit_engine.h"
+    export *
+}

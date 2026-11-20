@@ -1,0 +1,38 @@
+//! snapit's image engine. Swift calls it through the C ABI declared in
+//! `include/snapit_engine.h`, which cbindgen generates from this crate.
+//!
+//! Every entry point runs inside [`guard`], so a panic never unwinds into Swift: it
+//! comes back as [`SNAPIT_STATUS_PANIC`].
+
+mod version;
+
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+pub use version::snapit_engine_version;
+
+/// Result of every engine entry point: one of the `SNAPIT_STATUS_*` values.
+///
+/// A plain integer rather than a C enum, so the header means the same thing to every C
+/// standard and Swift toolchain.
+pub type SnapitStatus = i32;
+
+/// The call succeeded.
+pub const SNAPIT_STATUS_OK: SnapitStatus = 0;
+/// A pointer was null or a size was out of range.
+pub const SNAPIT_STATUS_INVALID_ARGUMENT: SnapitStatus = 1;
+/// The output buffer is too small; the needed length is reported separately.
+pub const SNAPIT_STATUS_BUFFER_TOO_SMALL: SnapitStatus = 2;
+/// The engine panicked. The call had no effect.
+pub const SNAPIT_STATUS_PANIC: SnapitStatus = 3;
+
+/// Runs `body`, turning a panic into [`SNAPIT_STATUS_PANIC`].
+pub(crate) fn guard(body: impl FnOnce() -> SnapitStatus) -> SnapitStatus {
+    catch_unwind(AssertUnwindSafe(body)).unwrap_or(SNAPIT_STATUS_PANIC)
+}
+
+/// Deliberately panics inside the guard. The scripted run and the Cargo tests use it to
+/// prove a panic reaches Swift as a status code.
+#[unsafe(no_mangle)]
+pub extern "C" fn snapit_engine_probe_panic() -> SnapitStatus {
+    guard(|| panic!("snapit_engine_probe_panic"))
+}
