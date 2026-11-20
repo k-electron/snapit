@@ -15,6 +15,10 @@ import AppKit
 final class FixtureAreaCaptureSource: AreaCaptureSource {
     static let shared = FixtureAreaCaptureSource()
 
+    /// The fake display IDs: the first display's, then one more for each further display. High
+    /// enough never to be a real display's.
+    static let firstDisplayID: CGDirectDisplayID = 0x5A00_0001
+
     enum Placement: String {
         case right, left, above
     }
@@ -39,14 +43,14 @@ final class FixtureAreaCaptureSource: AreaCaptureSource {
         let frames = frames()
         let primary = frames[0]
         var frozen: [FrozenDisplay] = []
-        for (display, frame) in zip(displays, frames) {
+        for (index, (display, frame)) in zip(displays, frames).enumerated() {
             let image = try FixtureCaptureSource.makeImage(display)
             // AppKit's global space has its origin at the bottom left of the primary display, the
             // window list's at its top left.
             let cgOrigin = CGPoint(x: frame.minX - primary.minX, y: primary.maxY - frame.maxY)
             frozen.append(
                 FrozenDisplay(
-                    frame: frame, cgOrigin: cgOrigin,
+                    displayID: Self.firstDisplayID + CGDirectDisplayID(index), frame: frame, cgOrigin: cgOrigin,
                     screen: CapturedScreen(image: image, scale: Double(display.scale))))
         }
         return frozen
