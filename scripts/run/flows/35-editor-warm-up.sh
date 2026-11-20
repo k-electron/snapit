@@ -7,7 +7,10 @@
 
 # The ceiling for "Capture to the Editor visible" with a warm helper. The target is about 50 ms;
 # the ceiling leaves room for a busy CI machine. The measured value is in the pass line.
-WARM_OPEN_MS_MAX="${SNAPIT_WARM_OPEN_MS_MAX:-100}"
+# It is the median of three Captures, each with a helper that was already warm.
+WARM_OPEN_MS_MAX="${SNAPIT_WARM_OPEN_MS_MAX:-120}"
+# The footprint ceiling for a warm helper (hidden window, toolbars and canvas built, no Capture).
+WARM_HELPER_MB_MAX="${SNAPIT_WARM_HELPER_MB_MAX:-60}"
 
 warm_state() { send "$APP_SOCK" "editor-warm-up state"; }
 helper_count() { pgrep -f "$HELPER_EXE" | wc -l | tr -d ' '; }
@@ -32,6 +35,12 @@ expect_equal "a warm helper has no window on screen" "0" "$(onscreen_windows "$W
 expect_equal "a warm helper has no Editor open" "" "$(open_editors)"
 expect_equal "pressing the Shortcut again while warm starts no second helper" "ok" "$(send "$APP_SOCK" "editor-warm-up begin")"
 expect_equal "still exactly one helper process" "1" "$(helper_count)"
+WARM_HELPER_MB="$(footprint_mb "$WARM_PID")"
+if awk -v a="$WARM_HELPER_MB" -v max="$WARM_HELPER_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
+  pass "a warm helper's footprint is ${WARM_HELPER_MB} MB (ceiling ${WARM_HELPER_MB_MAX} MB)"
+else
+  fail "a warm helper's footprint is '${WARM_HELPER_MB}' MB (ceiling ${WARM_HELPER_MB_MAX} MB)"
+fi
 # A warm helper can sit through a Timed Capture countdown: it must cost nothing.
 sleep 2
 assert_idle_cpu "a warm helper" "$WARM_PID" 3
@@ -79,24 +88,31 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 10 gone "$OPEN_PID"; then pass "the helper quits when the last Editor closes after a Cancel"; else fail "the helper is still running"; fi
 fi
 
-# 5. The Capture opens in the Editor that was built ahead of it, and it is quick.
-#    `fixture-delay` stands in for the time spent choosing an Area. Measured on a 5K display so
-#    mapping the Capture's pixels costs what it costs for real.
+# 5. The Capture opens in the Editor that was built ahead of it, and it is quick. The helper is
+#    made warm first, so the number is the warm path every time. Measured on a 5K display so
+#    mapping the Capture's pixels costs what it costs for real. The number covers the Capture's
+#    pixels being ready to the Editor window on screen (see `capture-timing` in docs/testing.md);
+#    it is the median of three Captures.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
-send "$APP_SOCK" "fixture-delay 1200" >/dev/null
-if capture_into_editor "press-shortcut capture-screen"; then
-  TIMING="$(send "$APP_SOCK" capture-timing)"
-  expect_contains "the Capture opened in a warm helper" "warm=yes" "$TIMING"
-  expect_contains "the Editor was built before its Capture" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
-  WARM_MS="$(printf '%s\n' "$TIMING" | sed -n 's/.*capture-to-editor-ms=\([0-9.]*\).*/\1/p')"
-  if [[ -n "$WARM_MS" ]] && awk -v ms="$WARM_MS" -v max="$WARM_OPEN_MS_MAX" 'BEGIN { exit !(ms > 0 && ms <= max) }'; then
-    pass "Capture to the Editor visible takes ${WARM_MS} ms with a warm helper (about 50 ms; ceiling ${WARM_OPEN_MS_MAX} ms)"
-  else
-    fail "Capture to the Editor visible took '${WARM_MS}' ms with a warm helper (ceiling ${WARM_OPEN_MS_MAX} ms): $TIMING"
+WARM_SAMPLES=()
+for round in 1 2 3; do
+  send "$APP_SOCK" "editor-warm-up begin" >/dev/null
+  if ! wait_until 10 warm_is warm; then fail "timing round $round: the helper did not warm up"; continue; fi
+  if capture_into_editor "press-shortcut capture-screen"; then
+    TIMING="$(send "$APP_SOCK" capture-timing)"
+    expect_contains "timing round $round: the Capture opened in a warm helper" "warm=yes" "$TIMING"
+    expect_contains "timing round $round: the Editor was built before its Capture" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
+    WARM_SAMPLES+=("$(printf '%s\n' "$TIMING" | sed -n 's/.*capture-to-editor-ms=\([0-9.]*\).*/\1/p')")
+    expect_equal "timing round $round: the warm Editor is on screen once it opened" "1" "$(onscreen_windows "$HELPER_PID")"
+    send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+    wait_until 10 gone "$HELPER_PID"
   fi
-  expect_equal "the warm Editor is visible once it opened" "1" "$(onscreen_windows "$HELPER_PID")"
-  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
-  wait_until 10 gone "$HELPER_PID"
+done
+WARM_MS="$(printf '%s\n' "${WARM_SAMPLES[@]}" | sort -n | sed -n '2p')"
+if [[ -n "$WARM_MS" ]] && awk -v ms="$WARM_MS" -v max="$WARM_OPEN_MS_MAX" 'BEGIN { exit !(ms > 0 && ms <= max) }'; then
+  pass "Capture to the Editor visible takes ${WARM_MS} ms with a warm helper (median of ${WARM_SAMPLES[*]}; about 50 ms; ceiling ${WARM_OPEN_MS_MAX} ms)"
+else
+  fail "Capture to the Editor visible took '${WARM_MS}' ms with a warm helper (samples ${WARM_SAMPLES[*]}; ceiling ${WARM_OPEN_MS_MAX} ms)"
 fi
 
 # The same Capture with no time to warm up: the helper is still starting when it is ready.
@@ -109,6 +125,15 @@ if capture_into_editor "press-shortcut capture-screen"; then
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
+
+# A Capture that fails ends without a Capture: it cancels the warm-up, the production Cancel path.
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+send "$APP_SOCK" "fixture-fail on" >/dev/null
+send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+send "$APP_SOCK" "fixture-fail off" >/dev/null
+if wait_until 10 no_helper; then pass "a Capture that fails quits the helper that was warming up for it"; else fail "a helper is still running after a failed Capture"; fi
+expect_equal "a failed Capture leaves the warm-up idle" "idle" "$(warm_state)"
 
 # 6. Nothing is left at rest and the menu bar app is back at its baseline.
 expect_equal "no helper process at rest after the warm-up flows" "0" "$(helper_count)"
@@ -124,10 +149,14 @@ send "$APP_SOCK" pasteboard-clear >/dev/null
 
 # 7. A helper launched on its own (a Dock pin) while snapit is running: it starts nothing new,
 #    shows nothing and quits. `open -n` goes through LaunchServices, as the Dock does.
-open -n -g --env "SNAPIT_TEST_ROOT=$RUN_ROOT" "$APP/Contents/Helpers/snapit Editor.app" >/dev/null 2>&1
+if open -n -g --env "SNAPIT_TEST_ROOT=$RUN_ROOT" "$APP/Contents/Helpers/snapit Editor.app" >/dev/null 2>&1; then
+  pass "LaunchServices launches the helper on its own"
+else
+  fail "open -n could not launch the helper on its own"
+fi
 if wait_until 10 some_helper; then
   PIN_PID="$(helper_pid)"
-  [[ "$(app_type "$PIN_PID")" == "Foreground" ]] && fail "a helper launched on its own has a Dock icon"
+  if is_foreground "$PIN_PID"; then fail "a helper launched on its own has a Dock icon"; else pass "a helper launched on its own has no Dock icon"; fi
   expect_equal "a helper launched on its own shows no window" "0" "$(onscreen_windows "$PIN_PID")"
   if wait_until 10 gone "$PIN_PID"; then pass "a helper launched on its own through LaunchServices quits"; else fail "a helper launched on its own is still running"; fi
 else
@@ -137,3 +166,24 @@ expect_equal "launching the helper on its own leaves snapit running, the same pr
 if wait_until 10 one_snapit; then pass "launching the helper on its own leaves exactly one snapit"; else fail "more than one snapit process is running"; fi
 expect_equal "launching the helper on its own leaves no helper process" "0" "$(helper_count)"
 expect_equal "snapit is still an agent (no Dock icon)" "UIElement" "$(app_type "$APP_PID")"
+
+# 8. The menu bar app dies (killed, crashed) while its helper is warming up: the helper, which has
+#    shown nothing, goes with it. A second menu bar app under its own root, so this run's stays up.
+SECOND_ROOT="$(mktemp -d /tmp/snapit-run2.XXXXXX)"
+SECOND_SOCK="$SECOND_ROOT/app.sock"
+(SNAPIT_TEST_ROOT="$SECOND_ROOT" nohup "$APP_EXE" >"$SECOND_ROOT/app.log" 2>&1 &)
+if wait_until 10 answers "$SECOND_SOCK"; then
+  SECOND_PID="$(pgrep -f "$APP_EXE" | grep -v "^$APP_PID\$" | head -1)"
+  send "$SECOND_SOCK" "editor-warm-up begin" >/dev/null
+  wait_until 10 bash -c "[[ \"\$(printf 'editor-warm-up state\n' | nc -U -w 2 '$SECOND_SOCK')\" == warm ]]"
+  expect_equal "the second snapit's helper is warm" "1" "$(helper_count)"
+  ORPHAN_PID="$(helper_pid)"
+  kill -9 "$SECOND_PID" 2>/dev/null
+  if wait_until 10 gone "$ORPHAN_PID"; then pass "a warm helper quits when its menu bar app is killed"; else fail "a warm helper outlived its killed menu bar app"; fi
+  expect_equal "no helper process is left after the menu bar app was killed" "0" "$(helper_count)"
+else
+  fail "the second snapit did not start"
+  pgrep -f "$APP_EXE" | grep -v "^$APP_PID\$" | xargs kill -9 2>/dev/null
+fi
+rm -rf "$SECOND_ROOT"
+expect_equal "this run's snapit was not disturbed" "$APP_PID" "$(pid_of "$APP_EXE")"

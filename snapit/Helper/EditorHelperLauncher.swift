@@ -24,12 +24,16 @@ enum EditorHelperLauncher {
     /// that only warms up, hidden, does not.
     static func start(activates: Bool = false, warm: Bool = false) async throws {
         let configuration = NSWorkspace.OpenConfiguration()
-        configuration.arguments = [AppIdentity.startedBySnapitArgument] + (warm ? [AppIdentity.warmArgument] : [])
+        configuration.arguments =
+            [AppIdentity.startedBySnapitArgument, AppIdentity.menuBarPIDArgumentPrefix + String(getpid())]
+            + (warm ? [AppIdentity.warmArgument] : [])
         configuration.activates = activates
+        // Always a new instance: a helper that is still terminating (a Cancel just before) would
+        // otherwise be "launched" by merely activating it, and no new helper would come up. A
+        // helper that finds a live socket quits at once, so two never serve at the same time.
+        configuration.createsNewApplicationInstance = true
         if let root = TestMode.root {
             configuration.environment = [TestMode.rootVariable: root.path]
-            // Parallel scripted runs must never activate another copy of the helper.
-            configuration.createsNewApplicationInstance = true
         }
         _ = try await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
     }
