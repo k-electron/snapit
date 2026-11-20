@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 
 /// One Annotation tool on the Editor's left toolbar. A feature adds a file with its tool and
@@ -19,6 +20,10 @@ protocol EditorTool {
     var symbol: String { get }
     /// The key that picks the tool; nil for none.
     var key: Character? { get }
+    /// The kind of Annotation the tool draws; nil for a tool that does not draw one (Select).
+    var annotationKind: AnnotationKindID? { get }
+    /// The cursor over the canvas while the tool is active.
+    var cursor: NSCursor { get }
 
     func pointerDown(at point: CGPoint, in session: EditorSession)
     func pointerDragged(to point: CGPoint, in session: EditorSession)
@@ -27,6 +32,8 @@ protocol EditorTool {
 
 extension EditorTool {
     var key: Character? { nil }
+    var annotationKind: AnnotationKindID? { nil }
+    var cursor: NSCursor { .crosshair }
     /// The hover tooltip: the name and its key.
     var tooltip: String { key.map { "\(title) (\($0.uppercased()))" } ?? title }
 

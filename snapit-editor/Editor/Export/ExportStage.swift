@@ -12,8 +12,9 @@ nonisolated struct ExportImage: Sendable {
     var scale: Double
     /// Dots per inch recorded in the PNG.
     var dpi: Int
-    /// Where this image's top-left pixel sat in the Capture. Crop moves it, so Annotations
-    /// (stored in the Capture's own coordinates) are drawn shifted by it.
+    /// Where this image's top-left pixel sat in the Capture, **in pixels** (the document's crop
+    /// rectangle, `DocumentState.crop`, is in points: Crop converts). Crop moves it, so Annotations
+    /// (stored in the Capture's own coordinates, in points) are drawn shifted by it.
     var origin = CGPoint.zero
     /// Set by the 1x step for the encode step to read: standard resolution is made in the same
     /// pass as the PNG encode, never in a buffer of its own.
@@ -38,6 +39,8 @@ nonisolated struct ExportJob: Sendable {
     let level: PNGLevel
     /// "Export at standard resolution" (1x) was on when the Export started.
     let standardResolution: Bool
+    /// The Annotations, in the order they are drawn, in the Capture's image points.
+    var annotations: [Annotation] = []
 }
 
 /// One step of the Export pipeline.
