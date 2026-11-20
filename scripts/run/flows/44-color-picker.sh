@@ -387,13 +387,13 @@ send_slow "$APP_SOCK" overlay-wait >/dev/null
 assert_idle_cpu "menu bar app after the Color picker" "$APP_PID" 4
 expect_equal "no Editor helper process exists after the picks" "" "$(helper_pid)"
 
-# Leave what the next flows expect, and hold the process to the ceiling here, not in a later flow.
+# Leave what the next flows expect, and hold the process to its baseline here, not in a later flow.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
 sleep 1
-PICK_END="$(footprint_mb "$APP_PID")"
-if awk -v a="$PICK_END" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
-  pass "memory is under the ${FOOTPRINT_MB_MAX} MB ceiling after the Color picker flow (${PICK_END} MB)"
+PICK_END="$(precise_mb "$APP_PID")"
+if awk -v a="$PICK_END" -v b="$PICK_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "memory is where the ten picks left it after the Color picker flow (${PICK_BASELINE} MB, ${PICK_END} MB now)"
 else
-  fail "memory is ${PICK_END} MB after the Color picker flow (ceiling ${FOOTPRINT_MB_MAX} MB)"
+  fail "memory is ${PICK_END} MB after the Color picker flow, ${PICK_BASELINE} MB before the ten picks (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
 fi
