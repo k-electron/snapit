@@ -10,5 +10,6 @@ extension SocketCommandRegistry {
         registerExportTestCommands()
         registerEditorToolTestCommands()
         registerInstallHelperCommands()
+        registerSettingsHelperCommands()
     }
 }
