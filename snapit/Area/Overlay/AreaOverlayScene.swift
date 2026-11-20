@@ -1,6 +1,14 @@
 import AppKit
 import QuartzCore
 
+/// A tooltip for a tile of the Action bar, drawn in the scene (the system's tooltip window sits
+/// below the overlay's level).
+struct AreaTooltip: Equatable {
+    var text: String
+    /// The tile it is about, display-local points.
+    var anchor: CGRect
+}
+
 /// What one display's scene shows right now. Positions are display-local points, top-left origin.
 struct AreaSceneState: Equatable {
     /// The crosshair and loupe show here: the pointer is on this display and no Area is being
@@ -15,6 +23,7 @@ struct AreaSceneState: Equatable {
     var showsHandles = false
     /// The Action bar's frame on this display, when it shows. The size label keeps clear of it.
     var actionBar: CGRect?
+    var tooltip: AreaTooltip?
 }
 
 /// Every layer of the overlay on one display. They are created once; a pointer move changes some
@@ -41,6 +50,7 @@ final class AreaOverlayScene {
     private let verticalLine = CALayer()
     private let horizontalLine = CALayer()
     private let sizeLabel: OverlayLabel
+    private let tooltipLabel: OverlayLabel
     private let loupe: OverlayLoupe
 
     private var dimmedCutout: CGRect?
@@ -54,6 +64,9 @@ final class AreaOverlayScene {
     /// A handle is a square this many points wide, centred on its corner or edge.
     static let handleSize: CGFloat = 9
 
+    /// The loupe is showing.
+    var isLoupeShown: Bool { !loupe.layer.isHidden }
+
     /// How many handles are showing.
     var visibleHandles: Int { handles.filter { !$0.isHidden }.count }
 
@@ -65,6 +78,7 @@ final class AreaOverlayScene {
         size = display.frame.size
         let contentsScale = CGFloat(display.scale)
         sizeLabel = OverlayLabel(scale: contentsScale)
+        tooltipLabel = OverlayLabel(scale: contentsScale)
         loupe = OverlayLoupe(scale: contentsScale)
 
         root.backgroundColor = CGColor(gray: 0, alpha: 1)
@@ -118,6 +132,7 @@ final class AreaOverlayScene {
         }
         root.addSublayer(sizeLabel.layer)
         root.addSublayer(loupe.layer)
+        root.addSublayer(tooltipLabel.layer)
     }
 
     /// Model rectangle (top-left origin) to layer rectangle (bottom-left origin).
@@ -174,6 +189,8 @@ final class AreaOverlayScene {
             sizeLabel.hide()
         }
 
+        placeTooltip(state.tooltip, bar: state.actionBar)
+
         guard state.hasPointer else {
             for line in [verticalShadow, horizontalShadow, verticalLine, horizontalLine] { line.isHidden = true }
             loupe.hide()
@@ -185,6 +202,22 @@ final class AreaOverlayScene {
                 frame: frameImage, scale: display.scale, cursor: state.cursor, at: loupeOrigin(for: state.cursor),
                 sceneHeight: size.height)
         }
+    }
+
+    /// The tooltip goes below the Action bar, or above it when there is no room below.
+    private func placeTooltip(_ tooltip: AreaTooltip?, bar: CGRect?) {
+        guard let tooltip, let bar else {
+            tooltipLabel.hide()
+            return
+        }
+        tooltipLabel.set(
+            tooltip.text, fontSize: 12, weight: .medium, color: .white, padX: 10, padY: 4,
+            background: NSColor(white: 0, alpha: 0.85))
+        let label = tooltipLabel.size
+        var y = bar.maxY + 6
+        if y + label.height > size.height - 4 { y = bar.minY - 6 - label.height }
+        let x = max(4, min(size.width - 4 - label.width, tooltip.anchor.midX - label.width / 2))
+        tooltipLabel.place(topLeft: CGPoint(x: x, y: y), parentHeight: size.height)
     }
 
     /// The eight handles, clockwise from the top left corner.

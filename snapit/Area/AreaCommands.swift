@@ -174,6 +174,9 @@ extension AreaOverlayController {
             "after-selecting=\(CapturingSettings.afterSelectingArea.rawValue)",
             "handles=\(views.reduce(0) { $0 + $1.scene.visibleHandles })",
             "action-bar=\(describe(containers.lazy.compactMap(\.actionBarFrame).first))",
+            "loupe=\(views.contains { $0.scene.isLoupeShown } ? "shown" : "hidden")",
+            "hovered=\(hoveredTile?.id ?? "none")",
+            "tooltip=\(tooltip ?? "none")",
             "scene-updates=\(views.reduce(0) { $0 + $1.scene.updateCount })",
             "shown-ms=\(AreaCaptureFlow.lastShownMilliseconds.map { String(format: "%.1f", $0) } ?? "none")",
         ]

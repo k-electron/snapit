@@ -1,6 +1,6 @@
 # Flow: Area Capture with "After selecting an Area" at Show Action bar, the default. Letting go of the
 # mouse keeps the selection on screen with eight handles and the Action bar; the handles resize it
-# (past the opposite edge too), a drag inside moves it, Return, a double-click inside it and the bar's
+# (past the opposite edge too), a drag inside moves it, Enter, a double-click inside it and the bar's
 # Capture button capture it, Esc and Cancel end the Capture. Checks the bar stays on screen at every
 # edge and corner, tooltips, a 3 pt jitter, pixel-exact Captures at 1x and 2x, the setting at Capture
 # on release, memory and idle CPU. Uses the helpers of 40-area-capture.sh (area_start, mouse, fact,
@@ -20,7 +20,27 @@ bar_side() {
   }'
 }
 selection_frame() { fact selection | sed 's/^[^ ]* //'; }
-bar_items_laid_out() { ! send "$APP_SOCK" overlay-actionbar | grep '^item ' | grep -q '|none$'; }
+# tile_point <item id> <dx> <dy>: a point of the display <dx>,<dy> points in from the tile's top-left
+# corner (a negative number counts from the opposite edge).
+tile_point() {
+  send "$APP_SOCK" overlay-actionbar | awk -F'|' -v id="$1" -v dx="$2" -v dy="$3" '
+    $1 == "item " id {
+      split($5, f, /[ ,x]/)
+      printf "%s %s", (dx < 0 ? f[1] + f[3] + dx : f[1] + dx), (dy < 0 ? f[2] + f[4] + dy : f[2] + dy)
+    }'
+}
+# press_tile <item id> <dx> <dy>: a real click (the pointer moves there, the button goes down and up).
+press_tile() {
+  local x y
+  read -r x y <<<"$(tile_point "$@")"
+  mouse move 0 "$x" "$y" >/dev/null
+  mouse down 0 "$x" "$y" >/dev/null
+  mouse up 0 "$x" "$y" >/dev/null
+}
+precise_mb() { footprint -f bytes -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "Footprint:") { printf "%.2f", $(i+1) / 1048576; exit } }'; }
+BAR_FIRST_USE_MB_MAX="${SNAPIT_BAR_FIRST_USE_MB_MAX:-1}"
+# The footprint before the first Action bar of this run (flow 40 shows overlays, never a bar).
+BAR_FIRST_BEFORE="$(precise_mb "$APP_PID")"
 area_cancel() {
   send "$APP_SOCK" "overlay-key escape" >/dev/null
   send_slow "$APP_SOCK" overlay-wait >/dev/null
@@ -52,11 +72,10 @@ expect_equal "the Action bar sits below the selection" "below" "$(bar_side "$BAR
 expect_contains "the overlay is still layer-hosted with the bar up" "view=layer-hosted-scene" "$(send "$APP_SOCK" overlay-facts)"
 
 # 2. The bar's items: Capture and Cancel, each with a tooltip and a whole tile to click.
-wait_until 5 bar_items_laid_out
 ITEMS="$(send "$APP_SOCK" overlay-actionbar)"
 expect_in_order "the Action bar offers Capture before Cancel" "$(printf '%s\n' "$ITEMS" | grep '^item ' | cut -d'|' -f1-4)" \
-  "item capture|Capture|Capture this Area (Return)|none" "item cancel|Cancel|Cancel (Esc)|none"
-expect_contains "Capture has a tooltip that names Return" "item capture|Capture|Capture this Area (Return)|" "$ITEMS"
+  "item capture|Capture|Capture this Area (Enter)|none" "item cancel|Cancel|Cancel (Esc)|none"
+expect_contains "Capture has a tooltip that names Enter" "item capture|Capture|Capture this Area (Enter)|" "$ITEMS"
 expect_contains "Cancel has a tooltip that names Esc" "item cancel|Cancel|Cancel (Esc)|" "$ITEMS"
 TOOLTIPS_OK=1
 while IFS='|' read -r head _title tip _rest; do
@@ -75,28 +94,62 @@ TILES="$(printf '%s\n' "$ITEMS" | awk -F'|' -v bar="$BAR" '
   END { printf "items=%d small=%d outside=%d\n", n, small, outside }')"
 expect_equal "each button is a whole tile of at least 60 x 30 points, inside the bar" "items=2 small=0 outside=0" "$TILES"
 
-# A click reaches the bar's own views on a button's tile (3 pt in from its corner) and on the bar's
-# padding, and the scene view just outside the bar: the window's hit test gives the buttons the click.
-ROUTES="$(printf '%s\n' "$ITEMS" | grep '^route ')"
-expect_contains "a click on the Capture tile goes to the bar" "route capture|bar" "$ROUTES"
-expect_contains "a click on the Cancel tile goes to the bar" "route cancel|bar" "$ROUTES"
-expect_contains "a click on the bar's padding goes to the bar" "route padding|bar" "$ROUTES"
-expect_contains "a click just outside the bar goes to the scene" "route outside|scene" "$ROUTES"
+# Tooltips are drawn in the overlay (the system's tooltip window sits below it): resting the pointer
+# on a tile shows its tooltip after a moment, moving to another tile or off the bar takes it away.
+expect_equal "no tooltip before the pointer is on a tile" "none" "$(fact tooltip)"
+read -r TX TY <<<"$(tile_point capture 10 10)"
+mouse move 0 "$TX" "$TY" >/dev/null
+expect_equal "the pointer is over the Capture tile" "capture" "$(fact hovered)"
+expect_equal "its tooltip is not shown the moment the pointer arrives" "none" "$(fact tooltip)"
+tooltip_is() { [[ "$(fact tooltip)" == "$1" ]]; }
+if wait_until 5 tooltip_is "Capture this Area (Enter)"; then pass "resting on the Capture tile shows its tooltip"; else fail "no tooltip for Capture ('$(fact tooltip)')"; fi
+assert_idle_cpu "menu bar app with a tooltip showing" "$APP_PID" 3
+read -r TX TY <<<"$(tile_point cancel 10 10)"
+mouse move 0 "$TX" "$TY" >/dev/null
+expect_equal "moving to the Cancel tile takes the tooltip away" "none" "$(fact tooltip)"
+if wait_until 5 tooltip_is "Cancel (Esc)"; then pass "resting on the Cancel tile shows its tooltip"; else fail "no tooltip for Cancel ('$(fact tooltip)')"; fi
+mouse move 0 5 5 >/dev/null
+expect_equal "moving off the bar takes the tooltip away" "none" "$(fact tooltip)"
+expect_equal "and nothing is hovered" "none" "$(fact hovered)"
+sleep 1
+expect_equal "no tooltip appears later for a tile the pointer left" "none" "$(fact tooltip)"
 
-# 3. Keys: a key no item claims is ignored, Return does nothing before a selection exists, and an
+# A press on the bar's padding is the bar's: it changes nothing and starts no selection.
+read -r PX PY <<<"$(bar_frame | awk '{ split($1, a, ","); printf "%s %s", a[1] + 2, a[2] + 2 }')"
+mouse down 0 "$PX" "$PY" >/dev/null
+mouse drag 0 $((PX + 60)) $((PY + 30)) >/dev/null
+mouse up 0 $((PX + 60)) $((PY + 30)) >/dev/null
+expect_equal "a press and drag on the bar's padding changes nothing" "100,60 200x100" "$(selection_frame)"
+expect_equal "and the overlay is still adjusting" "adjusting" "$(fact state)"
+# A press on a tile that is released away from it is not a click.
+read -r TX TY <<<"$(tile_point cancel 10 10)"
+mouse move 0 "$TX" "$TY" >/dev/null
+mouse down 0 "$TX" "$TY" >/dev/null
+mouse up 0 500 350 >/dev/null
+expect_equal "a press on Cancel released elsewhere does not cancel" "adjusting" "$(fact state)"
+expect_equal "and the overlay is still up" "1" "$(overlay_panels | grep -c '^600x400 ')"
+
+# 3. Keys: a key no item claims is ignored, Enter does nothing before a selection exists, and an
 #    item's own key would run it (the Color picker adds P).
 send "$APP_SOCK" "overlay-key p" >/dev/null
 expect_equal "a key no Action bar item claims does nothing" "adjusting" "$(fact state)"
 area_cancel
+sleep 1
+BAR_FIRST_AFTER="$(precise_mb "$APP_PID")"
+if awk -v a="$BAR_FIRST_AFTER" -v b="$BAR_FIRST_BEFORE" -v max="$BAR_FIRST_USE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "the first Action bar costs at most ${BAR_FIRST_USE_MB_MAX} MB that stays (${BAR_FIRST_BEFORE} MB before, ${BAR_FIRST_AFTER} MB after it was cancelled)"
+else
+  fail "the first Action bar left the footprint at ${BAR_FIRST_AFTER} MB, from ${BAR_FIRST_BEFORE} MB (limit +${BAR_FIRST_USE_MB_MAX} MB)"
+fi
 
 area_start "press-shortcut capture-area" >/dev/null
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-expect_equal "Return with no selection captures nothing" "1" "$(overlay_panels | grep -c '^600x400 ')"
+expect_equal "Enter with no selection captures nothing" "1" "$(overlay_panels | grep -c '^600x400 ')"
 mouse move 0 70 50 >/dev/null
 mouse down 0 70 50 >/dev/null
 mouse drag 0 120 90 >/dev/null
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-expect_equal "Return in the middle of a drag captures nothing" "1" "$(overlay_panels | grep -c '^600x400 ')"
+expect_equal "Enter in the middle of a drag captures nothing" "1" "$(overlay_panels | grep -c '^600x400 ')"
 mouse up 0 120 90 >/dev/null
 expect_equal "the drag still ends in an adjustable selection" "adjusting" "$(fact state)"
 area_cancel
@@ -126,9 +179,12 @@ placement "the whole display" 0 0 600 400 inside
 # 5. Resizing from every handle, past the opposite edge as well. Starting from 100,60 200x100.
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 60 300 160
+expect_equal "an adjusted selection shows no loupe" "hidden" "$(fact loupe)"
 mouse down 0 300 160 >/dev/null   # the bottom-right corner
 mouse drag 0 350 200 >/dev/null
+expect_equal "the loupe shows while a handle is dragged, for the exact pixel" "shown" "$(fact loupe)"
 mouse up 0 350 200 >/dev/null
+expect_equal "the loupe goes when the handle is let go" "hidden" "$(fact loupe)"
 expect_equal "the bottom-right handle resizes" "0 100,60 250x140" "$(fact selection)"
 mouse down 0 225 60 >/dev/null    # the top edge's handle
 mouse drag 0 225 40 >/dev/null
@@ -202,20 +258,23 @@ expect_equal "a 1 pt jitter inside the selection moves nothing" "0 400,250 200x1
 expect_equal "the moved selection keeps its handles" "8" "$(fact handles)"
 if in_display "$(bar_frame)" 600 400; then pass "the Action bar stays on screen with the selection at the display's corner"; else fail "the Action bar is off screen at the display's corner"; fi
 
-# 7. A click away from the selection lets it go; a drag away starts a new one.
-mouse down 0 400 50 >/dev/null
-mouse up 0 400 50 >/dev/null
-expect_equal "a click away from the selection lets it go" "idle" "$(fact state)"
-expect_equal "no handles after letting the selection go" "0" "$(fact handles)"
-expect_equal "no Action bar after letting the selection go" "none" "$(fact action-bar)"
-expect_equal "the overlay is still up" "1" "$(overlay_panels | grep -c '^600x400 ')"
-area_drag 0 200 100 300 150
-expect_equal "a new selection can be made" "0 200,100 100x50" "$(fact selection)"
-mouse down 0 450 300 >/dev/null
-mouse drag 0 500 340 >/dev/null
-mouse up 0 500 340 >/dev/null
-expect_equal "a drag away from the selection replaces it" "0 450,300 50x40" "$(fact selection)"
+# 7. A plain click away from the selection changes nothing; a drag away starts a new selection.
+mouse down 0 100 50 >/dev/null
+mouse up 0 100 50 >/dev/null
+expect_equal "a click away from the selection keeps it" "0 400,250 200x150" "$(fact selection)"
+expect_equal "and it is still adjustable" "adjusting" "$(fact state)"
+expect_equal "with its eight handles" "8" "$(fact handles)"
+mouse down 0 100 50 >/dev/null
+mouse drag 0 101 51 >/dev/null
+mouse up 0 101 51 >/dev/null
+expect_equal "a jitter under 3 pt away from the selection keeps it" "0 400,250 200x150" "$(fact selection)"
+mouse down 0 20 300 >/dev/null
+mouse drag 0 50 320 >/dev/null
+mouse drag 0 80 340 >/dev/null
+mouse up 0 80 340 >/dev/null
+expect_equal "a drag away from the selection replaces it" "0 20,300 60x40" "$(fact selection)"
 expect_equal "and it is adjustable" "adjusting" "$(fact state)"
+expect_equal "with its eight handles on the new selection" "8" "$(fact handles)"
 mouse move 0 10 10 >/dev/null
 # Moving the pointer while adjusting changes nothing on screen: no layer work.
 UPDATES_BEFORE="$(fact scene-updates)"
@@ -236,18 +295,16 @@ expect_equal "nothing reached the pasteboard" "" "$(send "$APP_SOCK" pasteboard-
 expect_equal "the Shortcut works again straight after Esc" "ok" "$(area_start "press-shortcut capture-area")"
 expect_equal "and shows the overlay again" "1" "$(overlay_panels | grep -c '^600x400 ')"
 area_drag 0 100 60 300 160
-expect_equal "Cancel on the bar cancels" "ok" "$(send "$APP_SOCK" "overlay-press cancel")"
-expect_equal "the Capture is cancelled" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
+press_tile cancel -3 -3   # near the tile's bottom-right corner, away from its glyph and title
+expect_equal "the Cancel button cancels, clicked near its corner" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
 expect_equal "the overlay is gone after Cancel" "" "$(overlay_panels)"
-expect_equal "pressing a bar button with no overlay is refused" "error no overlay" "$(send "$APP_SOCK" "overlay-press capture")"
 expect_equal "the Shortcut works again straight after Cancel" "ok" "$(area_start "press-shortcut capture-area")"
-expect_equal "pressing a button before there is a bar is refused" "error no Action bar" "$(send "$APP_SOCK" "overlay-press capture")"
 area_cancel
 
-# 9. Capture: the button, Return and a double-click inside the selection, pixel-exact.
+# 9. Capture: the button, Enter and a double-click inside the selection, pixel-exact.
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 60 300 160
-expect_equal "the Capture button captures" "ok" "$(send "$APP_SOCK" "overlay-press capture")"
+press_tile capture 3 3   # near the tile's top-left corner, away from its glyph and title
 if area_result; then pass "the Capture button: Capture $EDITOR_N opens in the Editor"; else fail "the Capture button finished with '$AREA_REPLY'"; fi
 expect_equal "the overlay is gone once the Capture is taken" "" "$(overlay_panels)"
 if [[ -n "${EDITOR_N:-}" ]]; then
@@ -256,15 +313,15 @@ fi
 
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 60 300 160
-mouse down 0 200 110 >/dev/null   # a click inside changes nothing; a resize does, and Return captures that
+mouse down 0 200 110 >/dev/null   # a click inside changes nothing; a resize does, and Enter captures that
 mouse up 0 200 110 >/dev/null
 mouse down 0 300 160 >/dev/null
 mouse drag 0 340 180 >/dev/null
 mouse up 0 340 180 >/dev/null
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-if area_result; then pass "Return captures the adjusted selection: Capture $EDITOR_N"; else fail "Return finished with '$AREA_REPLY'"; fi
+if area_result; then pass "Enter captures the adjusted selection: Capture $EDITOR_N"; else fail "Enter finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
-  area_png_check "Return after resizing at 1x" 1 240 120 600 400 100 60 "sRGB IEC61966-2.1" "$SRGB_SHA_AREA" 2835
+  area_png_check "Enter after resizing at 1x" 1 240 120 600 400 100 60 "sRGB IEC61966-2.1" "$SRGB_SHA_AREA" 2835
 fi
 
 # A double-click inside the selection captures; the jitter between its clicks moves nothing, so the
@@ -294,7 +351,7 @@ send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 20.3 30.4 120.8 90.6
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-if area_result; then pass "2x: Return captures: Capture $EDITOR_N"; else fail "2x: Return finished with '$AREA_REPLY'"; fi
+if area_result; then pass "2x: Enter captures: Capture $EDITOR_N"; else fail "2x: Enter finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
   area_png_check "Action bar Capture at 2x" 2 201 120 602 374 41 61 "Display P3" "$P3_SHA_AREA" 5669
 fi
@@ -311,7 +368,7 @@ expect_equal "and has eight handles" "8" "$(fact handles)"
 expect_equal "nothing was captured by the click" "1" "$(overlay_panels | grep -c '^600x400 ')"
 if in_display "$(bar_frame)" 600 400; then pass "the Action bar shows for the window"; else fail "no Action bar for the window selection"; fi
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-if area_result; then pass "Return captures the selected window: Capture $EDITOR_N"; else fail "capturing the selected window finished with '$AREA_REPLY'"; fi
+if area_result; then pass "Enter captures the selected window: Capture $EDITOR_N"; else fail "capturing the selected window finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
   area_png_check "selected window at 1x" 1 100 60 600 400 60 40 "sRGB IEC61966-2.1" "$SRGB_SHA_AREA" 2835
 fi
@@ -361,7 +418,7 @@ expect_equal "the selection is on the second display" "1 20,20 100x70" "$(fact s
 if in_display "$(bar_frame)" 400 300; then pass "the Action bar is on the second display"; else fail "the Action bar is not inside the second display ($(bar_frame))"; fi
 expect_equal "eight handles on the second display" "8" "$(fact handles)"
 send "$APP_SOCK" "overlay-key enter" >/dev/null
-if area_result; then pass "the Area on the second display is captured with Return"; else fail "the second display's Capture finished with '$AREA_REPLY'"; fi
+if area_result; then pass "the Area on the second display is captured with Enter"; else fail "the second display's Capture finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
   area_png_check "Action bar Capture on the second display (2x)" 2 200 140 800 600 40 40 "Display P3" "$P3_SHA_AREA" 5669
 fi
@@ -382,7 +439,7 @@ area_drag 0 100.5 100.5 600.5 500.5
 send "$APP_SOCK" "overlay-key enter" >/dev/null
 area_result && copy_closes_editor   # warm up allocator pools
 sleep 1
-BAR_BASELINE="$(footprint_mb "$APP_PID")"
+BAR_BASELINE="$(precise_mb "$APP_PID")"
 BAR_PEAK=0
 for _ in 1 2 3 4 5; do
   area_start "press-shortcut capture-area" >/dev/null
@@ -390,22 +447,22 @@ for _ in 1 2 3 4 5; do
   mouse down 0 350 300 >/dev/null
   mouse drag 0 380 330 >/dev/null
   mouse up 0 380 330 >/dev/null
-  NOW="$(footprint_mb "$APP_PID")"
+  NOW="$(precise_mb "$APP_PID")"
   BAR_PEAK="$(awk -v a="$BAR_PEAK" -v b="$NOW" 'BEGIN { print (b > a ? b : a) }')"
   send "$APP_SOCK" "overlay-key enter" >/dev/null
   area_result && copy_closes_editor
 done
 sleep 1
-BAR_AFTER="$(footprint_mb "$APP_PID")"
+BAR_AFTER="$(precise_mb "$APP_PID")"
 if awk -v a="$BAR_AFTER" -v b="$BAR_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
   pass "memory returns to baseline after five Action bar Captures (${BAR_BASELINE} MB before, ${BAR_AFTER} MB after)"
 else
   fail "memory grew from ${BAR_BASELINE} MB to ${BAR_AFTER} MB over five Action bar Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
 fi
-if awk -v a="$BAR_AFTER" -v b="$AREA_AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is back near the at-rest footprint after the Action bar (${AREA_AT_REST} MB at rest, ${BAR_AFTER} MB after)"
+if awk -v a="$BAR_AFTER" -v b="$BAR_FIRST_BEFORE" -v max="$BAR_FIRST_USE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "memory is where it was before the first Action bar (${BAR_FIRST_BEFORE} MB then, ${BAR_AFTER} MB now, limit +${BAR_FIRST_USE_MB_MAX} MB)"
 else
-  fail "memory is ${BAR_AFTER} MB after the Action bar Captures, ${AREA_AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+  fail "memory is ${BAR_AFTER} MB after the Action bar Captures, ${BAR_FIRST_BEFORE} MB before the first bar (limit +${BAR_FIRST_USE_MB_MAX} MB)"
 fi
 echo "     Action bar peak ${BAR_PEAK} MB with a 16 MB frozen frame on screen (${BAR_BASELINE} MB at rest)"
 if awk -v peak="$BAR_PEAK" -v base="$BAR_BASELINE" 'BEGIN { exit !(peak - base <= 16 + 10) }'; then
@@ -425,10 +482,18 @@ assert_idle_cpu "menu bar app after the Action bar Captures" "$APP_PID" 5
 # Leave what the next flows expect: no helper, a small fixture display, nothing on the pasteboard.
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 area_no_helper
-# The first Action bar leaves the process about 4 MB above where it rested before (the live glass
-# view's backdrop; the checks above show it is flat over repeated Captures). The flows after this one
-# compare with what the process rests at now.
+# The flows after this one see the process as flow 20 measured it at rest, plus what is allowed.
 sleep 1
-AT_REST="$(footprint_mb "$APP_PID")"
+BAR_END="$(footprint_mb "$APP_PID")"
+if awk -v a="$BAR_END" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "memory is back near the at-rest footprint after the Action bar flow (${AT_REST} MB at rest, ${BAR_END} MB after)"
+else
+  fail "memory is ${BAR_END} MB after the Action bar flow, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+fi
+if awk -v a="$BAR_END" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
+  pass "memory is under the ${FOOTPRINT_MB_MAX} MB ceiling after the Action bar flow (${BAR_END} MB)"
+else
+  fail "memory is ${BAR_END} MB after the Action bar flow (ceiling ${FOOTPRINT_MB_MAX} MB)"
+fi
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
