@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 extension SocketCommandRegistry {
     /// The commands the menu bar app sends the Editor helper about Captures.
@@ -9,6 +9,11 @@ extension SocketCommandRegistry {
                 try EditorSessions.shared.open(captureNumber: number)
                 return "ok"
             } catch {
+                // A helper that never showed a window has nothing left to do: quit rather than
+                // sit there with no window and no way for the user to close it.
+                if !HelperLifecycle.hasShownWindow {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApplication.shared.terminate(nil) }
+                }
                 return "error \(error)"
             }
         }

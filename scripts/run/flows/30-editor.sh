@@ -18,6 +18,18 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_contains "the canvas is layer-hosted" "canvas=layer-hosted" "$FACTS"
   expect_contains "the Select tool is active" "tool=select" "$FACTS"
   expect_contains "the helper is a regular app while its window shows" "activation=regular" "$FACTS"
+  expect_contains "the Capture is a read-only mapping in the helper" "capture-mapping=read-only" "$FACTS"
+
+  # An Export leaves the read-only mapping behind: a copy in memory of its own carries the same
+  # pixels and the display's ICC profile byte for byte.
+  PROBE="$(send "$EDITOR_SOCK" "export-owned-probe $EDITOR_N")"
+  if [[ "$PROBE" == ok\ * ]]; then
+    PROBE_INFO="$("$INSPECT" info "${PROBE#ok }")"
+    expect_equal "an owned copy of the Capture keeps the ICC profile byte for byte" "$P3_SHA" "$(png_field "$PROBE_INFO" icc_sha256)"
+    expect_equal "an owned copy of the Capture has the Capture's pixels" "mismatches=0" "$("$INSPECT" verify-fixture "${PROBE#ok }" 602 374 | grep '^mismatches=')"
+  else
+    fail "the owned copy probe failed: $PROBE"
+  fi
 
   # The process and window facts, from outside.
   if wait_until 5 is_foreground "$HELPER_PID"; then pass "the helper has a Dock icon and a Cmd-Tab entry while the Editor is open (application type Foreground)"; else fail "the helper is '$(app_type "$HELPER_PID")' while the Editor is open, expected Foreground"; fi
@@ -45,14 +57,21 @@ if capture_into_editor "menu-click capture.screen"; then
 
   # While regular, the helper has its own menus in the menu bar.
   MENUS="$(send "$EDITOR_SOCK" main-menu)"
-  expect_contains "the helper has its own app menu" "snapit: About snapit|-|Hide snapit|-|Quit snapit" "$MENUS"
-  expect_contains "the helper's Edit menu has Copy" "Edit: Copy" "$MENUS"
-  expect_contains "the helper's Window menu has Minimize and Close" "Window: Minimize|Close" "$MENUS"
+  expect_in_order "the helper has its own app menu" "$(menu_items "$MENUS" snapit)" "About snapit" "Hide snapit" "Quit snapit"
+  expect_in_order "the helper's Edit menu has Copy" "$(menu_items "$MENUS" Edit)" "Copy"
+  expect_in_order "the helper's Window menu has Minimize and Close" "$(menu_items "$MENUS" Window)" "Minimize" "Close"
 
   # An open Editor costs nothing at rest.
   sleep 2
   assert_idle_cpu "the Editor helper with an Editor open" "$HELPER_PID" 5
   assert_idle_cpu "the menu bar app with an Editor open" "$APP_PID" 3
+
+    # Activation: a scripted run never takes focus; a normal run asks LaunchServices to bring the
+  # helper forward when it launches and again when the Editor shows.
+  expect_contains "test mode does not activate the helper at launch" "activate-at-launch=false" "$(send "$APP_SOCK" "activation-plan test")"
+  expect_contains "test mode does not activate the helper when a Capture opens" "activate-after-open=false" "$(send "$APP_SOCK" "activation-plan test")"
+  expect_contains "a normal run activates the helper at launch" "activate-at-launch=true" "$(send "$APP_SOCK" "activation-plan normal")"
+  expect_contains "a normal run activates the helper when a Capture opens" "activate-after-open=true" "$(send "$APP_SOCK" "activation-plan normal")"
 
   # 2. Esc closes without exporting.
   send "$APP_SOCK" pasteboard-clear >/dev/null
@@ -60,7 +79,7 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 10 gone "$HELPER_PID"; then pass "Esc closes the Editor and the helper quits"; else fail "the helper is still running after Esc"; fi
   expect_equal "Esc exports nothing" "" "$(send "$APP_SOCK" pasteboard-types)"
   expect_equal "the helper's Dock icon is gone after the last Editor closed" "" "$(app_type "$HELPER_PID")"
-  expect_equal "the menu bar app keeps the Last Capture's file after the Editor closed" "capture-$EDITOR_N.pixels" "$(ls "$RUN_ROOT/captures")"
+  expect_in_order "the menu bar app keeps the Last Capture's file after the Editor closed" "$(capture_files)" "capture-$EDITOR_N.pixels"
 fi
 
 # 3. Close after Copy off: the Editor stays, the PNG is on the pasteboard.
@@ -78,7 +97,8 @@ if capture_into_editor "press-shortcut capture-screen"; then
   if capture_into_editor "menu-click capture.screen"; then
     expect_equal "a second Editor opens in the same helper" "$HELPER_PID" "$(helper_pid)"
     expect_equal "two Editors are open" "2" "$(open_editors | grep -c .)"
-    expect_equal "only the newest Capture's file is kept" "capture-$EDITOR_N.pixels" "$(ls "$RUN_ROOT/captures")"
+    expect_in_order "the newest Capture's file is kept" "$(capture_files)" "capture-$EDITOR_N.pixels"
+    expect_equal "the Capture before it was replaced" "0" "$(capture_files | grep -c "^capture-$FIRST_N.pixels\$")"
     expect_equal "both Editors have a window" "2" "$(onscreen_windows "$HELPER_PID")"
     send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
     wait_until 5 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$FIRST_N' ]]"
@@ -86,8 +106,8 @@ if capture_into_editor "press-shortcut capture-screen"; then
     expect_equal "the helper keeps running while an Editor is open" "$HELPER_PID" "$(helper_pid)"
     expect_equal "the first Editor still works from its mapping after its file was replaced" "pixels=602x374" "$(send "$EDITOR_SOCK" "editor-facts $FIRST_N" | grep '^pixels=')"
   fi
-  send "$EDITOR_SOCK" "editor-key $FIRST_N escape" >/dev/null
-  if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits when its last Editor closes"; else fail "the helper is still running after its last Editor closed"; fi
+  send "$EDITOR_SOCK" "editor-key $FIRST_N close" >/dev/null
+  if wait_until 10 gone "$HELPER_PID"; then pass "⌘W closes the last Editor and the helper quits"; else fail "the helper is still running after its last Editor closed"; fi
 fi
 send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null
 
@@ -99,7 +119,25 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 5 bash -c "[[ ! -e '$RUN_ROOT/captures/capture-$DELETED_N.pixels' ]]"; then pass "Delete Capture removes the Capture file"; else fail "the Capture file is still there after Delete Capture"; fi
 fi
 
-# 6. Memory: the menu bar app is back at its baseline after Editors close, flat over cycles, and
+# 6. Warm-up seam: the Editor's window, toolbars and canvas are built without a Capture, hidden,
+#    and the next Capture only has to be attached and shown. The helper stays an agent meanwhile.
+send "$APP_SOCK" start-editor >/dev/null
+wait_until 10 answers "$EDITOR_SOCK"
+WARM_PID="$(helper_pid)"
+send "$EDITOR_SOCK" editor-warm >/dev/null
+expect_contains "a warm helper has built its Editor, hidden, without a Capture" "warm window=hidden canvas=built" "$(send "$EDITOR_SOCK" editor-warm-state)"
+expect_equal "a warm helper is still an agent (no Dock icon)" "UIElement" "$(app_type "$WARM_PID")"
+expect_equal "a warm helper has no window on screen" "0" "$(onscreen_windows "$WARM_PID")"
+expect_equal "a warm helper has no Editor open" "" "$(open_editors)"
+if capture_into_editor "menu-click capture.screen"; then
+  expect_contains "the Capture opens in the Editor that was built ahead of it" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
+  expect_equal "the warm helper is the one that shows it" "$WARM_PID" "$HELPER_PID"
+  if wait_until 5 is_foreground "$HELPER_PID"; then pass "the helper becomes a regular app when the warm Editor shows"; else fail "the helper is not a regular app after the warm Editor showed"; fi
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits when the warm Editor closes"; else fail "the helper is still running after the warm Editor closed"; fi
+fi
+
+# 7. Memory: the menu bar app is back at its baseline after Editors close, flat over cycles, and
 #    nothing of the Capture is left behind in the helper (a new helper every time).
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 capture_into_editor "menu-click capture.screen" && copy_closes_editor   # warm up
@@ -134,6 +172,6 @@ else
   fail "the helper's footprint with a 5K Editor open varies from ${HELPER_MIN} to ${HELPER_MAX} MB"
 fi
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process at rest after the Editors closed"; else fail "a helper is running at rest"; fi
-expect_equal "the Last Capture's file is the only Capture file" "1" "$(ls "$RUN_ROOT/captures" | wc -l | tr -d ' ')"
+expect_equal "the Last Capture's file is the only Capture file" "1" "$(capture_files | wc -l | tr -d ' ')"
 assert_idle_cpu "menu bar app after the Editor cycles" "$APP_PID" 5
 send "$APP_SOCK" pasteboard-clear >/dev/null

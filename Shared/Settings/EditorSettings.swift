@@ -32,3 +32,11 @@ enum EditorSettings {
     /// Close the Editor after Save. On by default.
     static var closeAfterSave: Bool { AppSetting.bool(closeAfterSaveKey, default: true) }
 }
+
+/// The Export section of Settings.
+enum ExportSettings {
+    static let standardResolutionKey = "exportStandardResolution"
+
+    /// Export at standard resolution (1x). Off by default.
+    static var standardResolution: Bool { AppSetting.bool(standardResolutionKey, default: false) }
+}

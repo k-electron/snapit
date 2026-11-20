@@ -42,11 +42,7 @@ final class EditorChrome {
     private let topDestructive: NSView?
 
     init(session: EditorSession) {
-        let screen = Self.screenForNewWindow()
-        let image = session.document.capture.pixels.makeCGImage()
-        canvas = CanvasView(
-            image: image ?? Self.blankImage, pointSize: session.document.pointSize,
-            backingScale: screen.backingScaleFactor)
+        canvas = CanvasView(frame: .zero)
         canvas.padding = Self.canvasPadding
         canvas.session = session
 
@@ -88,15 +84,15 @@ final class EditorChrome {
             content.addSubview(view)
         }
         content.onLayout = { [weak self] in self?.layoutAll() }
-
-        size(for: session.document.pointSize, on: screen)
     }
 
-    private static var blankImage: CGImage {
-        CGContext(
-            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
-            .makeImage()!
+    /// Puts a Capture in the window and sizes the window to fit it. The window, toolbars and
+    /// canvas layers already exist (a warming-up helper builds them before any Capture).
+    func attach(_ document: EditorDocument) {
+        let screen = Self.screenForNewWindow()
+        let image = document.capture.pixels.makeCGImage()
+        if let image { canvas.setCapture(image: image, pointSize: document.pointSize) }
+        size(for: document.pointSize, on: screen)
     }
 
     /// The screen under the pointer: where the user is looking when a Capture arrives.

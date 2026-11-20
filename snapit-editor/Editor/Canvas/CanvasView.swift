@@ -2,8 +2,13 @@ import AppKit
 import QuartzCore
 
 /// The Editor's canvas: a layer-hosting view. Core Animation layers hold everything, the view
-/// has no `draw(_:)`, and nothing ever asks it to redraw. The Capture is one layer whose
-/// contents read the Capture file's mapping in place.
+/// has no `draw(_:)`, and nothing ever asks it to redraw. The Capture is one layer; the
+/// `CGImage` it shows reads the Capture file's mapping in place, and Core Animation then keeps
+/// its own copy of the pixels for the GPU (a 5K Capture makes the helper about 130 MB while the
+/// Editor is open; the helper exits with the Editor).
+///
+/// The canvas is built empty, with its layers, and gets its Capture later with `setCapture`,
+/// so a helper can build the whole window while it is still warming up.
 ///
 /// Layers, back to front: `root` > `contentLayer` (the Capture's size in points, scaled to
 /// fit and centred) > `imageLayer` (the Capture), then `annotationLayer` on top. A tool adds
@@ -17,34 +22,42 @@ final class CanvasView: NSView {
     let annotationLayer = CALayer()
     private let root = CALayer()
     private let imageLayer = CALayer()
-    private let pointSize: CGSize
+    private var pointSize = CGSize(width: 1, height: 1)
     weak var session: EditorSession?
 
     /// Space kept free around the Capture.
     var padding: CGFloat = 6
 
-    init(image: CGImage, pointSize: CGSize, backingScale: CGFloat) {
-        self.pointSize = pointSize
-        super.init(frame: .zero)
+    override init(frame: NSRect) {
+        super.init(frame: frame)
         // Layer-hosting: the layer is set before `wantsLayer`, so AppKit never draws into it.
         layer = root
         wantsLayer = true
 
-        contentLayer.bounds = CGRect(origin: .zero, size: pointSize)
-        annotationLayer.frame = contentLayer.bounds
-        annotationLayer.isGeometryFlipped = true
-        imageLayer.frame = contentLayer.bounds
-        imageLayer.contents = image
         imageLayer.contentsGravity = .resize
         imageLayer.minificationFilter = .trilinear
         imageLayer.magnificationFilter = .nearest
-        imageLayer.contentsScale = backingScale
+        annotationLayer.isGeometryFlipped = true
         contentLayer.addSublayer(imageLayer)
         contentLayer.addSublayer(annotationLayer)
         root.addSublayer(contentLayer)
     }
 
     required init?(coder: NSCoder) { fatalError("CanvasView is made in code") }
+
+    /// Shows the Capture: `pointSize` is its size in points.
+    func setCapture(image: CGImage, pointSize: CGSize) {
+        self.pointSize = CGSize(width: max(pointSize.width, 1), height: max(pointSize.height, 1))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        contentLayer.bounds = CGRect(origin: .zero, size: self.pointSize)
+        annotationLayer.frame = contentLayer.bounds
+        imageLayer.frame = contentLayer.bounds
+        imageLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        imageLayer.contents = image
+        CATransaction.commit()
+        needsLayout = true
+    }
 
     override var isOpaque: Bool { false }
     override var acceptsFirstResponder: Bool { true }
@@ -89,14 +102,17 @@ final class CanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        session?.currentTool.pointerDown(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session!)
+        guard let session else { return }
+        session.currentTool.pointerDown(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        session?.currentTool.pointerDragged(to: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session!)
+        guard let session else { return }
+        session.currentTool.pointerDragged(to: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
     }
 
     override func mouseUp(with event: NSEvent) {
-        session?.currentTool.pointerUp(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session!)
+        guard let session else { return }
+        session.currentTool.pointerUp(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
     }
 }

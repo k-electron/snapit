@@ -4,7 +4,7 @@
 enum ToolRegistry {
     static let all: [any EditorTool] = {
         let tools: [any EditorTool] = [
-            SelectTool()
+            SelectTool(),
         ]
         return tools.sorted { $0.order < $1.order }
     }()

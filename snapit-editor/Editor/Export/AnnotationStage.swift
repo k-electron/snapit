@@ -1,5 +1,6 @@
-/// Draws the Annotations with Core Graphics straight onto a copy of the pixels. A document with
-/// no Annotation leaves the image as it is.
+/// Draws the Annotations with Core Graphics straight onto the Export's owned buffer, shifted by
+/// the image's `origin` after a crop. The document has no Annotation yet, so the image passes
+/// through unchanged.
 nonisolated struct AnnotationStage: ExportStage {
     let id = "annotations"
     let order = 300

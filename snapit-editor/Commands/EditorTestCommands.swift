@@ -9,6 +9,15 @@ nonisolated extension SocketCommand {
     /// `editor-key <N> copy|escape|close`: sends Editor N's window the key press (⌘C, Esc, ⌘W)
     /// as an event, and replies `ok` when what it does has finished. Test mode only.
     static let editorKey = SocketCommand("editor-key")
+    /// Builds the Editor ahead of its Capture, hidden, as a warming-up helper does. Test mode only.
+    static let editorWarm = SocketCommand("editor-warm")
+    /// Replies `warm` when an Editor is built ahead of its Capture, else `cold`; then the on-screen
+    /// state of its window. Test mode only.
+    static let editorWarmState = SocketCommand("editor-warm-state")
+    /// `export-owned-probe <N>`: copies Editor N's Capture into a buffer of its own
+    /// (`makeOwnedCopy`), encodes it, writes the PNG into the run's `probe` folder and replies
+    /// `ok <path>`. The run checks its pixels and profile against the Capture's. Test mode only.
+    static let exportOwnedProbe = SocketCommand("export-owned-probe")
     /// `editor-press <N> <item id>`: runs a top toolbar item's action in Editor N, as pressing
     /// its button does, and replies `ok` when it has finished. Test mode only.
     static let editorPress = SocketCommand("editor-press")
@@ -65,6 +74,28 @@ extension SocketCommandRegistry {
             await session.copyTask?.value
             return sent ? "ok" : "error the window did not take the key"
         }
+        register(.exportOwnedProbe) { request in
+            guard let session = Self.session(request), let document = session.document, let folder = TestMode.folder("probe")
+            else { return "error export-owned-probe <N>" }
+            do {
+                let capture = document.capture
+                let copy = try capture.pixels.makeOwnedCopy()
+                let png = try copy.encodePNG(level: .fast, dpi: capture.info.dpi)
+                let url = folder.appendingPathComponent("owned.png")
+                try png.write(to: url)
+                return "ok \(url.path)"
+            } catch {
+                return "error \(error)"
+            }
+        }
+        register(.editorWarm) { _ in
+            EditorSessions.shared.warmUp()
+            return "ok"
+        }
+        register(.editorWarmState) { _ in
+            guard let warm = EditorSessions.shared.warm else { return "cold" }
+            return "warm window=\(warm.window?.isVisible == true ? "visible" : "hidden") canvas=\(warm.canvas != nil ? "built" : "none")"
+        }
         register(.editorPress) { request in
             guard let session = Self.session(request), request.arguments.count >= 2 else {
                 return "error editor-press <N> <item id>"
@@ -84,13 +115,16 @@ extension SocketCommandRegistry {
     }
 
     private static func facts(of session: EditorSession) -> [(String, String)] {
-        let info = session.document.capture.info
+        let info = session.document?.capture.info
         let window = session.window
         let canvas = session.canvas
         return [
-            ("pixels", "\(info.width)x\(info.height)"),
-            ("scale", "\(info.scale)"),
-            ("dpi", "\(info.dpi)"),
+            ("pixels", info.map { "\($0.width)x\($0.height)" } ?? "none"),
+            ("scale", info.map { "\($0.scale)" } ?? "none"),
+            ("dpi", info.map { "\($0.dpi)" } ?? "none"),
+            ("warm", session.wasWarmedUp ? "yes" : "no"),
+            ("capture-mapping", session.document.map { $0.capture.pixels.isWritable ? "writable" : "read-only" } ?? "none"),
+            ("key-window", window?.isKeyWindow == true ? "yes" : "no"),
             ("window", window.map { $0.isVisible ? "visible" : "hidden" } ?? "none"),
             ("window-title", window?.title ?? ""),
             // A layer-backed view is its layer's delegate and AppKit draws into it; a layer-hosting

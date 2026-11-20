@@ -1,17 +1,19 @@
 import AppKit
 
 /// The helper's own menus, shown in the menu bar while it is a regular app: snapit (About,
-/// Hide, Quit), Edit (Copy), Window (Minimize, Close). Installed at launch, before the helper
-/// first becomes a regular app.
+/// Hide, Quit), then one menu per `EditorMenu` (Edit, Window), whose items come from
+/// `ToolbarRegistry`. Installed at launch, before the helper first becomes a regular app.
 @MainActor
 enum HelperMainMenu {
-    static func install() {
+    static func install(quitTarget: AnyObject, quitAction: Selector) {
         let mainMenu = NSMenu()
-        mainMenu.addItem(submenuItem(title: "snapit", appMenu()))
-        mainMenu.addItem(submenuItem(title: "Edit", editMenu()))
-        let windowMenu = windowMenu()
-        mainMenu.addItem(submenuItem(title: "Window", windowMenu))
-        NSApp.windowsMenu = windowMenu
+        mainMenu.addItem(submenuItem(title: "snapit", appMenu(quitTarget: quitTarget, quitAction: quitAction)))
+        for menu in EditorMenu.allCases {
+            let built = editorMenu(menu)
+            if built.items.isEmpty { continue }
+            mainMenu.addItem(submenuItem(title: menu.rawValue, built))
+            if menu == .window { NSApp.windowsMenu = built }
+        }
         NSApp.mainMenu = mainMenu
     }
 
@@ -21,39 +23,32 @@ enum HelperMainMenu {
         return item
     }
 
-    private static func appMenu() -> NSMenu {
+    private static func appMenu(quitTarget: AnyObject, quitAction: Selector) -> NSMenu {
         let menu = NSMenu(title: "snapit")
         menu.addItem(
             withTitle: "About snapit", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Hide snapit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit snapit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = menu.addItem(withTitle: "Quit snapit", action: quitAction, keyEquivalent: "q")
+        quit.target = quitTarget
         return menu
     }
 
-    private static func editMenu() -> NSMenu {
-        let menu = NSMenu(title: "Edit")
-        menu.addItem(withTitle: "Copy", action: #selector(EditorMenuActions.copyCapture(_:)), keyEquivalent: "c")
+    /// The menu's fixed items, then the registry's items for it, in order.
+    private static func editorMenu(_ kind: EditorMenu) -> NSMenu {
+        let menu = NSMenu(title: kind.rawValue)
+        if kind == .window {
+            menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        }
+        for item in ToolbarRegistry.items(in: kind) {
+            let menuItem = NSMenuItem(
+                title: item.menuTitle, action: #selector(EditorWindow.performToolbarItem(_:)),
+                keyEquivalent: item.keyEquivalent?.key ?? "")
+            menuItem.keyEquivalentModifierMask = item.keyEquivalent?.modifiers ?? []
+            menuItem.representedObject = item.id
+            menu.addItem(menuItem)
+        }
         return menu
-    }
-
-    private static func windowMenu() -> NSMenu {
-        let menu = NSMenu(title: "Window")
-        menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        return menu
-    }
-}
-
-/// Menu actions that reach the Editor through the responder chain.
-@MainActor
-@objc protocol EditorMenuActions {
-    func copyCapture(_ sender: Any?)
-}
-
-extension EditorWindow: EditorMenuActions {
-    @objc func copyCapture(_ sender: Any?) {
-        session?.startCopy()
     }
 }

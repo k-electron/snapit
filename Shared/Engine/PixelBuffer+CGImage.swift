@@ -10,7 +10,7 @@ nonisolated extension PixelBuffer {
             if let info { Unmanaged<PixelBuffer>.fromOpaque(info).release() }
         }
         let size = stride * height
-        let provider = withPixels { base, _ in
+        let provider = withReadOnlyPixels { base, _ in
             CGDataProvider(dataInfo: retained.toOpaque(), data: base, size: size, releaseData: release)
         }
         guard let provider else {

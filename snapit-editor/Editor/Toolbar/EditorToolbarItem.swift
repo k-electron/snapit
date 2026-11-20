@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Where in the Editor's top toolbar an item sits. Each slot is a glass pill.
@@ -11,6 +12,30 @@ enum ToolbarSlot: String, CaseIterable {
     /// The far right, in a pill that refuses the first click on a background Editor, so that
     /// click only brings the window forward: Delete Capture.
     case destructive
+    /// Not in the toolbar at all: an action that only has a key equivalent and a menu item.
+    case menuOnly
+}
+
+/// A key and its modifiers, the key equivalent of a toolbar item and of its menu item.
+struct EditorKeyEquivalent: Equatable {
+    /// The key as typed without modifiers, lower case ("c").
+    let key: String
+    let modifiers: NSEvent.ModifierFlags
+
+    static func command(_ key: String) -> EditorKeyEquivalent {
+        EditorKeyEquivalent(key: key, modifiers: .command)
+    }
+
+    func matches(_ event: NSEvent) -> Bool {
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers
+            && event.charactersIgnoringModifiers?.lowercased() == key
+    }
+}
+
+/// The helper's menu an item appears in, besides the fixed items of each menu.
+enum EditorMenu: String, CaseIterable {
+    case edit = "Edit"
+    case window = "Window"
 }
 
 /// One control in the Editor's top toolbar. A feature adds a file with its item and one line
@@ -20,12 +45,16 @@ enum ToolbarSlot: String, CaseIterable {
 /// `tooltip` and `perform`. `makeView` makes a button with the full-size hit area and the
 /// hover tooltip every control has; an item that needs another control (swatches, a
 /// thumbnail well) returns its own view and applies `.help` to it.
+///
+/// An item that has a key equivalent (`keyEquivalent`) is run by that key in the Editor window,
+/// and one with a `menu` also gets a menu item in the helper's menu bar; the window and the menu
+/// are both built from the registry, so no other file lists keys.
 @MainActor
 protocol EditorToolbarItem {
     /// Stable name. The scripted run presses the item with `editor-press <N> <id>`.
     var id: String { get }
     var slot: ToolbarSlot { get }
-    /// Position inside the slot, lowest first.
+    /// Position inside the slot (or the menu), lowest first.
     var order: Int { get }
     /// SF Symbol name.
     var symbol: String { get }
@@ -34,6 +63,12 @@ protocol EditorToolbarItem {
     /// The hover tooltip: the name and the key equivalent.
     var tooltip: String { get }
     var look: ChromeButtonStyle.Look { get }
+    /// The key that runs the item while the Editor window is key; nil for none.
+    var keyEquivalent: EditorKeyEquivalent? { get }
+    /// The menu that lists the item; nil for none.
+    var menu: EditorMenu? { get }
+    /// The item's name in the menu.
+    var menuTitle: String { get }
     func isEnabled(in session: EditorSession) -> Bool
     func perform(in session: EditorSession)
     func makeView(session: EditorSession) -> AnyView
@@ -42,6 +77,9 @@ protocol EditorToolbarItem {
 extension EditorToolbarItem {
     var title: String? { nil }
     var look: ChromeButtonStyle.Look { .plain }
+    var keyEquivalent: EditorKeyEquivalent? { nil }
+    var menu: EditorMenu? { nil }
+    var menuTitle: String { title ?? tooltip }
     func isEnabled(in session: EditorSession) -> Bool { true }
     func makeView(session: EditorSession) -> AnyView {
         AnyView(ToolbarButton(item: self, session: session))

@@ -1,5 +1,5 @@
-/// Pixelates every Redaction in the engine, destroying the pixels under it. A document with
-/// no Redaction leaves the image as it is.
+/// Pixelates every Redaction in the engine, in the Export's owned buffer, destroying the pixels
+/// under it. The document has no Redaction yet, so the image passes through unchanged.
 nonisolated struct RedactionStage: ExportStage {
     let id = "redaction"
     let order = 200
