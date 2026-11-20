@@ -11,13 +11,15 @@ enum SystemSettingsLinks {
         /// Login Items, where a login item that needs approval is approved (opened with
         /// `SMAppService.openSystemSettingsLoginItems()`; the link is what a run records).
         case loginItems = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        /// Privacy & Security › Screen Recording, where snapit's switch is.
+        case screenRecording = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     }
 
     static func open(_ page: Page) {
         guard let root = TestMode.root else {
             switch page {
             case .loginItems: SMAppService.openSystemSettingsLoginItems()
-            case .screenshotShortcuts: if let url = URL(string: page.rawValue) { NSWorkspace.shared.open(url) }
+            case .screenshotShortcuts, .screenRecording: if let url = URL(string: page.rawValue) { NSWorkspace.shared.open(url) }
             }
             return
         }

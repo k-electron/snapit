@@ -136,6 +136,9 @@ expect_contains "the Move screen shows the failure and stays open" "state=failed
 expect_equal "a failed copy leaves no staged copy behind" "" "$(ls -A "$APPS" | grep '^\.snapit-move' || true)"
 if answers "$APP_SOCK" && kill -0 "$APP_PID" 2>/dev/null; then pass "snapit keeps running after a failed move"; else fail "snapit stopped after a failed move"; fi
 
+# A copy that has not finished Onboarding (a fresh install) shows it after the move, in a helper of its own:
+# the helper that showed the Move screen is on its way out, and must not take Onboarding with it.
+send "$APP_SOCK" "defaults-set onboardingStep welcome" >/dev/null
 OLD_APP_PID="$APP_PID"
 expect_equal "Move to Applications answers ok" "ok" "$(SEND_TIMEOUT=60 send "$EDITOR_SOCK" "move-screen-press move")"
 if wait_until 20 gone "$OLD_APP_PID"; then pass "the snapit that ran from the disk image quits"; else fail "the snapit that ran from the disk image is still running"; fi
@@ -160,6 +163,13 @@ expect_equal "the relaunched snapit is not on a disk image" "false" "$(location_
 expect_equal "the relaunched snapit has nothing to move" "none" "$(location_field decision)"
 expect_equal "the relaunched snapit's launch check does nothing" "none" "$(send "$APP_SOCK" install-check)"
 expect_contains "the relaunched snapit runs in test mode with the same root" "root=$RUN_ROOT" "$(send "$APP_SOCK" test-seams)"
+onboarding_up() { [[ "$(send "$EDITOR_SOCK" onboarding-facts | sed -n 's/^window=//p')" == visible ]]; }
+if wait_until 20 onboarding_up; then pass "the relaunched copy shows Onboarding after the Move to Applications check"; else fail "Onboarding did not show after the move"; fi
+sleep 2
+if onboarding_up; then pass "Onboarding stays: the helper that showed the Move screen did not take it with it"; else fail "Onboarding went away with the old helper"; fi
+send "$EDITOR_SOCK" onboarding-close >/dev/null 2>&1
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+wait_until 10 gone "$(pid_of "$DEST/Contents/Helpers/")"
 sleep 3
 assert_idle_cpu "the relaunched menu bar app" "$APP_PID" "$IDLE_SECONDS"
 FOOTPRINT="$(footprint_mb "$APP_PID")"

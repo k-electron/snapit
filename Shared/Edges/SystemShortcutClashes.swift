@@ -41,9 +41,19 @@ struct SystemShortcutTable: SystemShortcutClashes {
 }
 
 /// Test mode's table: ⌘⇧3, ⌘⇧4 and ⌘⇧5, macOS's screenshot keys, so a run never depends on what
-/// the machine's own settings say.
+/// the machine's own settings say. A run can add combinations (`taken`), as a user's own macOS
+/// shortcuts would; they are kept in the run's defaults, so both processes see them.
 struct FixtureSystemShortcuts: SystemShortcutClashes {
+    static let takenKey = "test.systemShortcutsTaken"
+
+    /// The combinations a run added, one per line in the wire form (`ShortcutCombo.wire`).
+    static var taken: [String] {
+        get { (AppDefaults.store.string(forKey: takenKey) ?? "").split(separator: "\n").map(String.init) }
+        set { AppDefaults.store.set(newValue.joined(separator: "\n"), forKey: takenKey) }
+    }
+
     func isTaken(_ combo: ShortcutCombo) -> Bool {
-        [kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5].contains(combo.keyCode) && combo.modifiers == [.command, .shift]
+        if [kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5].contains(combo.keyCode) && combo.modifiers == [.command, .shift] { return true }
+        return Self.taken.contains(ShortcutCombo.wire(combo))
     }
 }
