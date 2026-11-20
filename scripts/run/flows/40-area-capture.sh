@@ -1,4 +1,4 @@
-# Flow: Area Capture with Capture on release. The Shortcut (or the menu item) freezes the fixture
+# Flow: Area Capture with "After selecting an Area" at Capture on release. The Shortcut (or the menu item) freezes the fixture
 # display and shows the overlay; synthetic mouse events (real NSEvents sent to the overlay's
 # panel) drag out an Area, and letting go crops the frozen frame in the engine and opens the
 # Editor. Checks the overlay as the window server and a rendered snapshot show it, the crop pixel
@@ -8,7 +8,7 @@
 # shellcheck shell=bash
 
 area_start() { send_slow "$APP_SOCK" "$1"; }
-mouse() { send "$APP_SOCK" "overlay-mouse $1 $2 $3 $4"; }
+mouse() { send "$APP_SOCK" "overlay-mouse $*"; }
 fact() { send "$APP_SOCK" overlay-facts | sed -n "s/^$1=//p"; }
 overlay_panels() { "$INSPECT" overlay-windows "$APP_PID"; }
 
@@ -55,6 +55,10 @@ area_png_check() {
   rm -f "$RUN_ROOT/area.png"
 }
 
+# This flow is the Capture on release behaviour: letting go takes the Capture. (The Action bar, the
+# default, has its own flow, 45-action-bar.sh.)
+send "$APP_SOCK" "defaults-set afterSelectingArea captureOnRelease" >/dev/null
+
 SRGB_SHA_AREA="$("$INSPECT" profile-sha srgb)"
 P3_SHA_AREA="$("$INSPECT" profile-sha displayP3)"
 AREA_AT_REST="$(footprint_mb "$APP_PID")"
@@ -72,7 +76,7 @@ expect_equal "no overlay is showing before the Shortcut" "" "$(overlay_panels)"
 expect_equal "the Shortcut shows the overlay" "ok" "$(area_start "press-shortcut capture-area")"
 expect_equal "one overlay panel covers the fixture display, at the screen-saver level" "1" "$(overlay_panels | grep -c '^301x187 ')"
 FACTS="$(send "$APP_SOCK" overlay-facts)"
-expect_contains "the overlay is layer-hosted: no view draws" "view=layer-hosted" "$FACTS"
+expect_contains "the overlay's scene is layer-hosted: no view draws" "view=layer-hosted-scene" "$FACTS"
 SHOWN_MS="$(fact shown-ms)"
 if awk -v ms="$SHOWN_MS" 'BEGIN { exit !(ms != "" && ms + 0 < 100) }'; then
   pass "the overlay is on screen ${SHOWN_MS} ms after the Shortcut (under 100 ms)"
@@ -323,7 +327,7 @@ if awk -v a="$UPDATES_AFTER" -v b="$UPDATES_BEFORE" 'BEGIN { exit !(a - b >= 100
 else
   fail "the moves did not update the scene (${UPDATES_BEFORE} to ${UPDATES_AFTER})"
 fi
-expect_contains "no view draws after the moves" "view=layer-hosted" "$(send "$APP_SOCK" overlay-facts)"
+expect_contains "no view draws after the moves" "view=layer-hosted-scene" "$(send "$APP_SOCK" overlay-facts)"
 if awk -v a="$OVERLAY_AFTER_MOVES" -v b="$OVERLAY_1080" 'BEGIN { exit !(a - b <= 2) }'; then
   pass "memory stays flat over 200 pointer moves (${OVERLAY_1080} MB before, ${OVERLAY_AFTER_MOVES} MB after)"
 else

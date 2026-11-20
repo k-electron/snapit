@@ -16,11 +16,12 @@ nonisolated extension SocketCommand {
     /// Waits until the overlay that is showing has finished, then replies `opened <N>` (Capture N
     /// is in the Editor), `cancelled` or `failed <why>`.
     static let overlayWait = SocketCommand("overlay-wait")
-    /// `overlay-mouse move|down|drag|up <display> <x> <y>`: sends the overlay a mouse event at a
-    /// point of display `<display>` (0 is the first), in points from that display's top-left
-    /// corner. A real `NSEvent`, delivered to the display's panel. Replies `ok`.
+    /// `overlay-mouse move|down|drag|up <display> <x> <y> [<click count>]`: sends the overlay a
+    /// mouse event at a point of display `<display>` (0 is the first), in points from that
+    /// display's top-left corner. A real `NSEvent`, delivered to the display's panel, with that
+    /// click count (1 when omitted; a double-click is a `down` with 2). Replies `ok`.
     static let overlayMouse = SocketCommand("overlay-mouse")
-    /// `overlay-key escape|enter|<key code>`: sends the overlay a key event through the
+    /// `overlay-key escape|enter|<letter>|<key code>`: sends the overlay a key event through the
     /// application's event dispatch. Replies `ok`.
     static let overlayKey = SocketCommand("overlay-key")
     /// What the overlay shows now, as `key=value` lines. Replies `none` when no overlay is up.
@@ -34,6 +35,7 @@ extension SocketCommandRegistry {
     /// The Area overlay's test-mode commands. They exist only while test mode is on.
     func registerAreaTestCommands() {
         guard TestMode.isActive else { return }
+        registerActionBarTestCommands()
 
         register(.fixtureExtraDisplay) { request in
             let arguments = request.arguments
@@ -68,17 +70,17 @@ extension SocketCommandRegistry {
             case .opened(let number): "opened \(number)"
             case .cancelled: "cancelled"
             case .permissionNeeded: "permission-needed"
-            case .permissionNeeded: "permission-needed"
             case .failed(let why): "failed \(why)"
             }
         }
         register(.overlayMouse) { request in
             guard let controller = AreaCaptureFlow.activeOverlay else { return "error no overlay" }
             let arguments = request.arguments
-            guard arguments.count == 4, let display = Int(arguments[1]), let x = Double(arguments[2]),
-                let y = Double(arguments[3]), controller.views.indices.contains(display)
-            else { return "error overlay-mouse move|down|drag|up <display> <x> <y>" }
-            guard controller.send(arguments[0], display: display, point: CGPoint(x: x, y: y)) else {
+            guard (4...5).contains(arguments.count), let display = Int(arguments[1]), let x = Double(arguments[2]),
+                let y = Double(arguments[3]), controller.views.indices.contains(display),
+                let clicks = arguments.count == 5 ? Int(arguments[4]) : 1, clicks >= 1
+            else { return "error overlay-mouse move|down|drag|up <display> <x> <y> [<click count>]" }
+            guard controller.send(arguments[0], display: display, point: CGPoint(x: x, y: y), clickCount: clicks) else {
                 return "error unknown mouse event \(arguments[0])"
             }
             return "ok"
@@ -87,14 +89,21 @@ extension SocketCommandRegistry {
             guard let controller = AreaCaptureFlow.activeOverlay, let panel = controller.panels.first else {
                 return "error no overlay"
             }
-            let keyCodes = ["escape": 53, "enter": 36]
+            // Letters are the ANSI keys' codes; the event carries the letter the way a keyboard's would.
+            let letters = [
+                "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12,
+                "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38,
+                "k": 40, "n": 45, "m": 46,
+            ]
+            let keyCodes = ["escape": 53, "enter": 36].merging(letters) { $1 }
             guard let name = request.arguments.first, let keyCode = keyCodes[name] ?? Int(name) else {
-                return "error overlay-key escape|enter|<key code>"
+                return "error overlay-key escape|enter|<letter>|<key code>"
             }
+            let characters = letters[name] == nil ? "" : name
             let event = NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: panel.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
-                isARepeat: false, keyCode: UInt16(keyCode))
+                windowNumber: panel.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(keyCode))
             guard let event else { return "error no key event" }
             NSApp.sendEvent(event)
             return "ok"
@@ -127,7 +136,7 @@ extension AreaOverlayController {
 
     /// Sends a mouse event of `kind` to the panel of `display`. `move` goes to the view the way a
     /// tracking area delivers it; the others go through the panel's own event dispatch.
-    func send(_ kind: String, display: Int, point: CGPoint) -> Bool {
+    func send(_ kind: String, display: Int, point: CGPoint, clickCount: Int = 1) -> Bool {
         let types: [String: NSEvent.EventType] = [
             "move": .mouseMoved, "down": .leftMouseDown, "drag": .leftMouseDragged, "up": .leftMouseUp,
         ]
@@ -138,7 +147,7 @@ extension AreaOverlayController {
             let event = NSEvent.mouseEvent(
                 with: type, location: CGPoint(x: point.x, y: view.bounds.height - point.y), modifierFlags: [],
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
-                eventNumber: Self.eventNumber, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+                eventNumber: Self.eventNumber, clickCount: clickCount, pressure: type == .leftMouseUp ? 0 : 1)
         else { return false }
         if type == .mouseMoved { view.mouseMoved(with: event) } else { panel.sendEvent(event) }
         return true
@@ -149,15 +158,22 @@ extension AreaOverlayController {
             guard let rect else { return "none" }
             return "\(format(rect.minX)),\(format(rect.minY)) \(format(rect.width))x\(format(rect.height))"
         }
+        // The scene view hosts the scene's layer and draws nothing; the container around it draws
+        // nothing either (it updates its layer, which stays empty).
         let layerHosted = views.allSatisfy { $0.layer === $0.scene.root && $0.layer?.delegate !== $0 }
+            && containers.allSatisfy { $0.wantsUpdateLayer && $0.subviews.first === $0.sceneView }
         return [
             "displays=\(displays.count)",
             "state=\(state.rawValue)",
             "display=\(activeIndex)",
+            "display-ids=\(displays.map { String($0.displayID) }.joined(separator: ","))",
             "cursor=\(format(cursor.x)),\(format(cursor.y))",
             "hover=\(describe(hoveredWindow))",
             "selection=\(selectionIndex.map(String.init) ?? "none") \(describe(selection))",
-            "view=\(layerHosted ? "layer-hosted" : "drawn")",
+            "view=\(layerHosted ? "layer-hosted-scene" : "drawn")",
+            "after-selecting=\(CapturingSettings.afterSelectingArea.rawValue)",
+            "handles=\(views.reduce(0) { $0 + $1.scene.visibleHandles })",
+            "action-bar=\(describe(containers.lazy.compactMap(\.actionBarFrame).first))",
             "scene-updates=\(views.reduce(0) { $0 + $1.scene.updateCount })",
             "shown-ms=\(AreaCaptureFlow.lastShownMilliseconds.map { String(format: "%.1f", $0) } ?? "none")",
         ]

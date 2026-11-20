@@ -4,6 +4,8 @@ import CoreGraphics
 /// crops afterwards. Its pixels are the one-shot capture itself, shared by the overlay's layers and
 /// the loupe; nothing copies them, so they go when the overlay lets go of them.
 struct FrozenDisplay {
+    /// The display's `CGDirectDisplayID` (a fixed fake one for each fixture display in test mode).
+    let displayID: CGDirectDisplayID
     /// The display's frame in AppKit's global space (points, origin at the bottom left of the
     /// primary display).
     let frame: CGRect

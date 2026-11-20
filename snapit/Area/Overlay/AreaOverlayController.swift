@@ -9,27 +9,37 @@ struct AreaSelection: Equatable {
 
 /// The Area overlay: one panel per frozen display, the pointer state machine and the keyboard.
 ///
-/// "After selecting an Area" is Capture on release: letting go of the mouse after a drag, or a
-/// click on the highlighted window, finishes with that selection. Esc finishes with nil.
-/// The controller keeps no pixels of its own; the frozen frames belong to the scenes' layers
-/// and go with the panels at `teardown()`.
+/// What letting go of the mouse does is the setting "After selecting an Area". With Capture on
+/// release, a drag or a click on the highlighted window finishes with that selection. With Show
+/// Action bar (the default) the selection stays: the overlay is `adjusting`, with eight handles to
+/// resize it, a drag inside it to move it, and the Action bar. Return, a double-click inside the
+/// selection and the bar's Capture button finish with it; Esc and the bar's Cancel finish with
+/// `.cancel`. The controller keeps no pixels of its own; the frozen frames belong to the scenes'
+/// layers and go with the panels at `teardown()`.
 @MainActor
-final class AreaOverlayController {
+final class AreaOverlayController: ActionBarHost {
     enum State: String {
-        case idle, hoverWindow, dragging
+        case idle, hoverWindow, dragging, adjusting
+    }
+
+    /// What the pressed mouse button is doing.
+    private enum Gesture {
+        case none, newArea, resize(AreaHandle), move
     }
 
     let displays: [FrozenDisplay]
     private let windows: [OnScreenWindow]
     private let pointer: CGPoint
     private(set) var panels: [AreaOverlayPanel] = []
+    /// The scene view of each panel (layer-hosting), inside its container.
     private(set) var views: [AreaOverlayView] = []
+    private(set) var containers: [AreaOverlayContainerView] = []
     private var monitor: Any?
     private var screenObserver: NSObjectProtocol?
 
     /// Called once, on a later turn of the run loop (never from inside an event handler of one of
     /// the overlay's own windows, which the caller is about to close).
-    var onFinish: ((AreaSelection?) -> Void)?
+    var onFinish: ((AreaOverlayOutcome) -> Void)?
     private(set) var isFinished = false
 
     private(set) var state = State.idle
@@ -44,6 +54,9 @@ final class AreaOverlayController {
     private var hasMovedPastThreshold = false
     private var pressedIndex = 0
     private var anchor = CGPoint.zero
+    private var gesture = Gesture.none
+    /// The selection when the button went down: resizing and moving work from it.
+    private var pressedSelection = CGRect.zero
 
     /// A press that moves less than this many points is a click, not a drag.
     static let dragThreshold: CGFloat = 3
@@ -67,12 +80,14 @@ final class AreaOverlayController {
         for (index, display) in displays.enumerated() {
             let panel = AreaOverlayPanel(frame: display.frame)
             let scene = AreaOverlayScene(display: display)
-            let view = AreaOverlayView(
-                frame: CGRect(origin: .zero, size: display.frame.size), index: index, controller: self, scene: scene)
-            panel.contentView = view
+            let bounds = CGRect(origin: .zero, size: display.frame.size)
+            let view = AreaOverlayView(frame: bounds, index: index, controller: self, scene: scene)
+            let container = AreaOverlayContainerView(frame: bounds, sceneView: view)
+            panel.contentView = container
             panel.setFrame(display.frame, display: false)
             panels.append(panel)
             views.append(view)
+            containers.append(container)
         }
         refreshHover()
         refreshScenes()
@@ -107,6 +122,7 @@ final class AreaOverlayController {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
         for view in views { view.scene.releaseFrame() }
+        for container in containers { container.releaseActionBar() }
         for panel in panels {
             panel.contentView = nil
             panel.orderOut(nil)
@@ -114,6 +130,7 @@ final class AreaOverlayController {
         }
         panels.removeAll()
         views.removeAll()
+        containers.removeAll()
         // Core Animation holds on to what it last committed until the next commit: do it now, so
         // the frozen frames are freed with the overlay and not at some later event.
         CATransaction.flush()
@@ -136,40 +153,76 @@ final class AreaOverlayController {
         refreshScenes()
     }
 
-    func mouseDown(_ index: Int, _ point: CGPoint) {
+    func mouseDown(_ index: Int, _ point: CGPoint, clickCount: Int = 1) {
         guard !isFinished else { return }
         setCursor(index, point)
+        // A click on the Action bar is the bar's.
+        if containers[index].actionBarFrame?.contains(cursor) == true { return }
         isPressed = true
         hasMovedPastThreshold = false
         pressedIndex = index
         anchor = cursor
+        gesture = .newArea
+        guard state == .adjusting, selectionIndex == index, let selection else { return }
+        pressedSelection = selection
+        if let handle = AreaHandle.hit(selection, at: cursor) {
+            gesture = .resize(handle)
+        } else if selection.contains(cursor) {
+            if clickCount >= 2 {
+                isPressed = false
+                gesture = .none
+                captureSelection()
+                return
+            }
+            gesture = .move
+        }
+        updateCursor()
     }
 
     func mouseDragged(_ index: Int, _ point: CGPoint) {
         guard !isFinished, isPressed, index == pressedIndex else { return }
-        let clamped = AreaGeometry.clamp(point, to: displays[index].bounds)
+        let bounds = displays[index].bounds
+        let clamped = AreaGeometry.clamp(point, to: bounds)
         setCursor(index, clamped)
+        // A press that moves less than the threshold moves nothing: a double-click's jitter leaves
+        // the selection where it is.
         if !hasMovedPastThreshold {
             guard hypot(clamped.x - anchor.x, clamped.y - anchor.y) >= Self.dragThreshold else { return }
             hasMovedPastThreshold = true
-            selectionIndex = index
-            hoveredWindow = nil
-            state = .dragging
+            if case .newArea = gesture {
+                selectionIndex = index
+                hoveredWindow = nil
+                state = .dragging
+            }
         }
-        selection = AreaGeometry.rect(anchor, clamped)
+        let delta = CGSize(width: clamped.x - anchor.x, height: clamped.y - anchor.y)
+        switch gesture {
+        case .newArea: selection = AreaGeometry.rect(anchor, clamped)
+        case .resize(let handle): selection = handle.resized(pressedSelection, by: delta, in: bounds)
+        case .move: selection = AreaHandle.moved(pressedSelection, by: delta, in: bounds)
+        case .none: break
+        }
+        updateCursor()
         refreshScenes()
     }
 
-    /// Letting go is the Capture: after a drag, the dragged Area; after a click on a highlighted
-    /// window, that window's frame.
+    /// Letting go ends a gesture. A drag that made a new Area, or a click on a highlighted window,
+    /// follows "After selecting an Area".
     func mouseUp(_ index: Int, _ point: CGPoint) {
         guard !isFinished, isPressed else { return }
         isPressed = false
+        let ended = gesture
+        gesture = .none
         setCursor(index, hasMovedPastThreshold ? AreaGeometry.clamp(point, to: displays[index].bounds) : point)
-        if hasMovedPastThreshold, let selection, let selectionIndex {
-            confirm(selection, on: selectionIndex)
-        } else if state == .hoverWindow, let hoveredWindow {
-            confirm(hoveredWindow, on: activeIndex)
+        if case .newArea = ended {
+            if hasMovedPastThreshold {
+                if let selection, let selectionIndex { select(selection, on: selectionIndex) }
+            } else if state == .adjusting {
+                // A click away from the selection lets it go.
+                clearSelection()
+            } else if state == .hoverWindow, let hoveredWindow {
+                select(hoveredWindow, on: activeIndex)
+            }
         }
         guard !isFinished else { return }
         updateCursor()
@@ -196,15 +249,93 @@ final class AreaOverlayController {
         state = hoveredWindow == nil ? .idle : .hoverWindow
     }
 
+    /// The cursor: crosshair to select with, a resize cursor over a handle, a hand inside the
+    /// selection, an arrow over the Action bar.
     func updateCursor() {
-        if !TestMode.isActive { NSCursor.crosshair.set() }
+        guard !TestMode.isActive else { return }
+        guard state == .adjusting, selectionIndex == activeIndex, let selection else {
+            NSCursor.crosshair.set()
+            return
+        }
+        if containers[activeIndex].actionBarFrame?.contains(cursor) == true {
+            NSCursor.arrow.set()
+        } else if case .resize(let handle) = gesture {
+            handle.cursor.set()
+        } else if let handle = AreaHandle.hit(selection, at: cursor) {
+            handle.cursor.set()
+        } else if selection.contains(cursor) {
+            if case .move = gesture { NSCursor.closedHand.set() } else { NSCursor.openHand.set() }
+        } else {
+            NSCursor.crosshair.set()
+        }
+    }
+
+    // MARK: The selection
+
+    /// The selection shows with its handles and the Action bar. A selection with no pixels in it
+    /// is refused and the overlay carries on selecting.
+    private func select(_ area: CGRect, on index: Int) {
+        switch CapturingSettings.afterSelectingArea {
+        case .captureOnRelease:
+            confirm(area, on: index)
+        case .showActionBar:
+            guard pixels(of: area, on: index) != nil else {
+                clearSelection()
+                return
+            }
+            selection = area
+            selectionIndex = index
+            hoveredWindow = nil
+            state = .adjusting
+        }
+    }
+
+    private func clearSelection() {
+        selection = nil
+        selectionIndex = nil
+        hoveredWindow = nil
+        state = .idle
+        refreshHover()
+    }
+
+    private func pixels(of area: CGRect, on index: Int) -> PixelRect? {
+        let display = displays[index]
+        return AreaGeometry.pixelRect(
+            of: area, scale: display.scale, width: display.image.width, height: display.image.height)
+    }
+
+    /// The Area now selected, in whole device pixels.
+    var selectedArea: AreaSelection? {
+        guard state == .adjusting, let selection, let selectionIndex,
+            let pixels = pixels(of: selection, on: selectionIndex)
+        else { return nil }
+        return AreaSelection(displayIndex: selectionIndex, pixels: pixels)
+    }
+
+    /// Captures the selection as it is (Return, a double-click inside it).
+    private func captureSelection() {
+        guard let selection, let selectionIndex else { return }
+        confirm(selection, on: selectionIndex)
     }
 
     // MARK: Keyboard
 
     private func handle(_ event: NSEvent) -> Bool {
         if event.type == .keyDown, event.modifierFlags.contains(.command) { return false }
-        if event.type == .keyDown, event.keyCode == 53 { cancel() }
+        guard event.type == .keyDown else { return true }
+        switch event.keyCode {
+        case 53:
+            cancel()
+        case 36, 76:
+            if state == .adjusting { captureSelection() }
+        default:
+            // The Action bar's items name their own keys (the Color picker's P).
+            if state == .adjusting, !event.isARepeat,
+                let item = ActionBarRegistry.item(forKey: event.charactersIgnoringModifiers)
+            {
+                item.perform(on: self)
+            }
+        }
         // Every other key is swallowed while the overlay is up, so none of them beeps.
         return true
     }
@@ -212,41 +343,45 @@ final class AreaOverlayController {
     // MARK: Finishing
 
     func cancel() {
-        finish(with: nil)
+        finish(with: .cancel)
     }
 
     private func confirm(_ area: CGRect, on index: Int) {
-        let display = displays[index]
-        guard
-            let pixels = AreaGeometry.pixelRect(
-                of: area, scale: display.scale, width: display.image.width, height: display.image.height)
-        else {
+        guard let pixels = pixels(of: area, on: index) else {
             // A selection with no pixels in it is refused; the overlay carries on.
-            selection = nil
-            selectionIndex = nil
-            hoveredWindow = nil
-            state = .idle
-            refreshHover()
+            clearSelection()
+            refreshScenes()
             return
         }
-        finish(with: AreaSelection(displayIndex: index, pixels: pixels))
+        finish(with: .capture(AreaSelection(displayIndex: index, pixels: pixels)))
     }
 
-    private func finish(with result: AreaSelection?) {
+    /// Ends the overlay with `outcome`, once.
+    func finish(with outcome: AreaOverlayOutcome) {
         guard !isFinished else { return }
         isFinished = true
-        DispatchQueue.main.async { [weak self] in self?.onFinish?(result) }
+        DispatchQueue.main.async { [weak self] in self?.onFinish?(outcome) }
     }
 
     // MARK: Scenes
 
     private func refreshScenes() {
-        for (index, view) in views.enumerated() {
-            view.scene.update(
+        let adjusting = state == .adjusting
+        for (index, container) in containers.enumerated() {
+            let showsSelection = index == selectionIndex
+            var bar: CGRect?
+            if adjusting, showsSelection, let selection {
+                bar = container.showActionBar(for: selection, host: self)
+            } else {
+                container.hideActionBar()
+            }
+            // An adjusted Area has no crosshair or loupe, so a pointer move changes nothing.
+            container.sceneView.scene.update(
                 AreaSceneState(
-                    hasPointer: index == activeIndex, cursor: cursor,
+                    hasPointer: index == activeIndex && !adjusting, cursor: adjusting ? .zero : cursor,
                     hoveredWindow: index == activeIndex ? hoveredWindow : nil,
-                    selection: index == selectionIndex ? selection : nil))
+                    selection: showsSelection ? selection : nil, showsHandles: adjusting && showsSelection,
+                    actionBar: bar))
         }
     }
 }
