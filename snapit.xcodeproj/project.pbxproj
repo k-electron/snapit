@@ -412,6 +412,7 @@
 				OTHER_LDFLAGS = "-lsnapit_engine";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.snapit.snapit.editor;
 				PRODUCT_NAME = "snapit Editor";
+				EXECUTABLE_NAME = snapit;
 				SKIP_INSTALL = YES;
 			};
 			name = Debug;
@@ -431,6 +432,7 @@
 				OTHER_LDFLAGS = "-lsnapit_engine";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.snapit.snapit.editor;
 				PRODUCT_NAME = "snapit Editor";
+				EXECUTABLE_NAME = snapit;
 				SKIP_INSTALL = YES;
 			};
 			name = Release;
