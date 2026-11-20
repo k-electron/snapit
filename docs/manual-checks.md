@@ -96,4 +96,4 @@ Run on a real install, with Screen Recording granted, before a release and after
 5. Click a highlighted window: it becomes the selection with its handles and the bar. Press Enter: the window's frame is captured.
 6. With another app frontmost, press ⌃⌥⌘4, drag an Area and press Esc (and again with the Cancel button): the overlay goes, that app is frontmost with the keyboard, and ⌃⌥⌘4 works again at once.
 7. With two displays, make a selection on one and drag a handle toward the other: the selection stops at its own display's edge, and the bar is on that display.
-8. Memory, with `footprint <pid>`: the first Action bar adds about 1 MB that stays; later bars add nothing. Idle CPU is 0% with the bar and a tooltip showing.
+8. Memory, with `footprint <pid>`: the first Action bar adds under 1 MB that stays; later bars add nothing. Idle CPU is 0% with the bar and a tooltip showing.

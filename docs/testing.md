@@ -233,7 +233,7 @@ no full-screen backing store exists.
 
 The scripted run holds the bar to its budget: flow 42 takes the footprint before the first bar of the
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
-at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured 0.96 MB). Five Captures through the bar leave it where it
+at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured about 0.4 MB, the tiles using the overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
 was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
 
 ## Adding to the Area overlay
