@@ -21,6 +21,11 @@ extension SocketCommandRegistry {
                 return "error \(error.localizedDescription)"
             }
         }
+        register(.shortcutCombos) { _ in
+            ShortcutCatalog.entries.map { entry in
+                "\(entry.shortcut.id) \(ShortcutCombo.wire(Shortcuts.current.combo(for: entry.shortcut)))"
+            }.joined(separator: "\n")
+        }
         register(.applyShortcut) { request in
             guard let id = request.arguments.first, let entry = ShortcutCatalog.entry(id: id) else {
                 return "error no shortcut \(request.arguments.first ?? "")"

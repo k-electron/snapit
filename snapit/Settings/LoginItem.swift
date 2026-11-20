@@ -26,13 +26,17 @@ struct SMAppLoginItem: LoginItemService {
     func unregister() throws { try SMAppService.mainApp.unregister() }
 }
 
-/// Test mode's login item: a status held in memory. Opening at login starts out on, as
-/// Onboarding leaves it.
+/// Test mode's login item: a status kept in the run's defaults, so it survives a relaunch as the
+/// real one does, starting where a fresh install starts (`notFound`).
 @MainActor
 final class FakeLoginItem: LoginItemService {
     static let shared = FakeLoginItem()
+    private static let key = "test.loginItemStatus"
 
-    private(set) var status = LoginItemStatus.enabled
+    private(set) var status: LoginItemStatus {
+        get { AppDefaults.store.string(forKey: Self.key).flatMap(LoginItemStatus.init(rawValue:)) ?? .notFound }
+        set { AppDefaults.store.set(newValue.rawValue, forKey: Self.key) }
+    }
 
     func register() throws { status = .enabled }
     func unregister() throws { status = .notRegistered }

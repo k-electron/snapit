@@ -5,7 +5,7 @@ import AppKit
 /// Settings.
 enum SystemSettingsLinks {
     enum Page: String {
-        /// The Keyboard page, where Keyboard Shortcuts… leads to the Screenshots shortcuts.
+        /// The Keyboard page, where Keyboard Shortcuts… › Screenshots holds ⌘⇧3, ⌘⇧4 and ⌘⇧5.
         case screenshotShortcuts = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
         /// Login Items, where a login item that needs approval is approved.
         case loginItems = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"

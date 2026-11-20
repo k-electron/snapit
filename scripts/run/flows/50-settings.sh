@@ -79,6 +79,7 @@ expect_equal "Pick Color has no Shortcut by default" "none" "$(sval shortcut.pic
 expect_equal "Area shows ⌃⌥⌘4" "⌃⌥⌘4" "$(sdisplay capture-area)"
 expect_contains "the Shortcuts section has the button that opens macOS's Screenshots shortcuts" "control open-screenshot-shortcuts|button|" "$FACTS"
 expect_contains "About shows the version" "control version|text|Version|" "$FACTS"
+expect_contains "About shows the engine's version, read through the C ABI" "control engine|text|Engine|$EXPECTED_VERSION|" "$FACTS"
 expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
 
 # 3. A second request brings the same window forward: still one window, still one helper.
@@ -91,7 +92,7 @@ expect_equal "the helper's app menu has Settings… (⌘,)" "Settings…" "$(men
 
 # 4. Open at Login goes through the menu bar app and the fake login item; its status is read
 #    when Settings opens, never polled.
-expect_equal "the fake login item is on, as Onboarding leaves it" "enabled" "$(send "$APP_SOCK" login-item-status)"
+expect_equal "Open at Login is on by default: the first launch registered the (fake) login item" "enabled" "$(send "$APP_SOCK" login-item-status)"
 spress open-at-login >/dev/null
 expect_equal "turning Open at Login off unregisters the login item" "notRegistered" "$(send "$APP_SOCK" login-item-status)"
 expect_equal "the switch shows off" "off" "$(sval open-at-login)"
@@ -182,7 +183,14 @@ expect_equal "Esc cancels the selection" "cancelled" "$(send_slow "$APP_SOCK" ov
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 wait_until 10 settings_is close-editor-after-copy on
 
-# 6. Shortcuts: re-recording rebinds the Shortcut, stores it, and the menu glyph follows.
+# 6. Shortcuts: the menu bar app's registrar is the truth Settings shows when it opens.
+send "$APP_SOCK" "shortcut-set capture-screen 20 control option" >/dev/null
+send_slow "$APP_SOCK" "menu-click settings" >/dev/null
+if wait_until 5 settings_is shortcut.capture-screen "20 control,option"; then pass "Settings shows the combination the menu bar app has, not an older stored one"; else fail "Settings shows '$(sval shortcut.capture-screen)' for Screen, the menu bar app has ⌃⌥3"; fi
+send "$APP_SOCK" "shortcut-set capture-screen 20 control option command" >/dev/null
+send_slow "$APP_SOCK" "menu-click settings" >/dev/null
+wait_until 5 settings_is shortcut.capture-screen "20 control,option,command"
+# Re-recording rebinds the Shortcut, stores it, and the menu glyph follows.
 expect_equal "the Area menu item shows ⌃⌥⌘4" "4 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
 spress shortcut.capture-area >/dev/null
 expect_equal "pressing the recorder starts recording" "recording" "$(sval shortcut.capture-area)"
@@ -230,8 +238,8 @@ skey 21 control,option,command >/dev/null
 expect_equal "Area is back to ⌃⌥⌘4 in the menu" "4 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
 # The Screenshots button goes through the System Settings deep link (recorded, not opened, in a run).
 spress open-screenshot-shortcuts >/dev/null
-expect_contains "the Screenshots shortcuts button opens the System Settings deep link" \
-  "x-apple.systempreferences:" "$(cat "$RUN_ROOT/system-settings-links" 2>/dev/null)"
+expect_equal "the Screenshots shortcuts button opens the Keyboard page of System Settings" \
+  "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" "$(cat "$RUN_ROOT/system-settings-links" 2>/dev/null)"
 
 # 7. Closing Settings: the helper quits, the Dock icon goes, the menu bar app is at baseline.
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
@@ -253,6 +261,21 @@ expect_equal "a fresh Settings window shows the stored Save location" "$SETTINGS
 expect_equal "and shows Close the Editor after Copy on" "on" "$(sval close-editor-after-copy)"
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
 wait_until 10 no_helper_process
+
+# 9. A later Off is the user's: a relaunch does not turn Open at Login on again.
+send_slow "$APP_SOCK" "menu-click settings" >/dev/null
+wait_until 10 settings_is open-at-login on
+spress open-at-login >/dev/null
+expect_equal "Open at Login is off" "off" "$(sval open-at-login)"
+send_slow "$EDITOR_SOCK" settings-close >/dev/null
+wait_until 10 no_helper_process
+send "$APP_SOCK" quit >/dev/null
+wait_until 30 gone "$APP_PID"
+(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
+if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else fail "snapit did not start again"; fi
+APP_PID="$(pid_of "$APP_EXE")"
+sleep 1
+if [[ "$(send "$APP_SOCK" login-item-status)" != "enabled" ]]; then pass "a relaunch leaves Open at Login off"; else fail "a relaunch turned Open at Login on again"; fi
 
 # Put every setting back for the flows after this one.
 send "$APP_SOCK" "defaults-set saveLocation $SAVE" >/dev/null

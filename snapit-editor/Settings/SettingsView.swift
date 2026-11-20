@@ -18,7 +18,7 @@ struct SettingsView: View {
             about
         }
         .formStyle(.grouped)
-        .frame(minWidth: 480, idealWidth: 520, minHeight: 360, idealHeight: 640)
+        .frame(minWidth: 480, idealWidth: 520, minHeight: 360, idealHeight: 760)
     }
 
     // MARK: General
@@ -141,7 +141,7 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("To use ⌘⇧3, ⌘⇧4 or ⌘⇧5 for snapit, free them in macOS first.")
+                Text("To use ⌘⇧3, ⌘⇧4 or ⌘⇧5 for snapit, turn them off in Keyboard Shortcuts… › Screenshots.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button(SettingsControl.openScreenshotShortcuts.title) { model.openScreenshotShortcuts() }
@@ -182,6 +182,8 @@ struct SettingsView: View {
         Section(SettingsSection.about.rawValue) {
             LabeledContent(SettingsControl.version.title, value: model.versionText)
                 .help(SettingsControl.version.tooltip)
+            LabeledContent(SettingsControl.engineVersion.title, value: model.engineVersionText)
+                .help(SettingsControl.engineVersion.tooltip)
         }
     }
 

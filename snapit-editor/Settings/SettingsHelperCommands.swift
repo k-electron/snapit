@@ -113,6 +113,7 @@ enum SettingsFacts {
                 control(.standardResolution, "switch", onOff(model.standardResolution))
             case .about:
                 control(.version, "text", model.versionText)
+                control(.engineVersion, "text", model.engineVersionText)
             }
         }
         return lines.joined(separator: "\n")

@@ -21,13 +21,17 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     let model = SettingsModel()
     private(set) var window: NSWindow?
 
-    /// Shows Settings, or brings the open window forward. Either way the Open at Login status
-    /// is read again: that read, when Settings opens or comes forward, is its only one.
+    /// Shows Settings, or brings the open window forward. Either way the Open at Login status and
+    /// the Shortcuts are read again from the menu bar app: that read, when Settings opens or comes
+    /// forward, is its only one.
     static func show() {
         let settings = shared ?? SettingsWindow()
         shared = settings
         settings.present()
-        Task { await settings.model.refreshLogin() }
+        Task {
+            await settings.model.refreshLogin()
+            await settings.model.refreshShortcuts()
+        }
     }
 
     private func present() {
@@ -39,13 +43,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         }
         let hosting = NSHostingView(rootView: SettingsView(model: model, window: { [weak self] in self?.window }))
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 520, height: 640)),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 520, height: 760)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = hosting
-        window.setContentSize(NSSize(width: 520, height: 640))
+        window.setContentSize(NSSize(width: 520, height: 760))
         window.center()
         self.window = window
 
