@@ -425,5 +425,10 @@ assert_idle_cpu "menu bar app after the Action bar Captures" "$APP_PID" 5
 # Leave what the next flows expect: no helper, a small fixture display, nothing on the pasteboard.
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 area_no_helper
+# The first Action bar leaves the process about 4 MB above where it rested before (the live glass
+# view's backdrop; the checks above show it is flat over repeated Captures). The flows after this one
+# compare with what the process rests at now.
+sleep 1
+AT_REST="$(footprint_mb "$APP_PID")"
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

@@ -215,9 +215,11 @@ The Action bar is real views, which a layer-hosting view cannot hold: each panel
 `AreaOverlayContainerView` with the layer-hosting `AreaOverlayView` (the scene) filling it and, once
 a selection is being adjusted, an `ActionBarHostingView` (SwiftUI, macOS 26 glass) sized exactly to
 the bar beside it. The container draws nothing (`wantsUpdateLayer`), so no full-screen backing store
-exists. The first Action bar loads macOS's glass renderer, which keeps the footprint about 4 MB
-higher from then on (16 MB at rest, 20 MB after the first bar, flat over repeated Captures); an
-`NSGlassEffectView` with two `NSButton`s leaves the same 4 MB, so it is the glass and not SwiftUI.
+exists. The first Action bar keeps the footprint about 4 MB higher from then on (16 MB at rest, 20 MB
+after the first bar, flat over repeated Captures). That is what a live view with a blurred
+backdrop costs, not SwiftUI: an `NSGlassEffectView` with two `NSButton`s leaves the same 4 MB and
+a plain material 3 MB. Flow 45 therefore ends by taking the process's new resting footprint as
+`AT_REST` for the flows after it.
 
 ## Adding to the Area overlay
 
