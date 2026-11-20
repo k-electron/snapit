@@ -12,6 +12,8 @@ import Foundation
 /// still reading an earlier drag's file is not disturbed.
 nonisolated final class PendingDragFile: @unchecked Sendable {
     let url: URL
+    /// The Annotations and crop the file was made from.
+    let snapshot: DocumentState
     private let done = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private var finished: Result<URL, Error>?
@@ -19,7 +21,8 @@ nonisolated final class PendingDragFile: @unchecked Sendable {
 
     /// Starts the Fast encode for `job`. `captureTime` gives the file its name.
     @MainActor
-    init(job: ExportJob, captureNumber: Int, captureTime: Date) {
+    init(job: ExportJob, snapshot: DocumentState, captureNumber: Int, captureTime: Date) {
+        self.snapshot = snapshot
         let folder = ExportFiles.dragOutFolder(captureNumber: captureNumber)
         url = folder.appendingPathComponent(ExportFileName.fileName(captureTime: captureTime))
         let target = url

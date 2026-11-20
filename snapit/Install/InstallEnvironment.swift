@@ -52,7 +52,11 @@ enum InstallRelaunch {
 
     /// Quits this process a moment later, so the reply to the helper gets out first.
     static func quitSoon() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApplication.shared.terminate(nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // On purpose: nobody is asked about a quit snapit makes itself.
+            QuitPreparation.markConsented()
+            NSApplication.shared.terminate(nil)
+        }
     }
 }
 

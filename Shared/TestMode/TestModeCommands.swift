@@ -16,6 +16,9 @@ nonisolated extension SocketCommand {
     static let defaultsGet = SocketCommand("defaults-get")
     /// Empties the private pasteboard.
     static let pasteboardClear = SocketCommand("pasteboard-clear")
+    /// Sends this process the quit AppleEvent, as the system does at logout and `osascript` does
+    /// (a quit nobody was asked about), and replies `ok` at once. Test mode only.
+    static let quitEvent = SocketCommand("quit-event")
 }
 
 extension SocketCommandRegistry {
@@ -32,6 +35,22 @@ extension SocketCommandRegistry {
         }
         register(.echo) { request in
             request.arguments.joined(separator: "\n")
+        }
+        register(.quitEvent) { _ in
+            // After the reply, and from the run loop itself, not from inside a main queue block: the
+            // system delivers a quit that way, and a `terminate` made inside a block cannot be answered
+            // later (`AppDelegate.applicationShouldTerminate`).
+            let mainLoop = CFRunLoopGetMain()
+            CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
+                let target = NSAppleEventDescriptor(processIdentifier: ProcessInfo.processInfo.processIdentifier)
+                let event = NSAppleEventDescriptor(
+                    eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEQuitApplication),
+                    targetDescriptor: target, returnID: AEReturnID(kAutoGenerateReturnID),
+                    transactionID: AETransactionID(kAnyTransactionID))
+                AESendMessage(event.aeDesc!, nil, AESendMode(kAENoReply), kAEDefaultTimeout)
+            }
+            CFRunLoopWakeUp(mainLoop)
+            return "ok"
         }
         register(.testSeams) { _ in
             [

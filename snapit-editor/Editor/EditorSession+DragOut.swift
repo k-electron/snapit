@@ -8,13 +8,14 @@ extension EditorSession {
         commitTextEditing()
         guard let document else { return nil }
         return PendingDragFile(
-            job: document.makeExportJob(level: .fast), captureNumber: document.captureNumber,
-            captureTime: document.capture.info.captureTime)
+            job: document.makeExportJob(level: .fast), snapshot: document.history.state,
+            captureNumber: document.captureNumber, captureTime: document.capture.info.captureTime)
     }
 
-    /// The drop was taken: the Capture counts as exported, so closing it asks nothing. The Editor
-    /// stays open (only Copy and Save close it).
-    func didDragOut() {
-        document?.markExported()
+    /// The drop was taken: the Capture counts as exported as it was when the drag's file was made, so
+    /// closing it asks nothing, unless it was edited since. The Editor stays open (only Copy and
+    /// Save close it).
+    func didDragOut(_ file: PendingDragFile) {
+        document?.markExported(file.snapshot)
     }
 }

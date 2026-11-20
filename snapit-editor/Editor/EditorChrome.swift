@@ -147,13 +147,30 @@ final class EditorChrome {
         let extraHeight = top + rows + Self.margin + 2 * Self.canvasPadding
         window.setContentSize(
             NSSize(width: width, height: max(minimumContent.height, min(capture.height + extraHeight, maxHeight))))
-        let others = NSApp.windows.filter { $0 is EditorWindow && $0.isVisible }.count
-        let step = CGFloat(others % 12) * 28
-        var origin = NSPoint(
-            x: visible.midX - window.frame.width / 2 + step, y: visible.midY - window.frame.height / 2 - step)
-        origin.x = max(visible.minX, min(visible.maxX - window.frame.width, origin.x))
-        origin.y = max(visible.minY, min(visible.maxY - window.frame.height, origin.y))
-        window.setFrameOrigin(origin)
+        // Cascaded: the first diagonal step (28 points down and to the right of the centre) that no
+        // other Editor's window already sits on, so closing one in the middle never makes the next
+        // one stack on top of another. A step past the screen's edge wraps round to the other side,
+        // so big windows (80% of the screen) still get spots of their own.
+        let taken = NSApp.windows.filter { $0 is EditorWindow && $0 !== window && $0.isVisible }.map(\.frame.origin)
+        let spanX = max(visible.width - window.frame.width, 1)
+        let spanY = max(visible.height - window.frame.height, 1)
+        func wrapped(_ value: CGFloat, span: CGFloat) -> CGFloat {
+            let remainder = value.truncatingRemainder(dividingBy: span)
+            return remainder < 0 ? remainder + span : remainder
+        }
+        func origin(step: Int) -> NSPoint {
+            let offset = CGFloat(step) * 28
+            let centreX = visible.midX - window.frame.width / 2
+            let centreY = visible.midY - window.frame.height / 2
+            return NSPoint(
+                x: visible.minX + wrapped(centreX + offset - visible.minX, span: spanX),
+                y: visible.minY + wrapped(centreY - offset - visible.minY, span: spanY))
+        }
+        let free = (0..<48).first { step in
+            let candidate = origin(step: step)
+            return !taken.contains { abs($0.x - candidate.x) < 1 && abs($0.y - candidate.y) < 1 }
+        }
+        window.setFrameOrigin(origin(step: free ?? 0))
     }
 
     /// The toolbar's pills hold other controls now (the Crop tool swaps the color and size controls for
