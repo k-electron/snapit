@@ -49,6 +49,7 @@ struct EditorKeyEquivalent: Equatable {
 
 /// The helper's menu an item appears in, besides the fixed items of each menu.
 enum EditorMenu: String, CaseIterable {
+    case file = "File"
     case edit = "Edit"
     case window = "Window"
 }

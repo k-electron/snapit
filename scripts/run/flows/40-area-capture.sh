@@ -56,7 +56,7 @@ area_png_check() {
 }
 
 # This flow is the Capture on release behaviour: letting go takes the Capture. (The Action bar, the
-# default, has its own flow, 45-action-bar.sh.)
+# default, has its own flow, 42-action-bar.sh.)
 send "$APP_SOCK" "defaults-set afterSelectingArea captureOnRelease" >/dev/null
 
 SRGB_SHA_AREA="$("$INSPECT" profile-sha srgb)"
