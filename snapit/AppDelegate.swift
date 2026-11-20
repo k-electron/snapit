@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             commandServer = server
             // Capture files left by a crashed run are of no use to anyone.
             CaptureHandoff.removeAll()
+            ExportFiles.removeAll()
             // Only the copy that owns the menu bar listens for Shortcuts.
             ShortcutBindings.registerAll()
         } catch SocketError.alreadyRunning {
@@ -25,12 +26,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A Save the user already made still lands when they quit: quitting waits for the write.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard SaveService.shared.pendingCount > 0 else { return .terminateNow }
+        SaveService.shared.whenIdle {
+            DispatchQueue.main.async { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // A copy that never owned the menu bar must not free the owner's private pasteboard or
         // remove the owner's Capture files.
         if commandServer != nil {
             AppPasteboard.releaseIfPrivate()
             CaptureHandoff.removeAll()
+            ExportFiles.removeAll()
         }
         commandServer?.stop()
         // The Editor helper never outlives the menu bar app. The process is ending, so a

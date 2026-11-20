@@ -4,6 +4,10 @@
 //
 //   png-inspect info <file>                     key=value lines: size, chunks, pHYs, iCCP
 //   png-inspect verify-fixture <file> <w> <h>   compares every pixel with the fixture formula
+//   png-inspect verify-fixture-halved <file> <w> <h>
+//                                               the file is the fixture of w x h pixels averaged down to half
+//                                               size (1x Export of a Retina Capture): every pixel is the
+//                                               average of its 2 x 2 source block, rounded half up
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect general-pasteboard              changeCount of the general pasteboard (never its contents)
 //   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
@@ -136,6 +140,49 @@ case "verify-fixture":
                 UInt8((x / 8 + y / 8) % 2 == 0 ? 40 : 200)
             )
             if at[0] != expected.0 || at[1] != expected.1 || at[2] != expected.2 {
+                if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
+                mismatches += 1
+            }
+        }
+    }
+    print("size=\(width)x\(height)")
+    print("mismatches=\(mismatches)")
+    if mismatches > 0 { print("first_mismatch=\(first)") }
+
+case "verify-fixture-halved":
+    guard arguments.count == 5, let sourceWidth = Int(arguments[3]), let sourceHeight = Int(arguments[4]),
+        sourceWidth % 2 == 0, sourceHeight % 2 == 0
+    else { fail("verify-fixture-halved <file> <w> <h> (even sizes)") }
+    let width = sourceWidth / 2, height = sourceHeight / 2
+    let (image, _) = loadImage(arguments[2])
+    guard image.width == width, image.height == height else {
+        print("size=\(image.width)x\(image.height)")
+        print("mismatches=all")
+        exit(0)
+    }
+    guard let space = image.colorSpace,
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { fail("cannot read pixels in the image's color space") }
+    context.setBlendMode(.copy)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let pixels = context.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    func fixture(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+        (x * 255 / max(sourceWidth - 1, 1), y * 255 / max(sourceHeight - 1, 1), (x / 8 + y / 8) % 2 == 0 ? 40 : 200)
+    }
+    var mismatches = 0
+    var first = ""
+    for y in 0..<height {
+        for x in 0..<width {
+            var sum = (0, 0, 0)
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let c = fixture(2 * x + dx, 2 * y + dy)
+                sum = (sum.0 + c.0, sum.1 + c.1, sum.2 + c.2)
+            }
+            let expected = ((sum.0 + 2) / 4, (sum.1 + 2) / 4, (sum.2 + 2) / 4)
+            let at = pixels + (y * width + x) * 4
+            if Int(at[0]) != expected.0 || Int(at[1]) != expected.1 || Int(at[2]) != expected.2 {
                 if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
                 mismatches += 1
             }

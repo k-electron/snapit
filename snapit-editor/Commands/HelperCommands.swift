@@ -6,5 +6,6 @@ extension SocketCommandRegistry {
     func registerHelperCommands() {
         registerEditorCommands()
         registerEditorTestCommands()
+        registerExportTestCommands()
     }
 }
