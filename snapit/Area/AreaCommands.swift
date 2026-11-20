@@ -36,6 +36,7 @@ extension SocketCommandRegistry {
     func registerAreaTestCommands() {
         guard TestMode.isActive else { return }
         registerActionBarTestCommands()
+        registerTimedCaptureTestCommands()
 
         register(.fixtureExtraDisplay) { request in
             let arguments = request.arguments
@@ -61,7 +62,9 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.overlayScreensChanged) { _ in
-            guard AreaCaptureFlow.activeOverlay != nil else { return "error no overlay" }
+            guard AreaCaptureFlow.activeOverlay != nil || AreaCaptureFlow.countdown != nil else {
+                return "error no overlay"
+            }
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
