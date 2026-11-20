@@ -23,12 +23,16 @@ enum EditorHelperQuitCheck {
     /// How long the helper may take to answer: the user decides, so no time limit that matters.
     private static let answerTimeoutSeconds = 3600
 
-    /// True when snapit may quit: no helper is running, nothing is at risk, the user chose to
-    /// discard, or the helper cannot be asked.
+    /// True when snapit may quit: no helper is running, nothing is at risk, or the user chose to
+    /// discard. Only `ok` is consent. Anything else (`cancel`, or no answer within the time limit)
+    /// keeps snapit running while the helper is still there to protect an Editor.
     static func allowsQuit() async -> Bool {
         let path = AppIdentity.editorSocketPath
         guard await CommandSocketClient.isListening(at: path) else { return true }
         let reply = try? await CommandSocketClient.send(.confirmQuit, to: path, timeoutSeconds: answerTimeoutSeconds)
-        return reply != "cancel"
+        if reply == "ok" { return true }
+        if reply == "cancel" { return false }
+        // No answer: a helper that is gone has nothing left to lose.
+        return !(await CommandSocketClient.isListening(at: path))
     }
 }

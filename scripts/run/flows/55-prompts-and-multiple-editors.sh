@@ -108,6 +108,7 @@ if pair; then
   expect_contains "it says why, in the glossary's words" "Annotations haven't been exported" "$PROMPT"
   expect_contains "its buttons are Cancel and Discard" "buttons=Cancel,Discard" "$PROMPT"
   expect_contains "Esc is Cancel" "escape=Cancel" "$PROMPT"
+  expect_contains "Discard has a key of its own, ⌘D (read back once the sheet is up)" "command-d=Discard" "$PROMPT"
   expect_contains "both buttons have a tooltip" "tooltips=Keep this Editor open|Discard this Capture and close its Editor" "$PROMPT"
   expect_equal "the Editor stays open while it asks" "$(printf '%s\n%s' "$A" "$B")" "$(open_editors)"
   expect_equal "the question is on that Editor's window: it is in front" "$A" "$(send "$EDITOR_SOCK" editor-front)"
@@ -129,8 +130,8 @@ if pair; then
   pr_wait_shown
   send_slow "$EDITOR_SOCK" "editor-key $A escape" >/dev/null
   expect_equal "a second close while it asks is not a second question" "1" "$(pr_prompt | grep -c '^shown')"
-  pr_answer discard
-  if wait_until 5 pr_is_closed "$A"; then pass "Discard closes the Editor"; else fail "Discard left the Editor open"; fi
+  expect_equal "⌘D answers the prompt (keyboard)" "ok" "$(send "$EDITOR_SOCK" "editor-prompt-answer command-d")"
+  if wait_until 5 pr_is_closed "$A"; then pass "⌘D discards: the Editor closes"; else fail "⌘D left the Editor open"; fi
   expect_equal "only that Editor closed" "$B" "$(open_editors)"
   expect_equal "the Last Capture's Editor is untouched and its Capture is the Last Capture" "$B" "$(send "$APP_SOCK" last-capture)"
   end_pair
@@ -300,6 +301,37 @@ else
 fi
 expect_equal "no helper is left at rest" "" "$(helper_pid)"
 assert_idle_cpu "the menu bar app after several Editors" "$APP_PID" 3
+
+# 6b. The helper is where Editors live: with one Editor open throughout, opening two more and
+#     closing them (Delete Capture asks nothing) leaves its footprint where it was.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  KEEP="$EDITOR_N"
+  KEEP_HELPER="$HELPER_PID"
+  CYCLE_MIN=""
+  CYCLE_MAX=""
+  for cycle in 1 2 3 4 5; do
+    capture_into_editor "menu-click capture.screen"; C1="$EDITOR_N"
+    capture_into_editor "menu-click capture.screen"; C2="$EDITOR_N"
+    send_slow "$EDITOR_SOCK" "editor-press $C1 delete-capture" >/dev/null
+    send_slow "$EDITOR_SOCK" "editor-press $C2 delete-capture" >/dev/null
+    wait_until 10 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$KEEP' ]]"
+    MB="$(peak_footprint_mb "$KEEP_HELPER" 2)"
+    if [[ -z "$CYCLE_MIN" ]] || awk -v a="$MB" -v b="$CYCLE_MIN" 'BEGIN { exit !(a < b) }'; then CYCLE_MIN="$MB"; fi
+    if [[ -z "$CYCLE_MAX" ]] || awk -v a="$MB" -v b="$CYCLE_MAX" 'BEGIN { exit !(a > b) }'; then CYCLE_MAX="$MB"; fi
+  done
+  expect_equal "the same helper served every cycle" "$KEEP_HELPER" "$(helper_pid)"
+  if awk -v lo="$CYCLE_MIN" -v hi="$CYCLE_MAX" 'BEGIN { exit !(lo > 0 && hi - lo <= 15) }'; then
+    pass "the helper's footprint is the same after every cycle of two more 5K Editors opening and closing (${CYCLE_MIN} to ${CYCLE_MAX} MB)"
+  else
+    fail "the helper's footprint varies from ${CYCLE_MIN} to ${CYCLE_MAX} MB over cycles of opening and closing 5K Editors"
+  fi
+  sleep 1
+  assert_idle_cpu "the helper with a 5K Editor open after the cycles" "$KEEP_HELPER" 3
+  send_slow "$EDITOR_SOCK" "editor-key $KEEP escape" >/dev/null
+  wait_until 10 gone "$KEEP_HELPER"
+fi
+send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 
 # 7. Quit from the menu bar app's "Quit snapit". With an older Editor holding unexported edits it
 #    brings that Editor forward and asks; Cancel (or Esc) keeps snapit running;

@@ -24,7 +24,7 @@ enum EditorPromptKind: Equatable {
     var message: String {
         switch self {
         case .close:
-            "Its Annotations haven't been exported (copied, saved or dragged out), and a Capture can't be reopened once its Editor closes."
+            "Its Annotations haven't been exported (copied, saved or dragged out), and this Capture can't be reopened once its Editor closes."
         case .quit(let count):
             count == 1
                 ? "This Capture has Annotations you haven't exported. Quitting discards it."
@@ -83,12 +83,15 @@ final class EditorPrompts {
         alert.alertStyle = .warning
         alert.messageText = kind.title
         alert.informativeText = kind.message
-        // AppKit gives Esc to the button titled Cancel; Tab and Space reach both buttons.
+        // AppKit gives Esc to the button titled Cancel.
         let cancel = alert.addButton(withTitle: "Cancel")
         cancel.toolTip = kind.cancelTooltip
         let discard = alert.addButton(withTitle: kind.discardTitle)
         discard.toolTip = kind.discardTooltip
         discard.hasDestructiveAction = true
+        // Discard has a key of its own: ⌘D (Esc is Cancel's).
+        discard.keyEquivalent = "d"
+        discard.keyEquivalentModifierMask = .command
         current = Shown(kind: kind, session: session, alert: alert)
         return await withCheckedContinuation { continuation in
             alert.beginSheetModal(for: window) { [weak self] response in
