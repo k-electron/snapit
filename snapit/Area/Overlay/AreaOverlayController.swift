@@ -135,10 +135,14 @@ final class AreaOverlayController: ActionBarHost {
         }
         // The frozen frames belong to the displays as they were: a display plugged in, unplugged
         // or rearranged while the overlay is up ends it.
+        let started = DisplayConfiguration.current()
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.cancel() }
+            MainActor.assumeIsolated {
+                // The notification also comes for a Dock or menu bar that moved; only other displays end it.
+                if DisplayConfiguration.changed(since: started, for: "overlay") { self?.cancel() }
+            }
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self, !self.isFinished else { return event }

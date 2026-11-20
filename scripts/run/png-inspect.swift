@@ -57,7 +57,9 @@
 //                                               its shape (png, hex for a #RRGGBB string, other, empty); never its contents
 //   png-inspect pasteboard-fixture <dev.snapit.test.name> png|hex|text
 //                                               puts such content on a private pasteboard, to test general-pasteboard
-//   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
+//   png-inspect screens                         the real displays (count, frame, visible frame, scale, pixels, color space),
+//                                               for the run's environment preamble
+//   png-inspect windows <pid>                  one line per ordinary (layer 0) window of the process:
 //                                               `<width>x<height> onscreen|offscreen`; no names, so no TCC prompt
 //
 // The fixture window (see FixtureWindowCaptureSource.swift), `w` x `h` pixels, scale `s`, R = 8 * s: the
@@ -654,6 +656,20 @@ case "overlay-windows":
         let bounds = (window[kCGWindowBounds as String] as? [String: Any]).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
         guard let bounds else { continue }
         print("\(Int(bounds.width))x\(Int(bounds.height)) @\(Int(bounds.minX)),\(Int(bounds.minY))")
+    }
+
+case "screens":
+    // screens: the real displays, one line each, for the run's environment preamble: AppKit's frame,
+    // visible frame and scale, the pixel size the window server reports, its color space and whether it sleeps.
+    let screens = NSScreen.screens
+    var activeCount: UInt32 = 0
+    CGGetActiveDisplayList(0, nil, &activeCount)
+    print("screens=\(screens.count) active-displays=\(activeCount)")
+    for (index, screen) in screens.enumerated() {
+        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+        let frame = screen.frame
+        let visible = screen.visibleFrame
+        print("screen \(index): id=\(id) frame=\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height)) visible=\(Int(visible.minX)),\(Int(visible.minY)) \(Int(visible.width))x\(Int(visible.height)) scale=\(screen.backingScaleFactor) pixels=\(CGDisplayPixelsWide(id))x\(CGDisplayPixelsHigh(id)) color=\(screen.colorSpace?.localizedName ?? "none") asleep=\(CGDisplayIsAsleep(id)) builtin=\(CGDisplayIsBuiltin(id))")
     }
 
 default:

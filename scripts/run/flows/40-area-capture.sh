@@ -49,6 +49,9 @@ area_drag() {
 # area_result: waits for the overlay to finish; sets EDITOR_N and HELPER_PID when Capture N opened.
 area_result() {
   local reply
+  # Nothing is left from the Capture before: a Capture that did not open must not read as the one that did.
+  EDITOR_N=""
+  HELPER_PID=""
   reply="$(send_slow "$APP_SOCK" overlay-wait)"
   AREA_REPLY="$reply"
   if [[ "$reply" == opened\ * ]]; then
@@ -112,6 +115,11 @@ if [[ -n "$HELPER_NOW" && -n "$("$INSPECT" overlay-windows "$HELPER_NOW")" ]]; t
 expect_equal "the overlay is the menu bar app's, never the Editor helper's" "1" "$OVERLAY_PANEL_PIDS_OK"
 expect_equal "a second Shortcut while the overlay is up does nothing" "ok" "$(area_start "press-shortcut capture-area")"
 expect_equal "still one overlay panel" "1" "$(overlay_panels | grep -c '^301x187 ')"
+# macOS posts the displays-changed notification for a Dock that moved too (a virtual machine posts it for
+# nothing): with the displays as they were, the overlay stays.
+send "$APP_SOCK" overlay-screens-noise >/dev/null
+expect_equal "a displays-changed notification with the same displays does not end the overlay" "1" "$(overlay_panels | grep -c '^301x187 ')"
+expect_equal "and the overlay still answers" "ok" "$(mouse move 0 10 10)"
 
 # Hover: the window under the pointer is highlighted. The fixture's windows: front 60,40 100x60
 # over back 20,20 200x130.
@@ -315,7 +323,8 @@ else
   fail "memory is ${AREA_AFTER} MB after the Area Captures, ${AREA_AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
 fi
 echo "     overlay peak ${OVERLAY_PEAK} MB with a 16 MB frozen frame on screen (${AREA_BASELINE} MB at rest)"
-if awk -v peak="$OVERLAY_PEAK" -v base="$AREA_BASELINE" 'BEGIN { exit !(peak - base <= 16 + 10) }'; then
+frame_peak_limit "the Area overlay"
+if awk -v peak="$OVERLAY_PEAK" -v base="$AREA_BASELINE" -v max="$PEAK_LIMIT" 'BEGIN { exit !(peak - base <= max) }'; then
   pass "the overlay holds the frozen frame once: peak is ${OVERLAY_PEAK} MB over a ${AREA_BASELINE} MB base, a frame of 16 MB"
 else
   fail "the overlay's peak is ${OVERLAY_PEAK} MB over a ${AREA_BASELINE} MB base: more than one copy of a 16 MB frame"

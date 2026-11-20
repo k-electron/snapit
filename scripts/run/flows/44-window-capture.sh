@@ -375,7 +375,8 @@ if awk -v a="$WIN_AFTER" -v b="$WIN_AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX
 else
   fail "memory is ${WIN_AFTER} MB after the Window Captures, ${WIN_AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
 fi
-if awk -v peak="$WIN_PEAK" -v base="$WIN_BASELINE" 'BEGIN { exit !(peak - base <= 16 + 10) }'; then
+frame_peak_limit "the window overlay"
+if awk -v peak="$WIN_PEAK" -v base="$WIN_BASELINE" -v max="$PEAK_LIMIT" 'BEGIN { exit !(peak - base <= max) }'; then
   pass "the window overlay holds the frozen frame once: peak ${WIN_PEAK} MB over a ${WIN_BASELINE} MB base, a frame of 16 MB"
 else
   fail "the window overlay's peak is ${WIN_PEAK} MB over a ${WIN_BASELINE} MB base: more than one copy of a 16 MB frame"
