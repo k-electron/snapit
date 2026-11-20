@@ -36,6 +36,7 @@ final class EditorSessions {
 
     /// Opens Capture N in an Editor, or brings its Editor forward when it is already open.
     func open(captureNumber: Int) throws {
+        ExportFiles.removeStaleDragOut()
         if let existing = sessions[captureNumber] {
             existing.bringForward()
             return

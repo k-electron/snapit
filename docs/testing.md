@@ -78,6 +78,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `overlay-press <item id>` | runs an Action bar item's action, as its button does (the item's tile is checked through its frame in `overlay-actionbar`) |
 | `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
+| `save-hold`, `save-release` | hold every Save's write (the encode into the Save location) until released, so the run can quit the helper while a Save is still being written |
+| `save-pending` | how many Saves are still being written |
 | `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
 | `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
 | `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
@@ -89,12 +91,16 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 |---|---|
 | `editors` | the numbers of the open Editors, one per line (a Capture's number is the `N` in `open-capture <N>`) |
 | `editor-facts <N>` | `key=value` lines about Editor N: `pixels`, `scale`, `dpi`, `window`, `canvas`, `tool`, `activation` |
-| `editor-key <N> copy\|escape\|close` | sends the window the ⌘C, Esc or ⌘W key event; replies `ok` when a Copy it started has finished. A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
+| `editor-key <N> copy\|save\|escape\|close` | sends the window the ⌘C, ⌘S, Esc or ⌘W key event; replies `ok` when a Copy or Save it started has been handed over (the helper's part of a Save ends when the menu bar app has accepted it). A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
 | `editor-press <N> <item id>` | runs a toolbar item's action (`copy`, `delete-capture`, `close`, ...), as its button does |
 | `editor-warm`, `editor-warm-state` | builds the Editor ahead of its Capture, hidden; replies `warm window=hidden canvas=built` or `cold` |
 | `export-owned-probe <N>` | makes an owned copy of Editor N's Capture, encodes it into `<root>/probe/owned.png` and replies `ok <path>` |
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
+| `export-name <N>` | the file name Editor N's Export has (`snapit-YYYYMMDD-HHMMSS.png`, from its Capture's time) |
+| `editor-save-outcome <N>` | how Editor N's latest Save ended: `none`, `handed-over`, `failed folder-not-writable <errno> <folder>` or `failed <message>` |
+| `editor-drag-file <N>` | does what pressing the mouse on the thumbnail does (Fast-encodes the Export into `<root>/drag-out/<N>/`), waits and replies `ok <path>` |
+| `editor-drag-thumbnail <N>` | the thumbnail view: `view=<w>x<h> thumbnail=<w>x<h>\|none` |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
 | `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a mouse event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The point is placed by asking the canvas's layer tree where it is, and the event goes through the window's `sendEvent`, as a click does |
 | `editor-keystroke <N> undo\|redo\|delete\|<character>` | ⌘Z, ⇧⌘Z, ⌫ or a plain key (a tool's key) as the window receives it |
@@ -143,7 +149,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `45-` Area Capture with the Action bar, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -160,7 +166,7 @@ PNGs: `png-inspect compare <a> <b>`). A flow that draws in
 the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`, `preview_png`,
 `click_on`, `expect_enabled`, `fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
 
-The Area flows (`40-area-capture.sh`, `45-action-bar.sh`; the second uses the first's helpers) show how to drive an overlay. "After selecting an Area" is the default (Show Action bar) unless a flow writes `defaults-set afterSelectingArea captureOnRelease`, as flow 40 does at its top, so a flow that drives the overlay sets the one it needs. In a flow: `press-shortcut capture-area`
+The Area flows (`40-area-capture.sh`, `42-action-bar.sh`; the second uses the first's helpers) show how to drive an overlay. "After selecting an Area" is the default (Show Action bar) unless a flow writes `defaults-set afterSelectingArea captureOnRelease`, as flow 40 does at its top, so a flow that drives the overlay sets the one it needs. In a flow: `press-shortcut capture-area`
 shows it, `overlay-mouse` and `overlay-key` are the user's hand, `overlay-wait` returns when the
 Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w> <h> <full w>
 <full h> <x> <y>` checks a crop of the fixture pixel by pixel.
@@ -218,7 +224,7 @@ the bar beside it. The container draws nothing (`wantsUpdateLayer`), so no full-
 exists. The first Action bar keeps the footprint about 4 MB higher from then on (16 MB at rest, 20 MB
 after the first bar, flat over repeated Captures). That is what a live view with a blurred
 backdrop costs, not SwiftUI: an `NSGlassEffectView` with two `NSButton`s leaves the same 4 MB and
-a plain material 3 MB. Flow 45 therefore ends by taking the process's new resting footprint as
+a plain material 3 MB. Flow 42 therefore ends by taking the process's new resting footprint as
 `AT_REST` for the flows after it.
 
 ## Adding to the Area overlay
@@ -264,7 +270,34 @@ The Export pipeline never touches the Capture's mapping, which is read-only (`Pi
 buffer (`image.makeOwned()`, or crop's smaller `makeEmptyBuffer`); later stages change it in place.
 Buffers made from another carry its ICC profile along. Document state a stage reads is copied into
 `ExportJob` (`EditorDocument.makeExportJob`) so the pipeline runs off the main actor. `flatten`
-returns the flattened image for a sink (Save's shared export file); `run` also Fast-encodes it.
+returns the flattened image for a sink; `run` also Fast-encodes it (Copy). The sinks in
+`Export/ExportSinks.swift` are Save (`flattenIntoSharedFile`: the image goes into a memory-mapped
+file in the Capture file format, `<root>/exports/`, and the menu bar app encodes from it) and
+drag-out (`writePNG`: Fast-encodes into a file, streamed). The 1x downscale is never a buffer: the
+encode step reads `downscaleOnEncode` and the engine averages while it encodes
+(`PNGOutputPlan` is the one rule for the size and dpi, used by both processes).
+
+Save is `EditorSession+Save.swift`: the helper sends `save-export` and the menu bar app
+(`snapit/Export/SaveService.swift`) checks the Save location at once, then encodes in the
+background and writes `snapit-YYYYMMDD-HHMMSS.png`. A failed check keeps the Editor open and goes
+to `SaveFailureSignal` (`Export/SaveFailure.swift`): a feature that reacts to it (the folder
+Permission guide) registers with `SaveFailureSignal.observe`. Its `.folderNotWritable(folder:code:)` carries the
+`errno`: `EPERM` (1) is a macOS privacy (TCC) denial, `EACCES` (13) POSIX permissions, `ENOENT` (2) a
+missing folder, `EROFS` (30) a read-only volume. The signal covers only the writability check made
+before the hand-over. A failure after it (disk full, the final rename) cannot reach the Editor, which
+may be gone: the menu bar app sends it to `SaveService.observeWriteFailures` observers (on the main
+queue) and beeps when there are none.
+
+Quit waits for Saves that are still being written (`applicationShouldTerminate` answers
+`.terminateLater` and replies from the main run loop in the common modes: a reply through
+`DispatchQueue.main.async` never runs when `terminate` came from a main-queue block). A Save counts as
+pending from the start of its writability check. A Save begins by removing the hidden
+`.snapit-<UUID>.partial` files an earlier crash left in the Save location.
+
+Drag-out files are written under a hidden partial name and renamed into place (a reader of an earlier
+drag keeps its own file), with mode 0644 less the umask like a Saved file. They stay in
+`<cache>/drag-out/<N>/` after their Editor closes; folders older than ten minutes are removed when a
+Capture opens, and everything goes when the menu bar app starts or quits.
 
 The Editor's window, toolbars and canvas layers are built without a Capture (`EditorSession()`),
 and `attach(_:)` gives it the Capture: a warming-up helper calls `EditorSessions.warmUp()` ahead of
