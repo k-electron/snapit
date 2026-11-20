@@ -66,5 +66,8 @@ fastlane/test_output
 .claude/settings.local.json
 .claude/worktrees/
 
+# Rust (Cargo's target folder; the Swift package folder name `Packages/` above is never used)
+/target/
+
 # Local scratch
 .scratch/
