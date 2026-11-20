@@ -82,7 +82,10 @@ if capture_into_editor "menu-click capture.screen"; then
   drag 150 80 200 120 >/dev/null
   drag 20 100 60 160 >/dev/null
   sleep 1.5
-  expect_equal "three quick changes are one state write" "$((WRITTEN + 1))" "$(lc_written)"
+  # One write when the changes land within the half second; a busy machine may split them, but
+  # never one write per change.
+  NEW_WRITES="$(($(lc_written) - WRITTEN))"
+  if ((NEW_WRITES >= 1 && NEW_WRITES <= 2)); then pass "three quick changes are coalesced into at most two state writes ($NEW_WRITES)"; else fail "three quick changes made $NEW_WRITES state writes"; fi
   expect_equal "the state file holds all four Annotations" "4" "$(state_field "$N" history.state.annotations)"
   expect_equal "the state file's revision is the Editor's" "$(document_field revision)" "$(state_field "$N" revision)"
 
@@ -165,6 +168,18 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "Reopen Last Capture is greyed out with no Last Capture" "no" "$(send "$APP_SOCK" "menu-enabled reopen-last-capture")"
   expect_equal "choosing the greyed item does nothing" "error menu item is disabled" "$(send "$APP_SOCK" "menu-click reopen-last-capture")"
   expect_equal "there is no Last Capture" "none" "$(send "$APP_SOCK" last-capture)"
+
+  # A Capture whose folder is removed (by a Delete Capture) between the folder being made and
+  # the file being created still lands: the folder is made again.
+  expect_equal "the next Capture file finds its folder removed" "ok" "$(send "$APP_SOCK" capture-folder-race)"
+  if capture_into_editor "menu-click capture.screen"; then
+    pass "a Capture whose folder was removed under it still opens"
+    expect_equal "its pixel file is there" "capture-$EDITOR_N.pixels " "$(lc_entries)"
+    expect_equal "in a private folder" "700" "$(stat -f '%Lp' "$CAPS")"
+    lc_close "$EDITOR_N"
+  else
+    fail "a Capture whose folder was removed under it did not open"
+  fi
 fi
 
 # 7. A new Capture replaces the Last Capture. The Editor of the old one keeps its Capture in
@@ -232,6 +247,43 @@ if capture_into_editor "menu-click capture.screen"; then
   send_slow "$EDITOR_SOCK" "editor-press $C delete-capture" >/dev/null
   wait_until 5 lc_only_editor "$D"
   lc_close "$D"
+fi
+
+# 8b. A Reopen that reaches the helper while a new Capture is being handed over (the menu bar
+#     app still has the old one as the Last Capture) does nothing: it must neither demote the new
+#     Capture nor say the old one is damaged, since its files are about to go.
+if capture_into_editor "menu-click capture.screen"; then
+  KEEP="$EDITOR_N"   # an open Editor keeps the helper running while C is closed
+  if capture_into_editor "menu-click capture.screen"; then
+    C="$EDITOR_N"
+    send "$EDITOR_SOCK" "last-capture-hold on" >/dev/null
+    keystroke r >/dev/null
+    drag 40 30 120 90 >/dev/null
+    sleep 1   # the write is queued and held
+    send_slow "$EDITOR_SOCK" "editor-key $C escape" >/dev/null
+    expect_equal "the Last Capture's Editor closed, the other stays" "$KEEP" "$(open_editors)"
+    send_slow "$APP_SOCK" "menu-click capture.screen" >"$RUN_ROOT/last-capture-bg.txt" &
+    BG_PID=$!
+    sleep 1   # the new Capture is open in the helper, waiting for the held write before it is answered
+    expect_equal "Reopen during the hand-off replies ok" "ok" "$(send_slow "$APP_SOCK" "menu-click reopen-last-capture")"
+    expect_equal "it shows no message" "none" "$(lc_notice)"
+    expect_equal "and brings back nothing: the old Capture is not in an Editor" "0" "$(open_editors | grep -c "^$C\$")"
+    send "$EDITOR_SOCK" "last-capture-hold off" >/dev/null
+    wait "$BG_PID"
+    expect_equal "the new Capture opened" "ok" "$(cat "$RUN_ROOT/last-capture-bg.txt")"
+    D="$(open_editors | tail -1)"
+    expect_equal "the new Capture is the Last Capture" "$D" "$(send "$APP_SOCK" last-capture)"
+    expect_equal "the Editors open are the other one and the new one" "$KEEP
+$D" "$(open_editors)"
+    EDITOR_N="$D"
+    keystroke r >/dev/null
+    drag 40 30 120 90 >/dev/null
+    if wait_until 5 lc_has_state "$D"; then pass "the new Capture is still the Last Capture: its Editor writes its state"; else fail "the new Capture's Editor does not write its state: it was demoted"; fi
+    expect_equal "the old Capture's files are gone" "capture-$D.pixels capture-$D.state " "$(lc_entries)"
+    send_slow "$EDITOR_SOCK" "editor-key $KEEP escape" >/dev/null
+    wait_until 5 lc_only_editor "$D"
+    lc_close "$D"
+  fi
 fi
 
 # 9. A damaged store makes Reopen say so, instead of doing nothing; the Last Capture is dropped.
@@ -321,9 +373,11 @@ fi
 #     about to happen as snapit quits never recreates a file.
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 if capture_into_editor "menu-click capture.screen"; then
-  # A change whose state write is queued, and held there, when snapit quits: the helper may only
-  # answer the quit once that write can no longer land, so the files go and stay gone. The write is
-  # released after snapit has exited, while the helper is still alive.
+  # A change whose state write is queued, and held there, when snapit quits. The helper's quit
+  # waits for the queue, which is held, so snapit's blocking send gives up after a second and
+  # removes the files; the write must still never land. Quitting supersedes the write's
+  # generation at once, before it waits, so the write is dropped when it is released, which
+  # happens here after snapit has exited, while the helper is still alive.
   send "$EDITOR_SOCK" "last-capture-hold on" >/dev/null
   keystroke r >/dev/null
   drag 40 30 120 90 >/dev/null
@@ -352,5 +406,29 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "Reopen Last Capture is greyed out after a restart" "no" "$(send "$APP_SOCK" "menu-enabled reopen-last-capture")"
   rm -f "$CAPS/unrelated.txt"
   rmdir "$CAPS" 2>/dev/null
+fi
+
+# 12. The helper's own "Quit snapit" makes the same preparation before snapit quits: it waits for
+#     the Last Capture's queued write (held here) to be dropped, and only then snapit quits and
+#     removes the files.
+send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  send "$EDITOR_SOCK" "last-capture-hold on" >/dev/null
+  keystroke r >/dev/null
+  drag 40 30 120 90 >/dev/null
+  sleep 1
+  OLD_APP_PID="$APP_PID"
+  OLD_HELPER="$HELPER_PID"
+  expect_equal "the helper's Quit snapit is chosen" "ok" "$(send "$EDITOR_SOCK" editor-menu-quit)"
+  sleep 1.5
+  if kill -0 "$OLD_APP_PID" 2>/dev/null; then pass "snapit is still running while the Last Capture's write is held"; else fail "snapit quit before the Last Capture's write was dealt with"; fi
+  send "$EDITOR_SOCK" "last-capture-hold off" >/dev/null
+  if wait_until 15 gone "$OLD_APP_PID"; then pass "snapit quits once the write is dropped"; else fail "snapit is still running after the held write was released"; fi
+  if wait_until 10 gone "$OLD_HELPER"; then pass "the Editor helper quits with it"; else fail "the helper outlived snapit"; fi
+  sleep 1
+  expect_equal "the Capture's files are gone, folder and all" "" "$(lc_entries)"
+  (nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
+  if wait_until 10 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not restart after quitting"; fi
+  APP_PID="$(pid_of "$APP_EXE")"
 fi
 send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null

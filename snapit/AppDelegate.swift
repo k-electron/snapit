@@ -46,20 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // A copy that never owned the menu bar must not free the owner's private pasteboard or
-        // remove the owner's Capture files.
-        // The Editor helper never outlives the menu bar app. The process is ending, so a
-        // short blocking send is fine here. It goes first: the helper stops writing the Last
-        // Capture's state before it answers, so nothing recreates a file after the removal below.
-        if commandServer != nil {
-            CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
-            AppPasteboard.releaseIfPrivate()
-            CaptureHandoff.removeAll()
-            ExportFiles.removeAll()
-        }
+        // A copy that never owned the menu bar owns nothing: it must not quit the owner's Editor
+        // helper, free the owner's private pasteboard or remove the owner's Capture files.
+        guard commandServer != nil else { return }
+        // The Editor helper never outlives the menu bar app. The process is ending, so a short
+        // blocking send is fine here. It goes first: the helper stops writing the Last Capture's
+        // state before it answers, so nothing recreates a file after the removal below.
+        CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
+        AppPasteboard.releaseIfPrivate()
+        CaptureHandoff.removeAll()
+        ExportFiles.removeAll()
         commandServer?.stop()
-        if commandServer == nil {
-            CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
-        }
     }
 }

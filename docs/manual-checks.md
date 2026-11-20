@@ -106,4 +106,6 @@ Run after changing the Last Capture store, the Editor's state file or the menu. 
 2. **The real cache.** While a Last Capture exists, `ls -la ~/Library/Caches/dev.snapit.snapit/captures` shows `capture-<N>.pixels` and, after an edit, `capture-<N>.state` (mode 600) in a folder of mode 700. Choose Quit snapit: the folder and both files are gone.
 3. **A real Retina Screen Capture.** Close its Editor and reopen it from the menu: the pixels, colors and size match the first Editor, and no pause longer than a blink shows (nothing is decoded).
 
+4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
+
 Clean up: quit snapit, so the cache folder's `captures` folder is removed.

@@ -68,6 +68,14 @@ nonisolated final class LastCaptureStore: Sendable {
         queue.sync { perform(state, number: number, generation: generation) }
     }
 
+    /// Reads and decodes Capture N's state file on the queue, after every write queued before this
+    /// call (see `LastCaptureStateFile.read`).
+    func read(number: Int) async throws -> LastCaptureState? {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { continuation.resume(with: Result { try LastCaptureStateFile.read(number: number) }) }
+        }
+    }
+
     /// Returns once every write queued before this call has run or been dropped.
     func fence() async {
         await withCheckedContinuation { continuation in
