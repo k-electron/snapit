@@ -151,8 +151,8 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-state-crop <N> get\|set <x> <y> <w> <h>` | Editor N's crop in image points (`none` for the whole Capture); `set` is one Undo step. Stands in for the Crop tool, to check the crop is stored |
 | `editor-menu-quit` | chooses "Quit snapit" in the helper's own menu (replies at once, the quit goes on in the background) |
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
-| `editor-prompt` | `none`, or `shown close\|quit editor=<N> title=… message=… buttons=Cancel,Discard escape=Cancel tooltips=…\|…`: the question an Editor is waiting on |
-| `editor-prompt-answer discard\|cancel\|escape` | answers it: a button is pressed as a click does; Esc reaches the sheet as a key event. `none` when nothing is asked |
+| `editor-prompt` | `none`, or `shown close\|quit editor=<N> title=… message=… buttons=Cancel,Discard escape=Cancel command-d=Discard tooltips=…\|…`: the question an Editor is waiting on |
+| `editor-prompt-answer discard\|cancel\|escape\|command-d` | answers it: a button is pressed as a click does; Esc and ⌘D reach the sheet as key events. `none` when nothing is asked |
 | `editor-drop <N> taken\|refused` | ends the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
 | `editor-key <N> close-button` | presses the title bar's close button (`performClose`, which asks the window's delegate) |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
@@ -220,12 +220,13 @@ array: `history.state.annotations`, `history.undoSteps`). Nothing else reaches i
   `confirm-quit` and quits on `ok`, stays on `cancel`), the helper's own "Quit snapit", and the Dock's Quit of the
   helper. The `quit` command never asks (the user was asked before it was sent; a scripted run's clean-up sends it), so
   a flow quits through `menu-click quit` or `editor-menu-quit` to see the prompt. The helper's confirmation brings the
-  first Editor with unexported edits forward and asks once (`EditorSessions.confirmQuit`).
+  first Editor with unexported edits forward and asks once (`EditorSessions.confirmQuit`). Only `ok` lets the menu bar
+  app quit: no answer (the prompt left up past the time limit) keeps snapit running while the helper is alive.
 - **When a close asks.** `EditorSession.requestClose()` (the close button, ⌘W, Esc) asks when
   `closeWouldLoseWork`: not the Last Capture's Editor, and `EditorDocument.hasUnexportedEdits` (it has Annotations or a
   crop, and the revision differs from the last Copy, Save or taken drop). `close()` never asks (Delete Capture, Copy
   and Save close this way). Before counting, `commitPendingEdits()` finishes anything still being typed.
-- **The prompt** is a real sheet (`EditorPrompts`) with Cancel (Esc) and Discard. A run
+- **The prompt** is a real sheet (`EditorPrompts`) with Cancel (Esc) and Discard (⌘D). A run
   answers it with `editor-prompt-answer`, so nothing waits on a modal.
 - **Kinds with fields.** `AnnotationKind.sampleAnnotation(id:origin:index:)` gives the round-trip one Annotation of
   the kind with every field non-default; the default sets the style. A kind that adds a field to `Annotation` (Text's
