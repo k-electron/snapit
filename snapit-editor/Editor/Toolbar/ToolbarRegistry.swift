@@ -9,7 +9,11 @@ enum ToolbarRegistry {
     static let all: [any EditorToolbarItem] = [
         CloseToolbarItem(),
         CopyToolbarItem(),
+        DeleteAnnotationToolbarItem(),
         DeleteCaptureToolbarItem(),
+        RedoToolbarItem(),
+        ShapeFillToolbarItem(),
+        UndoToolbarItem(),
     ]
 
     /// The items of one slot, in order.
