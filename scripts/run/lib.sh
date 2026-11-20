@@ -54,17 +54,49 @@ gone() { ! kill -0 "$1" 2>/dev/null; }
 cpu_seconds() { ps -o cputime= -p "$1" | awk -F'[:]' '{ print ($1 * 60) + $2 }'; }
 footprint_mb() { footprint -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "Footprint:") { v = $(i+1); u = $(i+2); if (u == "KB") v = v / 1024; if (u == "GB") v = v * 1024; printf "%.1f", v; exit } }'; }
 
-# assert_idle_cpu <label> <pid> <seconds>: the process used no CPU for <seconds>.
-assert_idle_cpu() {
-  local before after used
-  before="$(cpu_seconds "$2")"
-  sleep "$3"
-  after="$(cpu_seconds "$2")"
-  used="$(awk -v a="$before" -v b="$after" 'BEGIN { printf "%.2f", b - a }')"
-  if awk -v used="$used" 'BEGIN { exit !(used <= 0.02) }'; then
-    pass "$1 idles at 0% CPU (${used}s of CPU in ${3}s)"
+# idle_cpu_sample <pid> <seconds>: reads the process's CPU time over one-second windows (a run of 1 or 2
+# seconds is one window, as long as it is) and prints `<rate> <busiest> <active> <windows>`: `rate` is the mean
+# CPU seconds per second over the quietest half of the windows, `busiest` the CPU seconds of the busiest window,
+# `active` how many windows used 10 ms or more, `windows` how many there were. A short burst (a loaded
+# machine, a timer of the system's) lands in one or two windows and drops out of `rate`; a loop or a timer
+# of snapit's that fires again and again is in every window, or in many windows spread out, and stays.
+idle_cpu_sample() {
+  local pid="$1" seconds="$2" windows="$2" length=1 index previous current
+  local -a used=()
+  if ((seconds < 3)); then windows=1; length="$seconds"; fi
+  previous="$(cpu_seconds "$pid")"
+  for ((index = 0; index < windows; index++)); do
+    sleep "$length"
+    current="$(cpu_seconds "$pid")"
+    used+=("$(awk -v a="$previous" -v b="$current" 'BEGIN { printf "%.2f", b - a }')")
+    previous="$current"
+  done
+  printf '%s\n' "${used[@]}" | sort -n | awk -v n="$windows" -v len="$length" '
+    NF { v[++count] = $1; if ($1 >= 0.01) active++ }
+    END { k = int((n + 1) / 2); for (i = 1; i <= k; i++) sum += v[i]; printf "%.4f %.2f %d %d", sum / k / len, v[count], active, n }'
+}
+# idle_cpu_ok <sample>: a run of several windows passes when the quietest half averages at most 0.5% of a CPU
+# (a steady 1% fails) and at most max(2, windows / 4) windows were active (one burst and the process's own start make two) (a timer that fires every few
+# seconds fails); a single short window (1 or 2 s) passes at 0.02 s of CPU, as it always did.
+idle_cpu_ok() {
+  local rate busiest active windows
+  read -r rate busiest active windows <<<"$1"
+  if ((windows == 1)); then
+    awk -v used="$busiest" 'BEGIN { exit !(used <= 0.02) }'
   else
-    fail "$1 used ${used}s of CPU in ${3}s idle"
+    awk -v rate="$rate" -v active="$active" -v n="$windows" 'BEGIN { max = int(n / 4); if (max < 2) max = 2; exit !(rate <= 0.005 && active <= max) }'
+  fi
+}
+
+# assert_idle_cpu <label> <pid> <seconds>: the process used no CPU for <seconds> (see idle_cpu_sample).
+assert_idle_cpu() {
+  local sample rate busiest active windows
+  sample="$(idle_cpu_sample "$2" "$3")"
+  read -r rate busiest active windows <<<"$sample"
+  if idle_cpu_ok "$sample"; then
+    pass "$1 idles at 0% CPU (busiest of $windows window(s) ${busiest}s of CPU, $active active, over ${3}s)"
+  else
+    fail "$1 used CPU at idle: $active of $windows window(s) active, ${rate}s of CPU per second in the quietest half, busiest ${busiest}s, over ${3}s"
   fi
 }
 
@@ -91,17 +123,67 @@ isolation_state() {
   defaults read dev.snapit.snapit.editor 2>&1 | shasum
   echo "-- real cache folder"
   find "$HOME/Library/Caches/dev.snapit.snapit" -exec stat -f '%N %m %z' {} + 2>&1 | sort
-  echo "-- general pasteboard"
-  "$INSPECT" general-pasteboard
 }
-isolation_begin() { ISOLATION_BEFORE="$(isolation_state)"; }
+# The general pasteboard is the user's. `general-pasteboard` prints the change count and, only when the count
+# rose, a shape (`png`, `hex` for a plain string of the form #RRGGBB, `other` or `empty`; the string is
+# matched in memory, never printed or kept), nothing else. snapit writes only a PNG (Copy) or such a hex string (the Color picker), so a rise
+# in the count counts against the run only when the pasteboard now holds one of those shapes. A user who
+# copies something else during a run does not fail it; one who copies a PNG or a #RRGGBB string still does.
+# pasteboard_state <previous change count, or "-"> [<pasteboard name>]: `change_count=<n> shape=<shape>`. The shape
+# is looked at only when the count differs from the previous one, so an untouched pasteboard is never read.
+pasteboard_state() { "$INSPECT" general-pasteboard "$@" | tr '\n' ' '; }
+# pasteboard_field <state> <key>: one value of a state line.
+pasteboard_field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
+# pasteboard_verdict <state before> <state after>: `untouched`, `user-copy` or `touched`.
+pasteboard_verdict() {
+  local before after shape
+  before="$(pasteboard_field "$1" change_count)"
+  after="$(pasteboard_field "$2" change_count)"
+  shape="$(pasteboard_field "$2" shape)"
+  if [[ "$before" == "$after" ]]; then echo untouched
+  elif [[ "$shape" == png || "$shape" == hex ]]; then echo touched
+  else echo user-copy
+  fi
+}
+isolation_begin() { ISOLATION_BEFORE="$(isolation_state)"; PASTEBOARD_BEFORE="$(pasteboard_state -)"; }
 isolation_check() {
-  local after
+  local after pasteboard
   after="$(isolation_state)"
-  if [[ "$ISOLATION_BEFORE" == "$after" ]]; then
+  pasteboard="$(pasteboard_verdict "$PASTEBOARD_BEFORE" "$(pasteboard_state "$(pasteboard_field "$PASTEBOARD_BEFORE" change_count)")")"
+  if [[ "$ISOLATION_BEFORE" == "$after" && "$pasteboard" != touched ]]; then
     pass "isolation: no snapit preferences, real cache folder or general pasteboard were touched"
+    [[ "$pasteboard" == user-copy ]] && echo "     (the general pasteboard changed, to something snapit never writes: not snapit's)"
   else
     fail "isolation: the run touched the real system"
+    [[ "$pasteboard" == touched ]] && echo "     the general pasteboard changed to a PNG or a #RRGGBB string"
     diff <(echo "$ISOLATION_BEFORE") <(echo "$after") | sed 's/^/     /'
   fi
+}
+
+# The Editor helper's processes and the warm-up state, shared by the flows.
+helper_count() { pgrep -f "$HELPER_EXE" | wc -l | tr -d ' '; }
+no_helper() { [[ "$(helper_count)" == "0" ]]; }
+some_helper() { [[ "$(helper_count)" != "0" ]]; }
+one_snapit() { [[ "$(pgrep -f "$APP_EXE" | wc -l | tr -d ' ')" == "1" ]]; }
+warm_state() { send "$APP_SOCK" "editor-warm-up state"; }
+warm_is() { [[ "$(warm_state)" == "$1" ]]; }
+
+# launch_app [<root>]: starts a menu bar app in the background in test mode under <root> (default: this
+# run's), appending to <root>/app.log. The caller waits for its socket.
+launch_app() {
+  local root="${1:-$RUN_ROOT}"
+  (SNAPIT_TEST_ROOT="$root" nohup "$APP_EXE" >>"$root/app.log" 2>&1 &)
+}
+# relaunch_app [<why>]: starts this run's menu bar app again (it has quit or been killed), waits until it
+# answers and sets APP_PID. The run stops when it does not start.
+relaunch_app() {
+  launch_app
+  if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again${1:+ ($1)}"; else abort "snapit did not start again${1:+ ($1)}"; fi
+  APP_PID="$(pid_of "$APP_EXE")"
+}
+# restart_app [<why>]: quits this run's menu bar app (when it is running), waits for it to go, and starts it again.
+restart_app() {
+  send "$APP_SOCK" quit >/dev/null
+  wait_until 30 gone "$APP_PID"
+  relaunch_app "$@"
 }

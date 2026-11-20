@@ -48,14 +48,6 @@ onb_open_at() {
   wait_until 15 onb_visible
 }
 
-restart_app() {
-  send "$APP_SOCK" quit >/dev/null
-  wait_until 30 gone "$APP_PID"
-  (nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-  if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again ($1)"; else abort "snapit did not start again ($1)"; fi
-  APP_PID="$(pid_of "$APP_EXE")"
-}
-
 ONB_APP_FOOT_BEFORE="$(footprint_mb "$APP_PID")"
 
 # 1. Test mode starts finished: nothing shows, and a Shortcut still captures (every other flow).
@@ -441,9 +433,7 @@ send "$APP_SOCK" "defaults-set onboardingStep welcome" >/dev/null
 kill -9 "$APP_PID" 2>/dev/null
 wait_until 10 gone "$APP_PID"
 if kill -0 "$KEPT_HELPER" 2>/dev/null; then pass "the helper stays when its copy is killed"; else fail "the helper went with the killed copy"; fi
-(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again after being killed"; else abort "snapit did not start after being killed"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+relaunch_app "after being killed"
 if wait_until 20 onb_visible; then pass "the new copy shows Onboarding in the helper that was left"; else fail "Onboarding did not show"; fi
 expect_equal "it is the same helper" "$KEPT_HELPER" "$(helper_pid)"
 expect_equal "the user's Editor is still open" "$KEPT_EDITORS" "$(send "$EDITOR_SOCK" editors)"
@@ -454,9 +444,7 @@ send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 send "$APP_SOCK" quit >/dev/null
 if wait_until 30 gone "$APP_PID"; then pass "the new copy quits"; else fail "the new copy did not quit"; fi
 if wait_until 10 gone "$KEPT_HELPER"; then pass "the helper it adopted quits with it"; else fail "the adopted helper outlived the copy that used it"; kill "$KEPT_HELPER" 2>/dev/null; fi
-(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not start again"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+relaunch_app
 
 # 17. Memory and the process list return to rest after Onboarding closes.
 onb_close_all

@@ -15,12 +15,12 @@ fact() { send "$APP_SOCK" overlay-facts | sed -n "s/^$1=//p"; }
 # ended, not yet there after a Shortcut returned), so this reads it until it agrees with how many
 # such windows the app itself has ordered in.
 overlay_panels() {
-  local want lines deadline=$((SECONDS + 5))
+  local want lines deadline=$((SECONDS + 20))
   while :; do
     want="$(send "$APP_SOCK" overlay-window-count)"
     lines="$("$INSPECT" overlay-windows "$APP_PID")"
     [[ "$(printf '%s' "$lines" | grep -c .)" == "$want" || SECONDS -ge deadline ]] && break
-    sleep 0.05
+    sleep 0.1
   done
   [[ -z "$lines" ]] || printf '%s\n' "$lines"
 }

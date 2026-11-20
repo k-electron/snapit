@@ -398,9 +398,7 @@ if capture_into_editor "menu-click capture.screen"; then
   : >"$CAPS/capture-7.state"
   : >"$CAPS/capture-7.state.partial"
   : >"$CAPS/capture-7.pixels.partial"
-  (nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
-  if wait_until 10 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not restart after quitting"; fi
-  APP_PID="$(pid_of "$APP_EXE")"
+  relaunch_app
   expect_equal "launch removes the files a crash left, and only those" "unrelated.txt " "$(lc_entries)"
   expect_equal "there is no Last Capture after a restart" "none" "$(send "$APP_SOCK" last-capture)"
   expect_equal "Reopen Last Capture is greyed out after a restart" "no" "$(send "$APP_SOCK" "menu-enabled reopen-last-capture")"
@@ -427,8 +425,6 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 10 gone "$OLD_HELPER"; then pass "the Editor helper quits with it"; else fail "the helper outlived snapit"; fi
   sleep 1
   expect_equal "the Capture's files are gone, folder and all" "" "$(lc_entries)"
-  (nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
-  if wait_until 10 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not restart after quitting"; fi
-  APP_PID="$(pid_of "$APP_EXE")"
+  relaunch_app
 fi
 send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null

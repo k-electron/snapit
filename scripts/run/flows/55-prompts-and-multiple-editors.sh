@@ -59,11 +59,6 @@ end_pair() {
   wait_until 10 gone "$HELPER_PID"
 }
 revision_of() { send "$EDITOR_SOCK" "editor-document $1" | sed -n 's/^revision=//p'; }
-restart_app() {
-  (nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
-  if wait_until 10 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not restart"; fi
-  APP_PID="$(pid_of "$APP_EXE")"
-}
 
 # 1. The Last Capture's Editor never asks, with edits or not, by Esc, ⌘W or the close button;
 #    Reopen brings it back.
