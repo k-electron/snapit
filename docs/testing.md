@@ -71,10 +71,13 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
-| `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
-| `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-key escape\|enter\|left\|right\|up\|down\|<letter>\|<key code> [shift]` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does; `shift` adds the Shift modifier) |
+| `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `picked #RRGGBB` (the Color picker copied that hex), `cancelled` or `failed <why>` |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
 | `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
+| `overlay-picker` | the Color picker: `display`, `pixel=<x>,<y>` (device pixels of that display's frame), `hex`, `origin` (`bar` or `entry`), `frame` (the frame's size in pixels), `loupe` (its frame in display points, or `none`), `outlined` and `swatch` (the centres of the outlined cell and the swatch, in display points, to read back from an `overlay-snapshot`); `none` when the picker is not up |
+| `color-toast` | the text of the "Copied #…" toast showing now, or `none` |
+| `pasteboard-string` | the plain text on the private pasteboard, or `none` |
 | `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 | `save-hold`, `save-release` | hold every Save's write (the encode into the Save location) until released, so the run can quit the helper while a Save is still being written |
@@ -148,7 +151,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `46-` the Color picker, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -235,6 +238,36 @@ The scripted run holds the bar to its budget: flow 42 takes the footprint before
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
 at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured about 0.4 MB, the tiles using the overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
 was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
+
+### The Color picker
+
+The Color picker is a state of the Area overlay (`State.pickingColor`), not a second overlay system:
+the same frozen frames, panels and key monitor. It opens from the Action bar (`PickColorActionBarItem`:
+the button and P; Esc goes back to the bar with the selection kept), and from the menu's Pick Color
+and the `pick-color` Shortcut (`AreaCaptureFlow.startPickingColor()`: the overlay starts in the picker,
+Esc ends it, and no Editor is warmed up because no Capture opens). `ColorPickerSession` is the sampled
+device pixel as a plain value: the pointer aims it with `AreaGeometry.pixel(of:scale:...)` (display-local
+points, `floor(point * scale)`), the arrow keys nudge it by one device pixel (Shift: ten) and clamp it
+to the frame, so a nudge at 2x is half a point and the pointer does not move. A press picks when it is
+let go, wherever it was dragged to; the second click of a double-click on the Pick Color button within
+`NSEvent.doubleClickInterval` of the picker opening is that button's and picks nothing.
+
+The hex is the frozen frame's pixel as stored, in the display's own color space, never converted to
+sRGB: `PixelSampler` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
+image's own color space, so a Display P3 display gives Display P3 values (the same numbers the Capture
+file and the Editor hold for that pixel) and any pixel layout reads alike. The loupe (`PickLoupe`)
+shows 15 x 15 device pixels at 16x with the sampled pixel outlined, and its swatch is filled in the
+frame's color space too. The dim and the crosshair are off while picking. On a pick the flow copies the
+uppercase hex through `AppPasteboard.current` and `ColorToast` shows "Copied #RRGGBB" in a small
+non-activating panel of its own (the overlay has closed): its fade and its removal are one-shot delays,
+and a new toast replaces the old one.
+
+`46-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
+frame's corners, on a second display at negative coordinates (left and above), with a BGRX frame,
+under either "After selecting an Area" setting, reads the outlined cell and the swatch back from
+`overlay-snapshot`, and holds memory, CPU, the toast's lifetime and the missing warm-up to the budget.
+`SNAPIT_FLOWS="10 20 40 42 46" scripts/check-run.sh <app>` runs just those flows (each flow builds on
+the helpers of the ones before it).
 
 ## Adding to the Area overlay
 

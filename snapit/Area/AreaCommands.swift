@@ -21,8 +21,8 @@ nonisolated extension SocketCommand {
     /// display's top-left corner. A real `NSEvent`, delivered to the display's panel, with that
     /// click count (1 when omitted; a double-click is a `down` with 2). Replies `ok`.
     static let overlayMouse = SocketCommand("overlay-mouse")
-    /// `overlay-key escape|enter|<letter>|<key code>`: sends the overlay a key event through the
-    /// application's event dispatch. Replies `ok`.
+    /// `overlay-key escape|enter|left|right|up|down|<letter>|<key code> [shift]`: sends the overlay a
+    /// key event through the application's event dispatch. Replies `ok`.
     static let overlayKey = SocketCommand("overlay-key")
     /// What the overlay shows now, as `key=value` lines. Replies `none` when no overlay is up.
     static let overlayFacts = SocketCommand("overlay-facts")
@@ -36,6 +36,7 @@ extension SocketCommandRegistry {
     func registerAreaTestCommands() {
         guard TestMode.isActive else { return }
         registerActionBarTestCommands()
+        registerPickColorTestCommands()
 
         register(.fixtureExtraDisplay) { request in
             let arguments = request.arguments
@@ -68,6 +69,7 @@ extension SocketCommandRegistry {
         register(.overlayWait) { _ in
             switch await AreaCaptureFlow.waitForResult() {
             case .opened(let number): "opened \(number)"
+            case .pickedColor(let hex): "picked \(hex)"
             case .cancelled: "cancelled"
             case .permissionNeeded: "permission-needed"
             case .failed(let why): "failed \(why)"
@@ -95,13 +97,17 @@ extension SocketCommandRegistry {
                 "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38,
                 "k": 40, "n": 45, "m": 46,
             ]
-            let keyCodes = ["escape": 53, "enter": 36].merging(letters) { $1 }
-            guard let name = request.arguments.first, let keyCode = keyCodes[name] ?? Int(name) else {
-                return "error overlay-key escape|enter|<letter>|<key code>"
+            let keyCodes = ["escape": 53, "enter": 36, "left": 123, "right": 124, "down": 125, "up": 126]
+                .merging(letters) { $1 }
+            guard let name = request.arguments.first, let keyCode = keyCodes[name] ?? Int(name),
+                request.arguments.dropFirst().allSatisfy({ $0 == "shift" })
+            else {
+                return "error overlay-key escape|enter|left|right|up|down|<letter>|<key code> [shift]"
             }
             let characters = letters[name] == nil ? "" : name
             let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                with: .keyDown, location: .zero, modifierFlags: request.arguments.count > 1 ? [.shift] : [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: panel.windowNumber, context: nil, characters: characters,
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(keyCode))
             guard let event else { return "error no key event" }
