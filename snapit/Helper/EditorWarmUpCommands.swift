@@ -13,6 +13,9 @@ nonisolated extension SocketCommand {
     /// `fixture-delay <ms>`: how long the fixture Capture source takes to return, standing in for
     /// the time spent choosing an Area. Test mode only.
     static let fixtureDelay = SocketCommand("fixture-delay")
+    /// `fixture-fail on|off`: makes the fixture Capture fail, so the run exercises what a Capture
+    /// that ends without a Capture does. Test mode only.
+    static let fixtureFail = SocketCommand("fixture-fail")
 }
 
 extension SocketCommandRegistry {
@@ -32,7 +35,7 @@ extension SocketCommandRegistry {
                 await EditorWarmUp.settle()
                 return "ok"
             default:
-                return "error editor-warm-up begin|cancel|state"
+                return "error editor-warm-up begin|cancel|state|settle"
             }
         }
         register(.captureTiming) { _ in
@@ -44,6 +47,13 @@ extension SocketCommandRegistry {
                 return "error fixture-delay <milliseconds>"
             }
             FixtureCaptureSource.shared.delay = .milliseconds(milliseconds)
+            return "ok"
+        }
+        register(.fixtureFail) { request in
+            guard let mode = request.arguments.first, mode == "on" || mode == "off" else {
+                return "error fixture-fail on|off"
+            }
+            FixtureCaptureSource.shared.fails = mode == "on"
             return "ok"
         }
     }

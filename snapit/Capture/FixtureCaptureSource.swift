@@ -35,9 +35,12 @@ final class FixtureCaptureSource: CaptureSource {
     /// How long a Capture takes, standing in for the time a user spends choosing an Area
     /// (`fixture-delay`).
     var delay = Duration.zero
+    /// When true the Capture fails (`fixture-fail`).
+    var fails = false
 
     func captureDisplayUnderPointer() async throws -> CapturedScreen {
         if delay > .zero { try await Task.sleep(for: delay) }
+        if fails { throw ScreenCaptureError.noImage }
         let display = display
         return CapturedScreen(image: try Self.makeImage(display), scale: Double(display.scale))
     }

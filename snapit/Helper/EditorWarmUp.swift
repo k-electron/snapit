@@ -23,6 +23,9 @@ enum EditorWarmUp {
     }
 
     private(set) static var state = State.idle
+    /// True from `begin()` until the Capture opens or is cancelled. A warm-up that failed (state
+    /// `idle`) may still have left a helper running, so `cancel()` goes by this, not by `state`.
+    private static var begun = false
     private static var generation = 0
     private static var tail: Task<Void, Never>?
 
@@ -31,7 +34,8 @@ enum EditorWarmUp {
     /// A Capture started: start the helper hidden and have it prepare an Editor. Does nothing
     /// when a warm-up is already under way.
     static func begin() {
-        guard state == .idle else { return }
+        guard !begun else { return }
+        begun = true
         state = .starting
         generation += 1
         let mine = generation
@@ -44,7 +48,8 @@ enum EditorWarmUp {
     /// The Capture ended without a Capture: the helper throws its Editor away and, when it never
     /// showed a window, quits.
     static func cancel() {
-        guard state != .idle else { return }
+        guard begun else { return }
+        begun = false
         state = .idle
         generation += 1
         enqueue { await release() }
@@ -58,6 +63,7 @@ enum EditorWarmUp {
 
     /// The Capture opened in the warm Editor: the warm-up is over.
     static func didOpen() {
+        begun = false
         state = .idle
         generation += 1
     }
@@ -70,18 +76,18 @@ enum EditorWarmUp {
         }
     }
 
-    /// Starts the helper when it is not running and has it build an Editor. A helper that is
-    /// quitting (a cancel just before) is replaced by a new one. Bounded: only runs during a Capture.
+    /// Starts the helper when it is not running and has it build an Editor. Twice: a helper that
+    /// stopped answering as the first send arrived (a Cancel just before) is replaced by a new one.
+    /// Bounded: only runs during a Capture.
     private static func prepare() async -> Bool {
-        for _ in 0..<5 {
+        for _ in 0..<2 {
             do {
                 try await EditorHelperLauncher.ensureRunning(activates: false, warm: true)
-                let reply = try await CommandSocketClient.send(.warmUp, to: AppIdentity.editorSocketPath)
+                let reply = try await CommandSocketClient.send(
+                    .warmUp, arguments: [String(getpid())], to: AppIdentity.editorSocketPath)
                 if reply == "ok" { return true }
-                try await Task.sleep(for: .milliseconds(100))
             } catch {
                 NSLog("snapit: Editor warm-up failed: \(error)")
-                return false
             }
         }
         return false

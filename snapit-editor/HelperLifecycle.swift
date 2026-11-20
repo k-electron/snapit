@@ -11,11 +11,6 @@ enum HelperLifecycle {
     /// True once any window has shown. Until then the helper (warm, or started on its own)
     /// must not quit just because it has no window.
     private(set) static var hasShownWindow = false
-
-    /// True once the helper has decided to quit (a cancelled warm-up): it takes no more work, so
-    /// a Capture that arrives in the last moments starts a new helper instead.
-    static var isQuitting = false
-
     static func windowWillShow() {
         // Become a regular app before the window shows, so it appears once, already owned by
         // a regular app.
