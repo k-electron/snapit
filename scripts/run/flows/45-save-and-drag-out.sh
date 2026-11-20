@@ -12,7 +12,7 @@ save_dir_entries() { ls -A "$SAVE" 2>/dev/null | wc -l | tr -d ' '; }
 file_exists() { [[ -f "$1" ]]; }
 save_idle() { [[ "$(send "$APP_SOCK" save-pending)" == "0" ]]; }
 file_size() { stat -f '%z' "$1"; }
-# A setting is changed while no Editor helper runs, by the menu bar app. (Flow 50 changes them
+# A setting is changed while no Editor helper runs, by the menu bar app. (Flow 52 changes them
 # through the Settings window, inside the helper, the product's own path.)
 no_helper() { [[ -z "$(helper_pid)" ]]; }
 set_default() {

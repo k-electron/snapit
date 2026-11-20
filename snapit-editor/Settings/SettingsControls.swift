@@ -39,15 +39,11 @@ extension SettingsControl {
         id: "close-editor-after-save", section: .editor, title: "Close the Editor after Save",
         tooltip: "Close the Editor once the Capture is saved")
     static let openScreenshotShortcuts = SettingsControl(
-        id: "open-screenshot-shortcuts", section: .shortcuts, title: "Open macOS Screenshot Shortcuts…",
+        id: "open-screenshot-shortcuts", section: .shortcuts, title: "Open Keyboard Shortcuts in System Settings…",
         tooltip: "Open System Settings, then Keyboard Shortcuts… › Screenshots, to free ⌘⇧3, ⌘⇧4 and ⌘⇧5")
     static let standardResolution = SettingsControl(
         id: "export-standard-resolution", section: .export, title: "Export at standard resolution (1x)",
         tooltip: "Export a Retina Capture at its standard (1x) pixel size")
-    static let version = SettingsControl(
-        id: "version", section: .about, title: "Version", tooltip: "The version of snapit")
-    static let engineVersion = SettingsControl(
-        id: "engine", section: .about, title: "Engine", tooltip: "The version of the engine that crops, redacts and encodes")
 
     /// The recorder for one Shortcut.
     static func shortcut(_ entry: ShortcutCatalog.Entry) -> SettingsControl {

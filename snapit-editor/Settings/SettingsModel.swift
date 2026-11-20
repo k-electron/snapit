@@ -25,31 +25,22 @@ final class SettingsModel {
     private(set) var closeAfterCopy = EditorSettings.closeAfterCopy
     private(set) var closeAfterSave = EditorSettings.closeAfterSave
     private(set) var standardResolution = ExportSettings.standardResolution
+    /// The key combination of each Shortcut, as the menu bar app's registrar has it. Empty until
+    /// the menu bar app has answered (`refreshShortcuts`), which the recorders wait for.
     private(set) var combos: [String: ShortcutCombo?] = [:]
     /// The Shortcut being recorded (its id), if any.
     private(set) var recordingID: String?
+    /// Why the key just pressed was not taken as a Shortcut, while one is recording.
+    private(set) var recordingHint: String?
     private(set) var shortcutError: String?
+    /// A flag under each Shortcut's recorder: macOS also uses its keys, or it took them over.
+    private(set) var notes: [String: String] = [:]
     /// The menu bar app being told about the latest recorded Shortcut.
     @ObservationIgnored private(set) var applying: Task<Void, Never>?
 
     @ObservationIgnored private let recorder = ShortcutRecorder()
 
-    init() {
-        for entry in ShortcutCatalog.entries {
-            combos[entry.shortcut.id] = ShortcutSettings.combo(for: entry.shortcut)
-        }
-    }
-
-    /// The version line of About: the version snapit has in its bundle.
-    var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let build = info?["CFBundleVersion"] as? String
-        return build.map { "\(version) (\($0))" } ?? version
-    }
-
-    /// The engine's version, read through the C ABI.
-    var engineVersionText: String { (try? Engine.version()) ?? "unavailable" }
+    var shortcutsLoaded: Bool { !combos.isEmpty }
 
     // MARK: Open at Login
 
@@ -83,20 +74,20 @@ final class SettingsModel {
         }
     }
 
-    /// Asks the menu bar app which combination each Shortcut has now: its registrar is the one
-    /// truth, and what Settings stored may be older (another install, a failed apply).
+    /// Asks the menu bar app which combination each Shortcut has now. Its registrar is the one
+    /// truth: Settings keeps no copy of its own.
     func refreshShortcuts() async {
         guard let reply = try? await CommandSocketClient.send(.shortcutCombos, to: AppIdentity.appSocketPath) else {
             return
         }
         for line in reply.split(separator: "\n") {
             let words = line.split(separator: " ").map(String.init)
-            guard let id = words.first, let entry = ShortcutCatalog.entry(id: id),
+            guard let id = words.first, ShortcutCatalog.entry(id: id) != nil,
                 let combo = ShortcutCombo.parse(wire: Array(words.dropFirst()))
             else { continue }
             combos[id] = .some(combo)
-            ShortcutSettings.store(combo, for: entry.shortcut)
         }
+        recomputeNotes(keeping: [:])
     }
 
     // MARK: Save location
@@ -151,33 +142,36 @@ final class SettingsModel {
         combos[entry.shortcut.id] ?? nil
     }
 
-    private func storedCombo(id: String) -> ShortcutCombo? { combos[id] ?? nil }
+    func note(for entry: ShortcutCatalog.Entry) -> String? { notes[entry.shortcut.id] }
 
-    /// Why a Shortcut deserves a second look: macOS uses the key combination, or another snapit
-    /// Shortcut does. Nil when it is fine. The Shortcut still works; the note only flags it.
-    func note(for entry: ShortcutCatalog.Entry) -> String? {
-        guard let combo = combo(for: entry) else { return nil }
-        if SystemShortcuts.current.isTaken(combo) { return "macOS also uses this key combination." }
-        if let other = ShortcutCatalog.entries.first(where: {
-            $0.shortcut.id != entry.shortcut.id && storedCombo(id: $0.shortcut.id) == combo
-        }) {
-            return "\(other.title) uses this key combination too."
+    /// Flags the Shortcuts macOS also uses (the system's table is read once per change, not per
+    /// draw). `kept` are the notes that stay (a take-over's).
+    private func recomputeNotes(keeping kept: [String: String]) {
+        var result = kept
+        for entry in ShortcutCatalog.entries where result[entry.shortcut.id] == nil {
+            if let combo = combo(for: entry), SystemShortcuts.current.isTaken(combo) {
+                result[entry.shortcut.id] = "macOS also uses this key combination."
+            }
         }
-        return nil
+        notes = result
     }
 
     /// Starts listening for the keys of the Shortcut `entry`. Esc cancels, Delete clears it, and a
-    /// key with ⌘, ⌃ or ⌥ (or a function key) is the new combination.
+    /// key that is safe as a global Shortcut is the new combination (see `ShortcutRecorder`).
     func beginRecording(_ entry: ShortcutCatalog.Entry) {
+        guard shortcutsLoaded else { return }
         cancelRecording()
         recordingID = entry.shortcut.id
+        recordingHint = nil
         shortcutError = nil
         recorder.start { [weak self] result in
             switch result {
             case .cancel: self?.cancelRecording()
             case .clear: self?.record(nil, for: entry)
             case .accept(let combo): self?.record(combo, for: entry)
-            case .needsModifier: break
+            case .rejected(let hint):
+                self?.recordingHint = hint
+                if !TestMode.isActive { NSSound.beep() }
             }
         }
     }
@@ -185,20 +179,41 @@ final class SettingsModel {
     func cancelRecording() {
         recorder.stop()
         recordingID = nil
+        recordingHint = nil
     }
 
-    /// Gives a Shortcut its new combination: kept in the defaults, then applied by the menu bar
-    /// app, whose menu shows it from then on.
+    /// Gives a Shortcut its new combination and has the menu bar app apply it, so the menu shows
+    /// it from then on. Two Shortcuts never share keys (both actions would run on one press): a
+    /// Shortcut that had the combination loses it, and the recorder says so.
     func record(_ combo: ShortcutCombo?, for entry: ShortcutCatalog.Entry) {
         cancelRecording()
-        ShortcutSettings.store(combo, for: entry.shortcut)
+        var kept: [String: String] = [:]
+        var applies: [(id: String, combo: ShortcutCombo?)] = []
+        if let combo {
+            for other in ShortcutCatalog.entries where other.shortcut.id != entry.shortcut.id {
+                if self.combo(for: other) == combo {
+                    combos[other.shortcut.id] = .some(nil)
+                    applies.append((other.shortcut.id, nil))
+                    kept[entry.shortcut.id] = "Removed from \(other.title)."
+                }
+            }
+        }
         combos[entry.shortcut.id] = .some(combo)
+        applies.append((entry.shortcut.id, combo))
+        recomputeNotes(keeping: kept)
         applying = Task {
             do {
-                let reply = try await CommandSocketClient.send(
-                    .applyShortcut, arguments: [entry.shortcut.id] + ShortcutCombo.wire(combo).split(separator: " ").map(String.init),
-                    to: AppIdentity.appSocketPath)
-                shortcutError = reply == "ok" ? nil : "snapit could not use this Shortcut: \(reply)"
+                for apply in applies {
+                    let reply = try await CommandSocketClient.send(
+                        .applyShortcut, arguments: [apply.id] + ShortcutCombo.wire(apply.combo).split(separator: " ").map(String.init),
+                        to: AppIdentity.appSocketPath)
+                    if reply != "ok" {
+                        shortcutError = "snapit could not use this Shortcut: \(reply)"
+                        await refreshShortcuts()
+                        return
+                    }
+                }
+                shortcutError = nil
             } catch {
                 shortcutError = "snapit did not answer. Quit snapit and open it again."
             }

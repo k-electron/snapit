@@ -32,13 +32,34 @@ settings_is() { [[ "$(sval "$1")" == "$2" ]]; }
 spress() { send_slow "$EDITOR_SOCK" "settings-press $*"; }
 skey() { send_slow "$EDITOR_SOCK" "settings-key $*"; }
 helper_default() { send "$EDITOR_SOCK" "defaults-get $1"; }
+# app_combo <shortcut id>: the combination the menu bar app's registrar has, as `shortcut-combos` lists it.
+app_combo() { send "$APP_SOCK" shortcut-combos | sed -n "s/^$1 //p"; }
+login_status() { send "$APP_SOCK" login-item-status; }
+SETTINGS_APPS="$(real_root)/Applications"
 settings_windows() { onscreen_windows "$(helper_pid)"; }
 no_helper_process() { [[ -z "$(helper_pid)" ]]; }
 helper_is_foreground() { is_foreground "$(helper_pid)"; }
 
+# 0. Open at Login is on by default: the first launch of a copy in an Applications folder registers
+#    the login item, once. A copy that runs from anywhere else is not the one to open at login.
+send "$APP_SOCK" "login-item-simulate notFound" >/dev/null
+send "$APP_SOCK" "defaults-set openAtLoginDefaultApplied false" >/dev/null
+expect_equal "a copy that does not run from Applications is not opened at login" "not-applied" "$(send "$APP_SOCK" login-item-default)"
+expect_equal "so the login item is untouched" "notFound" "$(login_status)"
+mkdir -p "$SETTINGS_APPS/snapit.app"
+send "$APP_SOCK" "install-pretend-bundle $SETTINGS_APPS/snapit.app" >/dev/null
+expect_equal "a copy in Applications is opened at login by default" "applied" "$(send "$APP_SOCK" login-item-default)"
+expect_equal "Open at Login is on after the first launch from Applications" "enabled" "$(login_status)"
+expect_equal "the default is recorded once registering worked" "1" "$(send "$APP_SOCK" "defaults-get openAtLoginDefaultApplied")"
+send "$APP_SOCK" "login-item-simulate notRegistered" >/dev/null
+expect_equal "the default is applied once: a later Off is left alone" "not-applied" "$(send "$APP_SOCK" login-item-default)"
+send "$APP_SOCK" "login-item-simulate enabled" >/dev/null
+send "$APP_SOCK" install-reset >/dev/null
+rm -rf "$SETTINGS_APPS"
+
 # 1. The menu bar menu has Settings… (⌘,) between the Captures and Quit. No helper at rest.
-expect_in_order "the menu offers Capture Area, Capture Screen, Settings… and Quit snapit, in that order" \
-  "$(send "$APP_SOCK" menu-titles)" "Capture Area" "Capture Screen" "Settings…" "Quit snapit"
+expect_in_order "the menu offers Capture Area, Capture Window, Capture Screen, Settings… and Quit snapit, in that order" \
+  "$(send "$APP_SOCK" menu-titles)" "Capture Area" "Capture Window" "Capture Screen" "Settings…" "Quit snapit"
 expect_equal "Settings… is ⌘," "," "$(send "$APP_SOCK" "menu-shortcut settings" | awk '{ print $1 }')"
 expect_contains "Settings… uses the command key" "command" "$(send "$APP_SOCK" "menu-shortcut settings")"
 wait_until 10 no_helper_process
@@ -51,6 +72,7 @@ expect_equal "Settings… runs" "ok" "$(send_slow "$APP_SOCK" "menu-click settin
 if wait_until 10 answers "$EDITOR_SOCK"; then pass "Settings… starts the Editor helper"; else fail "the helper did not start for Settings"; fi
 SETTINGS_PID="$(helper_pid)"
 wait_until 10 settings_is open-at-login on
+wait_until 10 settings_is shortcut.capture-area "21 control,option,command"
 FACTS="$(sfacts)"
 expect_contains "the window is visible" "window=visible" "$FACTS"
 expect_contains "the window is called Settings" "title=Settings" "$FACTS"
@@ -79,7 +101,6 @@ expect_equal "Pick Color has no Shortcut by default" "none" "$(sval shortcut.pic
 expect_equal "Area shows ⌃⌥⌘4" "⌃⌥⌘4" "$(sdisplay capture-area)"
 expect_contains "the Shortcuts section has the button that opens macOS's Screenshots shortcuts" "control open-screenshot-shortcuts|button|" "$FACTS"
 expect_contains "About shows the version" "control version|text|Version|" "$FACTS"
-expect_contains "About shows the engine's version, read through the C ABI" "control engine|text|Engine|$EXPECTED_VERSION|" "$FACTS"
 expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
 
 # 3. A second request brings the same window forward: still one window, still one helper.
@@ -92,7 +113,7 @@ expect_equal "the helper's app menu has Settings… (⌘,)" "Settings…" "$(men
 
 # 4. Open at Login goes through the menu bar app and the fake login item; its status is read
 #    when Settings opens, never polled.
-expect_equal "Open at Login is on by default: the first launch registered the (fake) login item" "enabled" "$(send "$APP_SOCK" login-item-status)"
+expect_equal "Open at Login is on, as the default left it" "enabled" "$(login_status)"
 spress open-at-login >/dev/null
 expect_equal "turning Open at Login off unregisters the login item" "notRegistered" "$(send "$APP_SOCK" login-item-status)"
 expect_equal "the switch shows off" "off" "$(sval open-at-login)"
@@ -196,9 +217,19 @@ spress shortcut.capture-area >/dev/null
 expect_equal "pressing the recorder starts recording" "recording" "$(sval shortcut.capture-area)"
 expect_equal "a key without ⌘, ⌃ or ⌥ is not a Shortcut: still recording" "ok" "$(skey 22)"
 expect_equal "still recording" "recording" "$(sval shortcut.capture-area)"
+# Keys every app depends on are refused, with a hint: ⌘ alone, ⌥ or ⌥⇧ alone with a printable key.
+expect_equal "⌘C is refused" "ok" "$(skey 8 command)"
+expect_equal "still recording after ⌘C" "recording" "$(sval shortcut.capture-area)"
+expect_contains "a hint says what to press" "hint capture-area|Hold" "$(sfacts)"
+skey 0 option >/dev/null
+expect_equal "⌥A is refused (it types å on many layouts)" "recording" "$(sval shortcut.capture-area)"
+skey 0 option,shift >/dev/null
+expect_equal "⌥⇧A is refused" "recording" "$(sval shortcut.capture-area)"
+skey 0 shift >/dev/null
+expect_equal "⇧A is refused" "recording" "$(sval shortcut.capture-area)"
+expect_equal "Area still has ⌃⌥⌘4 meanwhile" "21 control,option,command" "$(app_combo capture-area)"
 expect_equal "⌃⌥⌘6 is recorded" "ok" "$(skey 22 control,option,command)"
 expect_equal "the recorder shows ⌃⌥⌘6 at once" "22 control,option,command" "$(sval shortcut.capture-area)"
-expect_equal "the combination is stored" "22 control,option,command" "$(helper_default shortcut.capture-area)"
 expect_equal "the menu bar app rebound the Area Shortcut" "22 control,option,command" "$(send "$APP_SOCK" "shortcut-combo capture-area")"
 expect_equal "the Area menu item's glyph follows: ⌃⌥⌘6" "6 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
 expect_equal "Area's recorder displays ⌃⌥⌘6" "⌃⌥⌘6" "$(sdisplay capture-area)"
@@ -214,14 +245,17 @@ skey 51 >/dev/null
 expect_equal "Delete clears the Screen Shortcut" "none" "$(sval shortcut.capture-screen)"
 expect_equal "the menu bar app unassigned it" "none" "$(send "$APP_SOCK" "shortcut-combo capture-screen")"
 expect_equal "the Capture Screen menu item shows no key" "none" "$(send "$APP_SOCK" "menu-shortcut capture.screen")"
-# A Shortcut macOS also uses is flagged; one another snapit Shortcut uses is flagged too.
+# A Shortcut macOS also uses is flagged; keys another snapit Shortcut has are taken over from it.
 spress shortcut.capture-screen >/dev/null
 skey 21 shift,command >/dev/null
 expect_contains "⌘⇧4 is flagged as a macOS shortcut" "macOS" "$(snote capture-screen)"
 spress shortcut.capture-screen >/dev/null
 skey 22 control,option,command >/dev/null
-expect_contains "a key combination another snapit Shortcut uses is flagged" "Area" "$(snote capture-screen)"
-expect_equal "the Area recorder flags it too" "Screen uses this key combination too." "$(snote capture-area)"
+expect_equal "a combination another snapit Shortcut has is taken over from it" "Removed from Area." "$(snote capture-screen)"
+expect_equal "Area lost the keys in Settings" "none" "$(sval shortcut.capture-area)"
+expect_equal "and in the menu bar app: two Shortcuts never fire on one press" "none" "$(send "$APP_SOCK" "shortcut-combo capture-area")"
+expect_equal "the Area menu item shows no key" "none" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
+expect_equal "Screen has the keys" "22 control,option,command" "$(send "$APP_SOCK" "shortcut-combo capture-screen")"
 spress shortcut.capture-screen >/dev/null
 skey 20 control,option,command >/dev/null
 expect_equal "a free combination carries no flag" "" "$(snote capture-screen)"
@@ -229,9 +263,9 @@ expect_equal "the Screen menu item shows ⌃⌥⌘3 again" "3 control,option,com
 # Pick Color: unassigned by default, recorded like the others.
 spress shortcut.pick-color >/dev/null
 skey 35 control,option,command >/dev/null
-expect_equal "Pick Color records ⌃⌥⌘P" "35 control,option,command" "$(helper_default shortcut.pick-color)"
+expect_equal "Pick Color records ⌃⌥⌘P" "35 control,option,command" "$(app_combo pick-color)"
 spress shortcut-clear.pick-color >/dev/null
-expect_equal "its clear button unassigns it" "none" "$(helper_default shortcut.pick-color)"
+expect_equal "its clear button unassigns it" "none" "$(app_combo pick-color)"
 # Restore Area.
 spress shortcut.capture-area >/dev/null
 skey 21 control,option,command >/dev/null
@@ -262,11 +296,11 @@ expect_equal "and shows Close the Editor after Copy on" "on" "$(sval close-edito
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
 wait_until 10 no_helper_process
 
-# 9. A later Off is the user's: a relaunch does not turn Open at Login on again.
+# 9. A recorded Shortcut survives a relaunch of the menu bar app, glyph included.
 send_slow "$APP_SOCK" "menu-click settings" >/dev/null
-wait_until 10 settings_is open-at-login on
-spress open-at-login >/dev/null
-expect_equal "Open at Login is off" "off" "$(sval open-at-login)"
+wait_until 10 settings_is shortcut.capture-area "21 control,option,command"
+spress shortcut.capture-area >/dev/null
+skey 22 control,option,command >/dev/null
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
 wait_until 10 no_helper_process
 send "$APP_SOCK" quit >/dev/null
@@ -274,8 +308,10 @@ wait_until 30 gone "$APP_PID"
 (nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
 if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else fail "snapit did not start again"; fi
 APP_PID="$(pid_of "$APP_EXE")"
-sleep 1
-if [[ "$(send "$APP_SOCK" login-item-status)" != "enabled" ]]; then pass "a relaunch leaves Open at Login off"; else fail "a relaunch turned Open at Login on again"; fi
+expect_equal "the recorded Area Shortcut is still ⌃⌥⌘6 after the relaunch" "22 control,option,command" "$(send "$APP_SOCK" "shortcut-combo capture-area")"
+expect_equal "the Area menu item still shows ⌃⌥⌘6" "6 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
+send "$APP_SOCK" "shortcut-set capture-area 21 control option command" >/dev/null
+expect_equal "Area is back to ⌃⌥⌘4" "4 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
 
 # Put every setting back for the flows after this one.
 send "$APP_SOCK" "defaults-set saveLocation $SAVE" >/dev/null

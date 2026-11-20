@@ -11,7 +11,10 @@ import Foundation
 enum AppDefaults {
     static let store: UserDefaults = {
         if let root = TestMode.root {
-            return FileBackedDefaults(file: root.appendingPathComponent("defaults.plist")) ?? UserDefaults()
+            guard let store = FileBackedDefaults(file: root.appendingPathComponent("defaults.plist")) else {
+                fatalError("snapit: test mode could not make its defaults store")
+            }
+            return store
         }
         if Bundle.main.bundleIdentifier == AppIdentity.mainBundleIdentifier { return .standard }
         return UserDefaults(suiteName: AppIdentity.mainBundleIdentifier) ?? .standard
