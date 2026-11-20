@@ -115,10 +115,10 @@ sleep 1
 expect_equal "no tooltip appears later for a tile the pointer left" "none" "$(fact tooltip)"
 
 # A press on the bar's padding is the bar's: it changes nothing and starts no selection.
-read -r PX PY <<<"$(bar_frame | awk '{ split($1, a, ","); printf "%s %s", a[1] + 2, a[2] + 2 }')"
+read -r PX PY PX2 PY2 <<<"$(bar_frame | awk '{ split($1, a, ","); printf "%s %s %s %s", a[1] + 2, a[2] + 2, a[1] + 62, a[2] + 32 }')"
 mouse down 0 "$PX" "$PY" >/dev/null
-mouse drag 0 $((PX + 60)) $((PY + 30)) >/dev/null
-mouse up 0 $((PX + 60)) $((PY + 30)) >/dev/null
+mouse drag 0 "$PX2" "$PY2" >/dev/null
+mouse up 0 "$PX2" "$PY2" >/dev/null
 expect_equal "a press and drag on the bar's padding changes nothing" "100,60 200x100" "$(selection_frame)"
 expect_equal "and the overlay is still adjusting" "adjusting" "$(fact state)"
 # A press on a tile that is released away from it is not a click.
