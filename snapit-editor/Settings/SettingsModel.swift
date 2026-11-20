@@ -39,6 +39,20 @@ final class SettingsModel {
     @ObservationIgnored private(set) var applying: Task<Void, Never>?
 
     @ObservationIgnored private let recorder = ShortcutRecorder()
+    @ObservationIgnored private nonisolated(unsafe) var saveLocationObserver: (any NSObjectProtocol)?
+
+    init() {
+        // The folder Permission guide can change the Save location while a Settings window shows the old one.
+        saveLocationObserver = NotificationCenter.default.addObserver(
+            forName: .saveLocationDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveLocation = SaveLocation.folder }
+        }
+    }
+
+    deinit {
+        if let saveLocationObserver { NotificationCenter.default.removeObserver(saveLocationObserver) }
+    }
 
     var shortcutsLoaded: Bool { !combos.isEmpty }
 
@@ -94,23 +108,11 @@ final class SettingsModel {
 
     /// Shows the folder chooser. A scripted run never shows it: it sets the folder directly.
     func chooseSaveLocation(from window: NSWindow?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = saveLocation
-        panel.prompt = "Choose"
-        panel.message = "Choose the folder Save writes into"
-        let accept: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor in self?.setSaveLocation(url) }
-        }
-        if let window { panel.beginSheetModal(for: window, completionHandler: accept) } else { panel.begin(completionHandler: accept) }
+        SaveLocationChooser.choose(startingAt: saveLocation, from: window) { [weak self] url in self?.setSaveLocation(url) }
     }
 
     func setSaveLocation(_ url: URL) {
-        AppDefaults.store.set(url.path, forKey: GeneralSettings.saveLocationKey)
+        SaveLocationChooser.set(url)
         saveLocation = url
     }
 

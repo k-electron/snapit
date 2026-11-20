@@ -461,18 +461,22 @@ SnapitStatus snapit_png_encode_ex(const uint8_t *pixels,
  Encodes like [`snapit_png_encode_ex`], but streams the PNG into the file `fd` through a
  small buffer: the PNG is never held in memory, whatever its size. The engine writes from the
  file's current position and leaves the descriptor open (and unflushed beyond the write); the
- caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`.
+ caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`, and `os_error` (when not
+ null) receives the `errno` of the write that failed (`ENOSPC` for a full disk), or 0 when the
+ call did not fail that way. The status is the engine's; only `os_error` is an `errno`.
 
  # Safety
 
- As for [`snapit_png_encode_ex`], and `fd` must be a file open for writing.
+ As for [`snapit_png_encode_ex`], `fd` must be a file open for writing, and `os_error` must be
+ null or valid for a write of one `i32`.
  */
 SnapitStatus snapit_png_encode_to_fd(const uint8_t *pixels,
                                      uint32_t width,
                                      uint32_t height,
                                      size_t stride,
                                      const struct SnapitPngParams *params,
-                                     int32_t fd);
+                                     int32_t fd,
+                                     int32_t *os_error);
 
 /*
  Releases bytes from [`snapit_png_encode`] and clears them. Freeing empty bytes does nothing.

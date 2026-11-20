@@ -73,7 +73,8 @@ fn pixels_per_metre(dpi: u32) -> u32 {
 
 enum EncodeError {
     OutOfMemory,
-    Io,
+    /// A write failed; the OS error (`errno`) when the failing call had one, else 0.
+    Io(i32),
     Failed,
 }
 
@@ -83,7 +84,7 @@ impl From<png::EncodingError> for EncodeError {
             png::EncodingError::IoError(e) if e.kind() == io::ErrorKind::OutOfMemory => {
                 Self::OutOfMemory
             }
-            png::EncodingError::IoError(_) => Self::Io,
+            png::EncodingError::IoError(e) => Self::Io(e.raw_os_error().unwrap_or(0)),
             _ => Self::Failed,
         }
     }
@@ -94,7 +95,7 @@ impl From<io::Error> for EncodeError {
         if error.kind() == io::ErrorKind::OutOfMemory {
             Self::OutOfMemory
         } else {
-            Self::Io
+            Self::Io(error.raw_os_error().unwrap_or(0))
         }
     }
 }
@@ -158,8 +159,16 @@ impl EncodeError {
     fn status(&self) -> SnapitStatus {
         match self {
             Self::OutOfMemory => SNAPIT_STATUS_OUT_OF_MEMORY,
-            Self::Io => SNAPIT_STATUS_IO_FAILED,
+            Self::Io(_) => SNAPIT_STATUS_IO_FAILED,
             Self::Failed => SNAPIT_STATUS_ENCODE_FAILED,
+        }
+    }
+
+    /// The `errno` of the failed write; 0 when the error has none.
+    fn os_error(&self) -> i32 {
+        match self {
+            Self::Io(code) => *code,
+            _ => 0,
         }
     }
 }
@@ -458,11 +467,14 @@ pub unsafe extern "C" fn snapit_png_encode_ex(
 /// Encodes like [`snapit_png_encode_ex`], but streams the PNG into the file `fd` through a
 /// small buffer: the PNG is never held in memory, whatever its size. The engine writes from the
 /// file's current position and leaves the descriptor open (and unflushed beyond the write); the
-/// caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`.
+/// caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`, and `os_error` (when not
+/// null) receives the `errno` of the write that failed (`ENOSPC` for a full disk), or 0 when the
+/// call did not fail that way. The status is the engine's; only `os_error` is an `errno`.
 ///
 /// # Safety
 ///
-/// As for [`snapit_png_encode_ex`], and `fd` must be a file open for writing.
+/// As for [`snapit_png_encode_ex`], `fd` must be a file open for writing, and `os_error` must be
+/// null or valid for a write of one `i32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snapit_png_encode_to_fd(
     pixels: *const u8,
@@ -471,7 +483,12 @@ pub unsafe extern "C" fn snapit_png_encode_to_fd(
     stride: usize,
     params: *const SnapitPngParams,
     fd: i32,
+    os_error: *mut i32,
 ) -> SnapitStatus {
+    if !os_error.is_null() {
+        // SAFETY: the caller guarantees a non-null `os_error` is writable.
+        unsafe { *os_error = 0 };
+    }
     guard(|| {
         if fd < 0 {
             return SNAPIT_STATUS_INVALID_ARGUMENT;
@@ -487,7 +504,13 @@ pub unsafe extern "C" fn snapit_png_encode_to_fd(
         let result = encode_into(&mut sink, &job).and_then(|()| sink.flush().map_err(Into::into));
         match result {
             Ok(()) => SNAPIT_STATUS_OK,
-            Err(e) => e.status(),
+            Err(e) => {
+                if !os_error.is_null() {
+                    // SAFETY: as above.
+                    unsafe { *os_error = e.os_error() };
+                }
+                e.status()
+            }
         }
     })
 }

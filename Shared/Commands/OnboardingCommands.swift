@@ -8,7 +8,7 @@ nonisolated extension SocketCommand {
     /// it forward when it is open. Replies `ok` once the window is on screen.
     static let showOnboarding = SocketCommand("show-onboarding")
     /// `show-permission-guide <kind>`: the menu bar app asks the helper to show one Permission
-    /// guide on its own (`screen-recording`). Replies `ok` once the window is on screen.
+    /// guide on its own (`screen-recording`, or `folder <errno|none> <folder>` for a Save that failed after its hand-over). Replies `ok` once the window is on screen.
     static let showPermissionGuide = SocketCommand("show-permission-guide")
     /// The helper asks where Screen Recording stands. Replies `notDetermined`, `denied`,
     /// `granted` or `grantedStale`. Never shows a prompt.
@@ -31,4 +31,7 @@ nonisolated extension SocketCommand {
 /// its model beside the Screen Recording ones.
 nonisolated enum PermissionGuideKind: String, Sendable {
     case screenRecording = "screen-recording"
+    /// Access to the Save location: a write there failed. Details after the kind:
+    /// `<errno|none> <folder>`, sent by the menu bar app for a Save that failed after its hand-over.
+    case folder
 }

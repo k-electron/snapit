@@ -1,6 +1,8 @@
 import SwiftUI
 
 extension PermissionGuideModel {
+    func makeView() -> AnyView { AnyView(PermissionGuideView(model: self)) }
+
     /// Does what the button with this id does.
     func press(_ id: String) async -> Bool {
         switch id {

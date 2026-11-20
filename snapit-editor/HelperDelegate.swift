@@ -3,6 +3,8 @@ import AppKit
 /// Process-level lifecycle of the Editor helper.
 final class HelperDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
+    /// The helper is terminating because its last window closed (not because it was told to quit).
+    private var lastWindowJustClosed = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         HelperMainMenu.install(quitTarget: self, quitAction: #selector(quitSnapit(_:)))
@@ -52,6 +54,15 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // The last window closed a moment ago and a window of ours has shown since (the menu bar app asked
+        // for a guide, for a Save that failed after its hand-over): that window is the reason to stay. A quit
+        // that was asked for (the `quit` command, "Quit snapit", agreed to) always ends, and so does one with no
+        // new window.
+        let closedLastWindow = lastWindowJustClosed
+        lastWindowJustClosed = false
+        if closedLastWindow, HelperLifecycle.windowShownSinceLastClose, !QuitPreparation.isDecided {
+            return .terminateCancel
+        }
         // A quit that nobody has been asked about (the Dock's Quit, a logout, an AppleEvent) with
         // Editors holding unexported edits is "Quit snapit": the same question, the same preparation,
         // and the menu bar app quits with the helper. The system waits for the answer, so a logout
@@ -93,6 +104,8 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     /// The helper quits when its last window closes. Before any window has shown (a helper
     /// started with `start-editor`, or warming up) it stays.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        HelperLifecycle.hasShownWindow
+        lastWindowJustClosed = HelperLifecycle.hasShownWindow
+        HelperLifecycle.windowShownSinceLastClose = false
+        return lastWindowJustClosed
     }
 }

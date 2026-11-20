@@ -181,7 +181,7 @@ struct GuideDrawing: View, Animatable {
 }
 
 /// The arrow pointer, tip at the top left.
-private nonisolated struct CursorShape: Shape {
+nonisolated struct CursorShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let x = rect.width / 13
