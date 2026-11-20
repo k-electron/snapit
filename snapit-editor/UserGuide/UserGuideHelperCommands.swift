@@ -3,7 +3,7 @@ import AppKit
 nonisolated extension SocketCommand {
     /// Facts about the User Guide window: `window`, `title`, `occlusion-visible`, `miniaturized`,
     /// `activation`, `section` (the id on the page), `section-title`, `query`, `visible <ids>`, `sections`
-    /// (how many), `duplicate-ids`, `broken-links`, `external-links`, `last-link`, then one
+    /// (how many), `duplicate-ids`, `broken-links`, `external-links`, `last-link`, `first-responder-is-text`, then one
     /// `section <group>|<id>|<title>` line per section and one `button <id>|<title>|<tooltip>` line per
     /// button on the page. Test mode only.
     static let userGuideFacts = SocketCommand("user-guide-facts")
@@ -91,6 +91,7 @@ enum UserGuideFacts {
             "broken-links=\(document.brokenLinks.joined(separator: ","))",
             "external-links=\(externalLinks(document).joined(separator: ","))",
             "last-link=\(model.lastLink.name)",
+            "first-responder-is-text=\(window.firstResponder is NSText)",
         ]
         lines += document.sections.map { "section \($0.group)|\($0.id)|\($0.title)" }
         if model.previous != nil {

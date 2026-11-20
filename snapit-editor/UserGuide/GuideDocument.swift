@@ -224,7 +224,7 @@ enum GuideInline {
 enum GuideLink: Equatable {
     /// `#id`: another section of the guide, in the same window.
     case section(String)
-    /// An `https` link to GitHub: opens in the browser, only when clicked.
+    /// An `https` link to snapit's own repository on GitHub: opens in the browser, only when clicked.
     case external(URL)
     /// Anything else: dropped.
     case refused
@@ -232,7 +232,9 @@ enum GuideLink: Equatable {
     init(_ url: URL) {
         if url.scheme == nil, url.host == nil, url.path.isEmpty, let fragment = url.fragment, !fragment.isEmpty {
             self = .section(fragment)
-        } else if url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com" {
+        } else if url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com", url.port == nil, url.user == nil,
+            url.path == "/k-electron/snapit" || url.path.hasPrefix("/k-electron/snapit/")
+        {
             self = .external(url)
         } else {
             self = .refused

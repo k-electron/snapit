@@ -70,7 +70,6 @@ struct UserGuideView: View {
                 .padding(.horizontal, 32)
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .textSelection(.enabled)
             }
             .id(section.id)
         } else {
