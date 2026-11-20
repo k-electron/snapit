@@ -9,8 +9,8 @@
 #include <stdint.h>
 
 /*
- Bytes per pixel: BGRA, 8 bits per channel, alpha in the top byte (premultiplied; Captures
- are opaque).
+ Bytes per pixel: BGRA, 8 bits per channel, alpha in the top byte, premultiplied. A Capture of
+ a screen is opaque; a Window Capture has transparent corners.
  */
 #define SNAPIT_BYTES_PER_PIXEL 4
 

@@ -112,7 +112,11 @@ final class AreaOverlayController: ActionBarHost {
         for (index, panel) in panels.enumerated() where index != activeIndex { panel.orderFrontRegardless() }
         if takesFocus {
             panels[activeIndex].makeKeyAndOrderFront(nil)
-            NSApp.activate()
+            // A window Capture takes its picture live, after the overlay is gone: activating snapit
+            // would turn the user's app inactive (grey traffic lights, dimmed toolbars, panels that
+            // hide on deactivate dropping off the window list). The panel is non-activating, so it
+            // takes the keys (Esc) without it.
+            if mode != .window { NSApp.activate() }
             panels[activeIndex].makeFirstResponder(views[activeIndex])
         } else {
             panels[activeIndex].orderFrontRegardless()
