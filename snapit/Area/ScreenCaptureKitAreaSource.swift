@@ -1,7 +1,7 @@
 import AppKit
 import ScreenCaptureKit
 
-/// The real source of frozen frames: one ScreenCaptureKit screenshot per display, taken together.
+/// The real source of frozen frames: one ScreenCaptureKit capture per display, taken together.
 struct ScreenCaptureKitAreaSource: AreaCaptureSource {
     var pointerLocation: CGPoint { NSEvent.mouseLocation }
 
@@ -22,7 +22,7 @@ struct ScreenCaptureKitAreaSource: AreaCaptureSource {
         // Every display at once, so the overlay is up as soon as the slowest one is.
         let shots = try await withThrowingTaskGroup(of: (Int, CapturedScreen).self) { group in
             for (index, job) in jobs.enumerated() {
-                group.addTask { (index, try await ScreenCaptureKitSource.screenshot(filter: job.filter)) }
+                group.addTask { (index, try await ScreenCaptureKitSource.capture(filter: job.filter)) }
             }
             var shots: [Int: CapturedScreen] = [:]
             for try await (index, screen) in group { shots[index] = screen }
@@ -33,7 +33,7 @@ struct ScreenCaptureKitAreaSource: AreaCaptureSource {
         }
     }
 
-    /// A display waiting to be photographed. The filter is only read by the screenshot call.
+    /// A display waiting to be captured. The filter is only read by the capture call.
     private nonisolated struct Job: @unchecked Sendable {
         let filter: SCContentFilter
         let frame: CGRect

@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// One display, frozen: what the Area overlay shows while the user selects, and what the engine
-/// crops afterwards. Its pixels are the screenshot itself, shared by the overlay's layers and
+/// crops afterwards. Its pixels are the one-shot capture itself, shared by the overlay's layers and
 /// the loupe; nothing copies them, so they go when the overlay lets go of them.
 struct FrozenDisplay {
     /// The display's frame in AppKit's global space (points, origin at the bottom left of the
@@ -21,12 +21,12 @@ struct FrozenDisplay {
 }
 
 /// Where the Area overlay's frozen frames come from. The real source is ScreenCaptureKit's
-/// one-shot screenshot of every display; the scripted run swaps in fixture images
+/// one-shot capture of every display; the scripted run swaps in fixture images
 /// (`FixtureAreaCaptureSource`, built on the same fixture as `FixtureCaptureSource`). Always go
 /// through `AreaCaptureSources.current`.
 @MainActor
 protocol AreaCaptureSource {
-    /// Freezes every display at once: one screenshot each, native pixels, SDR, in the display's
+    /// Freezes every display at once: one capture each, native pixels, SDR, in the display's
     /// color space, without the cursor, without snapit's own windows. Never a stream.
     func freezeDisplays() async throws -> [FrozenDisplay]
 

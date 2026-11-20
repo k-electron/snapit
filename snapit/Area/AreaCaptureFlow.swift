@@ -24,6 +24,8 @@ enum AreaCaptureFlow {
         /// Capture N is showing in the Editor.
         case opened(number: Int)
         case cancelled
+        /// Screen Recording is not granted; macOS was asked to show its prompt.
+        case permissionNeeded
         case failed(String)
     }
 
@@ -39,16 +41,16 @@ enum AreaCaptureFlow {
     static func start() async -> StartOutcome {
         guard CaptureGate.enter() else { return .busy }
         let began = ContinuousClock.now
+        result = nil
+        previousApp = TestMode.isActive ? nil : NSWorkspace.shared.frontmostApplication
         guard ScreenRecordingPermission.current.isGranted else {
             ScreenRecordingPermission.current.request()
-            CaptureGate.leave()
+            conclude(.permissionNeeded)
             return .permissionNeeded
         }
-        result = nil
         do {
             // The window list is read now, before anything else can change it.
             let windows = OnScreenWindowSources.current.windowsFrontToBack()
-            let previous = TestMode.isActive ? nil : NSWorkspace.shared.frontmostApplication
             let source = AreaCaptureSources.current
             let displays = try await source.freezeDisplays()
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
@@ -56,13 +58,12 @@ enum AreaCaptureFlow {
             let controller = AreaOverlayController(displays: displays, windows: windows, pointer: source.pointerLocation)
             controller.onFinish = { selection in finish(selection) }
             overlay = controller
-            previousApp = previous
             controller.show(takesFocus: !TestMode.isActive)
             lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
             NSLog("snapit: Area Capture failed: \(error)")
-            CaptureGate.leave()
+            conclude(.failed("\(error)"))
             return .failed("\(error)")
         }
     }
@@ -83,14 +84,10 @@ enum AreaCaptureFlow {
         controller.teardown()
 
         guard let selection, let frozen else {
-            // Cancelled: the Shortcut works again at once, and the app the user was in gets focus back.
-            let previous = previousApp
-            previousApp = nil
-            previous?.activate()
+            // Cancelled: the Shortcut works again at once.
             conclude(.cancelled)
             return
         }
-        previousApp = nil
         Task {
             conclude(await capture(frozen, area: selection.pixels))
         }
@@ -114,8 +111,13 @@ enum AreaCaptureFlow {
         }
     }
 
+    /// The one exit of every Area Capture: whatever happened, the gate opens, the waiters learn
+    /// the outcome, and when no Editor opened the app the user was in gets focus back.
     private static func conclude(_ outcome: Result) {
         result = outcome
+        let previous = previousApp
+        previousApp = nil
+        if case .opened = outcome {} else { previous?.activate() }
         CaptureGate.leave()
         let pending = waiters
         waiters.removeAll()

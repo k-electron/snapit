@@ -2,9 +2,14 @@ import AppKit
 import Foundation
 
 nonisolated extension SocketCommand {
-    /// `fixture-extra-display <scale> <point width> <point height>` adds a second fake display to
-    /// the right of the first; `fixture-extra-display none` takes it away. Replies `ok`.
+    /// `fixture-extra-display <scale> <point width> <point height> [right|left|above]` adds a
+    /// second fake display next to the first (to its right unless told otherwise; left and above
+    /// put it at negative coordinates); `fixture-extra-display none` takes it away. Replies `ok`.
     static let fixtureExtraDisplay = SocketCommand("fixture-extra-display")
+    /// `fixture-pixel-layout alpha-first|skip-first`: the layout of the first fake display's frozen
+    /// image. `skip-first` is BGRX from a plain bitmap context, which the engine's in-place crop
+    /// does not take, so the Capture is cropped through its fallback. Replies `ok`.
+    static let fixturePixelLayout = SocketCommand("fixture-pixel-layout")
     /// Waits until the overlay that is showing has finished, then replies `opened <N>` (Capture N
     /// is in the Editor), `cancelled` or `failed <why>`.
     static let overlayWait = SocketCommand("overlay-wait")
@@ -34,17 +39,28 @@ extension SocketCommandRegistry {
                 return "ok"
             }
             let numbers = arguments.compactMap(Int.init)
-            guard numbers.count == 3, (1...3).contains(numbers[0]), numbers[1] > 0, numbers[2] > 0 else {
-                return "error fixture-extra-display <scale 1-3> <points w> <points h> | none"
+            let placement = arguments.count > 3 ? FixtureAreaCaptureSource.Placement(rawValue: arguments[3]) : .right
+            guard numbers.count == 3, (1...3).contains(numbers[0]), numbers[1] > 0, numbers[2] > 0, let placement else {
+                return "error fixture-extra-display <scale 1-3> <points w> <points h> [right|left|above] | none"
             }
+            FixtureAreaCaptureSource.shared.extraPlacement = placement
             FixtureAreaCaptureSource.shared.extraDisplay = FixtureCaptureSource.Display(
                 scale: numbers[0], pointWidth: numbers[1], pointHeight: numbers[2])
+            return "ok"
+        }
+        register(.fixturePixelLayout) { request in
+            guard let layout = request.arguments.first, ["alpha-first", "skip-first"].contains(layout) else {
+                return "error fixture-pixel-layout alpha-first|skip-first"
+            }
+            FixtureCaptureSource.shared.display.skipsAlpha = layout == "skip-first"
             return "ok"
         }
         register(.overlayWait) { _ in
             switch await AreaCaptureFlow.waitForResult() {
             case .opened(let number): "opened \(number)"
             case .cancelled: "cancelled"
+            case .permissionNeeded: "permission-needed"
+            case .permissionNeeded: "permission-needed"
             case .failed(let why): "failed \(why)"
             }
         }
