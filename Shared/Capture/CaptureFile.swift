@@ -142,16 +142,27 @@ nonisolated enum CaptureFiles {
         number: Int, width: Int, height: Int, scale: Double, colorSpace space: CGColorSpace,
         captureTime: Date = Date(), fill: (PixelBuffer) throws -> Void
     ) throws {
-        try FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try makeFolder()
         let final = url(number: number)
         let partial = URL(fileURLWithPath: final.path + partialSuffix)
         do {
             let profile = (space.copyICCData() as Data?) ?? Data()
+            func createPixels() throws -> PixelBuffer {
+                try create(
+                    at: partial, width: width, height: height, scale: scale, captureTime: captureTime,
+                    icc: profile, colorSpace: space)
+            }
             // The buffer unmaps the file when it goes out of scope at the end of this block.
-            let pixels = try create(
-                at: partial, width: width, height: height, scale: scale, captureTime: captureTime,
-                icc: profile, colorSpace: space)
+            let pixels: PixelBuffer
+            do {
+                folderRaceHook?()
+                pixels = try createPixels()
+            } catch let error as EngineError where error.status == .ioFailed && error.rawValue == ENOENT {
+                // The menu bar app removed the (then empty) folder between making it and the file
+                // (Delete Capture, a damaged Reopen): make it again, once.
+                try makeFolder()
+                pixels = try createPixels()
+            }
             try fill(pixels)
         } catch {
             unlink(partial.path)
@@ -163,6 +174,15 @@ nonisolated enum CaptureFiles {
             throw EngineError(status: .ioFailed, rawValue: code)
         }
     }
+
+    private static func makeFolder() throws {
+        try FileManager.default.createDirectory(
+            at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    }
+
+    /// Test mode only: runs in `write` between making the folder and creating the file, to remove
+    /// the folder there the way a Delete Capture can.
+    nonisolated(unsafe) static var folderRaceHook: (() -> Void)?
 
     /// Maps Capture N read-only.
     static func open(number: Int) throws -> OpenedCapture {
@@ -191,7 +211,11 @@ nonisolated enum CaptureFiles {
     /// anything else in the cache folder.
     static func removeAll() {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        for name in names where isKnownName(name) {
+        // The pixels first, as `remove(number:)` does: the Capture is gone the moment they are.
+        let known = names.filter(isKnownName).sorted { first, second in
+            first.hasSuffix(suffix) && !second.hasSuffix(suffix)
+        }
+        for name in known {
             unlink(folder.appendingPathComponent(name).path)
         }
         rmdir(folder.path)

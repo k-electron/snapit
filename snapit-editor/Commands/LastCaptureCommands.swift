@@ -21,6 +21,9 @@ nonisolated extension SocketCommand {
     /// image points (`none` for the whole Capture), as one Undo step. There is no Crop tool in this
     /// command's way: it stands in for one, to check the crop is stored. Test mode only.
     static let editorStateCrop = SocketCommand("editor-state-crop")
+    /// `editor-menu-quit`: chooses "Quit snapit" in the helper's own menu (it replies at once; the
+    /// quit goes on in the background). Test mode only.
+    static let editorMenuQuit = SocketCommand("editor-menu-quit")
     /// `editor-front`: the number of the Editor whose window is frontmost of the helper's windows,
     /// or `none`. A scripted run never activates the helper, so no window is key; the order is what
     /// "brought forward" shows. Test mode only.
@@ -38,9 +41,12 @@ extension SocketCommandRegistry {
         register(.reopenCapture) { request in
             guard let number = request.arguments.first.flatMap(Int.init) else { return "error reopen-capture <number>" }
             do {
-                try EditorSessions.shared.reopen(captureNumber: number)
+                try await EditorSessions.shared.reopen(captureNumber: number)
                 CATransaction.flush()
                 return "ok"
+            } catch ReopenError.superseded {
+                // A newer Capture (or Delete Capture) got there first: nothing to reopen, nothing to say.
+                return "error superseded"
             } catch {
                 NSLog("snapit Editor: could not reopen Capture \(number): \(error)")
                 // The menu bar app never opens a window: the helper tells the user.
@@ -48,13 +54,12 @@ extension SocketCommandRegistry {
                 return "error could-not-reopen"
             }
         }
-        // Quit: nothing more is written for the Last Capture, and the reply comes only when no
-        // write is still running. The menu bar app removes the Capture's files after that.
-        register(.quit) { _ in
+        // Quit (the `quit` command and the helper's own "Quit snapit"): nothing more is written for
+        // the Last Capture, and the quit goes on only when no write is still running. The menu bar
+        // app removes the Capture's files after that.
+        QuitPreparation.steps.append {
             LastCaptureStore.shared.supersede()
             await LastCaptureStore.shared.fence()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApplication.shared.terminate(nil) }
-            return "ok"
         }
         registerLastCaptureTestCommands()
     }
@@ -76,11 +81,9 @@ extension SocketCommandRegistry {
         register(.editorInjectKinds) { request in
             guard let session = Self.session(request) else { return "error editor-inject-kinds <N>" }
             for (index, kind) in AnnotationKinds.all.enumerated() {
-                let x = 20 + CGFloat(index) * 36
                 session.document?.edit { history in
-                    let annotation = Annotation(
-                        id: history.makeID(), kind: kind.id, start: CGPoint(x: x, y: 20),
-                        end: CGPoint(x: x + 28, y: 70), style: Self.style(index))
+                    let annotation = kind.sampleAnnotation(
+                        id: history.makeID(), origin: CGPoint(x: 20 + CGFloat(index) * 36, y: 20), index: index)
                     history.change { $0.annotations.append(annotation) }
                 }
             }
@@ -98,6 +101,11 @@ extension SocketCommandRegistry {
             }
             guard let crop = document.history.state.crop else { return "none" }
             return [crop.minX, crop.minY, crop.width, crop.height].map { String(format: "%.1f", $0) }.joined(separator: " ")
+        }
+        register(.editorMenuQuit) { _ in
+            guard let delegate = NSApp.delegate as? HelperDelegate else { return "error no helper delegate" }
+            delegate.quitSnapit(nil)
+            return "ok"
         }
         register(.editorFront) { _ in
             let sessions = EditorSessions.shared.sessions
@@ -117,21 +125,21 @@ extension SocketCommandRegistry {
         request.arguments.first.flatMap(Int.init).flatMap { EditorSessions.shared.session(captureNumber: $0) }
     }
 
-    /// A style no default has: every field of `AnnotationStyle` differs from its default.
-    private static func style(_ index: Int) -> AnnotationStyle {
-        AnnotationStyle(
-            color: AnnotationColor(red: 0.1 + Double(index % 5) * 0.15, green: 0.6, blue: 0.3, alpha: 0.9),
-            width: CGFloat(2 + index % 7), filled: index % 2 == 0)
-    }
-
     private static func roundtrip() -> String {
         var history = AnnotationHistory()
-        let kinds = AnnotationKinds.all.map(\.id) + [AnnotationKindID("kind-from-a-newer-snapit")]
-        for (index, kind) in kinds.enumerated() {
-            let annotation = Annotation(
-                id: history.makeID(), kind: kind, start: CGPoint(x: 5 + CGFloat(index) * 3, y: 7.5),
-                end: CGPoint(x: 40.25, y: 90 + CGFloat(index)), style: style(index))
-            history.change { $0.annotations.append(annotation) }
+        // One sample of every kind in the registry (each kind says what its fields are), and one of
+        // a kind no snapit knows.
+        var samples = AnnotationKinds.all.enumerated().map { index, kind in
+            kind.sampleAnnotation(id: 0, origin: CGPoint(x: 5.5 + CGFloat(index) * 3, y: 7.5), index: index)
+        }
+        var unknown = AnnotationKinds.all[0].sampleAnnotation(id: 0, origin: CGPoint(x: 9.25, y: 3), index: samples.count)
+        unknown.kind = AnnotationKindID("kind-from-a-newer-snapit")
+        samples.append(unknown)
+        let kinds = samples.map(\.kind)
+        for var annotation in samples {
+            annotation.id = history.makeID()
+            let sample = annotation
+            history.change { $0.annotations.append(sample) }
         }
         history.change { $0.crop = CGRect(x: 10, y: 12.5, width: 100, height: 80.25) }
         // More steps than the cap keeps.

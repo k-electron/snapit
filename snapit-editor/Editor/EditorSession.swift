@@ -112,6 +112,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
         guard let number = document?.captureNumber else { return close() }
         // The helper may quit as this window closes, so the menu bar app hears first; the
         // main thread never waits for the reply.
+        EditorSessions.shared.markDeleted(captureNumber: number)
         Task {
             // The Capture's state is not written again (not even by the close below), and a write
             // already queued has run or been dropped before the files are removed.

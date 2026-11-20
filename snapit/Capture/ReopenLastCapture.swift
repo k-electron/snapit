@@ -16,6 +16,8 @@ enum ReopenLastCapture {
         case none
         /// A Reopen is already under way.
         case busy
+        /// A newer Capture, or Delete Capture, replaced the Last Capture while this Reopen was on its way.
+        case superseded
         /// The stored Capture is damaged; the helper told the user and the Last Capture is gone.
         case couldNotReopen
         case failed(String)
@@ -32,7 +34,13 @@ enum ReopenLastCapture {
         do {
             try await EditorHelperLauncher.open(capture: number, command: .reopenCapture)
             return .opened(number: number)
+        } catch EditorHelperError.refused(let reply) where reply.contains("superseded") {
+            // A newer Capture (or Delete Capture) got there first: it is the Last Capture now, or
+            // there is none. Nothing to delete and nothing to say.
+            return .superseded
         } catch EditorHelperError.refused(let reply) where reply.contains("could-not-reopen") {
+            // The message window is the helper's: bring it in front of whatever app is frontmost.
+            await EditorHelperLauncher.bringForward()
             CaptureHandoff.delete(number: number)
             return .couldNotReopen
         } catch {

@@ -72,6 +72,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `menu-enabled <id>` | `yes` or `no`: whether a menu item is enabled now (Reopen Last Capture is `no` while there is no Last Capture) |
 | `last-capture` | the Last Capture's number, or `none` |
+| `capture-folder-race` | the next Capture file finds its (empty) folder removed between the folder being made and the file being created, as a Delete Capture can do; the write makes the folder again |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
@@ -120,6 +121,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `annotation-kinds` | the ids in `AnnotationKinds.all`, one per line |
 | `editor-inject-kinds <N>` | one Annotation of every kind in `AnnotationKinds.all` added to Editor N, each its own Undo step (a ticket that adds a kind is covered by the Reopen flow with no edit) |
 | `editor-state-crop <N> get\|set <x> <y> <w> <h>` | Editor N's crop in image points (`none` for the whole Capture); `set` is one Undo step. Stands in for the Crop tool, to check the crop is stored |
+| `editor-menu-quit` | chooses "Quit snapit" in the helper's own menu (replies at once, the quit goes on in the background) |
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
@@ -170,7 +172,19 @@ array: `history.state.annotations`, `history.undoSteps`). Nothing else reaches i
 - **Reopen.** The menu item sends `reopen-capture <N>`. The helper maps the pixels as they are and reads the state:
   no state file is an untouched Capture, an unreadable one (or a pixel file that is cut short) is damage. Damage
   shows `ReopenNotice` ("That Capture couldn't be reopened."), answers `error could-not-reopen` and the menu bar
-  app drops the Last Capture, so the item greys out. `LastCapture` (observable) is what the menu item reads.
+  app drops the Last Capture, so the item greys out (after bringing the helper in front, so the message is
+  seen). `LastCapture` (observable) is what the menu item reads. A Reopen that arrives after a newer Capture
+  has become the Last Capture (Capture numbers only grow) or after the Capture was deleted answers
+  `error superseded`: no message, nothing deleted, nothing demoted.
+- **Quit.** The built-in `quit` command awaits `QuitPreparation.steps` (`Shared/Commands/QuitPreparation.swift`) before it
+  replies, and the helper's own "Quit snapit" runs the same steps first. The Last Capture's step supersedes the
+  generation and drains the queue. A feature that must act before quitting appends a step; **never register a second
+  handler for `quit`** (`SocketCommandRegistry.register` asserts a command is registered once). #28's Quit prompt is
+  its own command or its own step, never a second `quit`.
+- **Kinds with fields.** `AnnotationKind.sampleAnnotation(id:origin:index:)` gives the round-trip one Annotation of
+  the kind with every field non-default; the default sets the style. A kind that adds a field to `Annotation` (Text's
+  string and size, #25's) overrides it and sets that field to a non-default value, so a field missing from the
+  `Codable` keys fails `last-capture-roundtrip`.
 
 `scripts/run/flows/50-last-capture.sh` is the model. To work on one flow, `SNAPIT_FLOWS="10 20 50" scripts/check-run.sh <app>`
 runs only the flows whose numbers are listed (a flow that needs `AT_REST` needs flow `20`).

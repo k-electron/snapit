@@ -29,9 +29,10 @@ final class ReopenNotice: NSObject, NSWindowDelegate {
 
     private func present() {
         let hosting = NSHostingView(rootView: ReopenNoticeView(onClose: { [weak self] in self?.close() }))
-        let window = NSWindow(
+        let window = NoticeWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 380, height: 160)),
             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.title = "Reopen Last Capture"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
@@ -50,6 +51,11 @@ final class ReopenNotice: NSObject, NSWindowDelegate {
         window = nil
         if ReopenNotice.shared === self { ReopenNotice.shared = nil }
     }
+}
+
+/// Esc dismisses the message, as OK does.
+private final class NoticeWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) { close() }
 }
 
 private struct ReopenNoticeView: View {
