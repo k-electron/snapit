@@ -5,6 +5,8 @@ nonisolated enum AnnotationKinds {
         ArrowAnnotationKind(),
         RectangleAnnotationKind(),
         OvalAnnotationKind(),
+        TextAnnotationKind(),
+        HighlighterAnnotationKind(),
         RedactionAnnotationKind(),
     ]
 

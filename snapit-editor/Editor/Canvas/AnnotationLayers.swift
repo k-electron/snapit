@@ -92,6 +92,14 @@ final class AnnotationLayers {
         layoutSelection()
     }
 
+    /// Hides or shows the layer of an Annotation (a Text hides its own while it is being typed).
+    func setHidden(_ hidden: Bool, id: Int) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entries[id]?.layer.isHidden = hidden
+        CATransaction.commit()
+    }
+
     /// A drag ended: layers whose previews were throttled while it lasted catch up now.
     func settle() {
         for entry in entries.values where entry.isEffect {

@@ -27,19 +27,24 @@ private struct ControlMarkerModifier: ViewModifier {
 /// The marker view: transparent to clicks, so it never takes a click meant for the control.
 final class ControlMarkerView: NSView {
     var tooltip = ""
+    /// Whether the control the marker sits behind is enabled, as the view shows it.
+    var isControlEnabled = true
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 private struct ControlMarker: NSViewRepresentable {
     let tooltip: String
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeNSView(context: Context) -> ControlMarkerView {
         let view = ControlMarkerView()
         view.tooltip = tooltip
+        view.isControlEnabled = isEnabled
         return view
     }
 
     func updateNSView(_ view: ControlMarkerView, context: Context) {
         view.tooltip = tooltip
+        view.isControlEnabled = isEnabled
     }
 }

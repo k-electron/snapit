@@ -37,7 +37,7 @@ struct ToolbarPillsView: View {
         GlassGroup(spacing: 12) {
             HStack(spacing: 10) {
                 ForEach(slots, id: \.self) { slot in
-                    let items = ToolbarRegistry.items(in: slot)
+                    let items = ToolbarRegistry.items(in: slot).filter { $0.isVisible(in: session) }
                     if !items.isEmpty {
                         HStack(spacing: 4) {
                             ForEach(items, id: \.id) { $0.makeView(session: session) }
