@@ -21,8 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SocketOwnership.adopt(server)
             // Where this copy runs from: a mounted disk image or a translocated path needs a move.
             Task {
-                await InstallCheck.runAtLaunch()
+                let outcome = await InstallCheck.runAtLaunch()
                 LoginItemDefault.applyIfEligible()
+                // Onboarding (or the update's Permission guide) only once this copy is where it
+                // belongs: a Move to Applications screen comes first and the relaunched copy follows.
+                if outcome == .none { await OnboardingLauncher.runAtLaunch() }
             }
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.
