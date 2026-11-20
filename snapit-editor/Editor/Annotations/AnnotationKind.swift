@@ -26,6 +26,8 @@ struct AnnotationRenderContext {
     /// Pixels per point.
     let scale: Double
     let zoom: CGFloat
+    /// Backing pixels per view point of the window the canvas is in.
+    var backingScale: CGFloat = 2
     /// The part of the Capture the canvas shows, in Capture pixels, when a crop is applied; nil
     /// for all of it. A kind that previews from the Capture works on this part, as Export does.
     var cropPixels: PixelRect?
@@ -47,6 +49,13 @@ nonisolated protocol AnnotationKind: Sendable {
     var drawnByAnnotationStage: Bool { get }
     /// True when the kind comes as an outline or a solid fill (Rectangle, Oval).
     var supportsFill: Bool { get }
+    /// Which width control the kind answers to: the line width, the Highlighter's thickness, or none.
+    var widthChoice: WidthChoice { get }
+    /// True when the kind has a text size (Text).
+    var usesTextSize: Bool { get }
+    /// False when the Annotation color means nothing to the kind (Redaction pixelates), so choosing a
+    /// color leaves a selected one alone instead of recording an Undo step that changes nothing.
+    var usesColor: Bool { get }
     func paint(for annotation: Annotation) -> AnnotationPaint
     /// Whether a click at `point` (image points) is on the Annotation. Exact: the inside of a
     /// filled Annotation only, the stroke of an outline. `minimumWidth` makes a thin line
@@ -78,9 +87,27 @@ nonisolated protocol AnnotationKind: Sendable {
     func sampleAnnotation(id: Int, origin: CGPoint, index: Int) -> Annotation
 }
 
+/// A width control and its presets: lines (Arrow, Rectangle, Oval outlines) and the Highlighter
+/// each have their own, and each is remembered separately.
+nonisolated enum WidthChoice: Sendable {
+    case none, line, highlighter
+
+    /// The widths the control offers, in points.
+    var presets: [CGFloat] {
+        switch self {
+        case .none: []
+        case .line: [3, 5, 8]
+        case .highlighter: [14, 22, 34]
+        }
+    }
+}
+
 nonisolated extension AnnotationKind {
     var drawnByAnnotationStage: Bool { true }
     var supportsFill: Bool { false }
+    var widthChoice: WidthChoice { .line }
+    var usesTextSize: Bool { false }
+    var usesColor: Bool { true }
 
     func sampleAnnotation(id: Int, origin: CGPoint, index: Int) -> Annotation {
         let style = AnnotationStyle(

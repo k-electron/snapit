@@ -12,6 +12,7 @@ struct ShapeFillToolbarItem: EditorToolbarItem {
     let tooltip = "Fill: Outline or Solid"
 
     func isEnabled(in session: EditorSession) -> Bool { session.fillApplies }
+    func isVisible(in session: EditorSession) -> Bool { !session.isCropping }
 
     /// Pressing the item switches between the two.
     func perform(in session: EditorSession) {

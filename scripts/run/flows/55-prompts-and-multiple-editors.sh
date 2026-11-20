@@ -136,6 +136,37 @@ if pair; then
   end_pair
 fi
 
+# 3b. A Text still being typed counts as an edit: it is committed first, then counted, on a close
+#     and on a Quit.
+editing_now() { send "$EDITOR_SOCK" "editor-text $A" | sed -n 's/^editing=//p'; }
+if pair; then
+  EDITOR_N="$A"
+  keystroke t >/dev/null
+  click 30 40 >/dev/null
+  send "$EDITOR_SOCK" "editor-type $A T" >/dev/null
+  expect_equal "a Text is being typed in the older Editor" "yes" "$(editing_now)"
+  send_slow "$EDITOR_SOCK" "editor-key $A close" >/dev/null
+  if pr_wait_shown; then pass "closing an older Editor with a Text still being typed asks"; else fail "a Text being typed did not count as an edit on close"; fi
+  expect_equal "the Text was committed first" "no" "$(editing_now)"
+  pr_answer cancel
+  end_pair
+fi
+if pair; then
+  EDITOR_N="$A"
+  keystroke t >/dev/null
+  click 30 40 >/dev/null
+  send "$EDITOR_SOCK" "editor-type $A T" >/dev/null
+  OLD_APP="$APP_PID"
+  send_slow "$APP_SOCK" "menu-click quit" >"$RUN_ROOT/quit-menu.txt" 2>&1 &
+  QUIT_PID=$!
+  if pr_wait_shown; then pass "Quit snapit with a Text still being typed in an older Editor asks"; else fail "a Text being typed did not count as an edit on Quit"; fi
+  expect_contains "about that Editor" "shown quit editor=$A" "$(pr_prompt)"
+  pr_answer cancel
+  wait "$QUIT_PID"
+  expect_equal "Cancel keeps snapit running" "yes" "$(kill -0 "$OLD_APP" 2>/dev/null && echo yes)"
+  end_pair
+fi
+
 # 4. Exporting clears the unexported state: Copy, Save and a taken drop; each closes asking nothing.
 #    A refused drop, a failed Save and a change after the Export do not.
 if pair; then

@@ -19,6 +19,8 @@ enum AreaCaptureFlow {
         case permissionNeeded
         /// Another Capture is still running.
         case busy
+        /// A Timed Capture was counting down: the Shortcut cancelled it.
+        case countdownCancelled
         case failed(String)
     }
 
@@ -32,15 +34,23 @@ enum AreaCaptureFlow {
     }
 
     private static var overlay: AreaOverlayController?
-    private static var previousApp: NSRunningApplication?
+    static var previousApp: NSRunningApplication?
     private static var result: Result?
     private static var waiters: [CheckedContinuation<Result, Never>] = []
 
     /// Milliseconds from the start of the last `start()` until its overlay was on screen.
     private(set) static var lastShownMilliseconds: Double?
 
+    /// Shows the overlay for an Area Capture, or (`.window`) for a Window Capture: the same
+    /// overlay, but it picks the window under the pointer and a click captures that window alone.
     @discardableResult
-    static func start() async -> StartOutcome {
+    static func start(mode: AreaOverlayMode = .area) async -> StartOutcome {
+        // The Area Shortcut (or menu item) while a Timed Capture counts down cancels it. Window
+        // Capture (and the Color picker) do not: they meet the gate like a Screen Capture does.
+        if mode == .area, countdown != nil {
+            cancelTimedCapture()
+            return .countdownCancelled
+        }
         guard CaptureGate.enter() else { return .busy }
         let began = ContinuousClock.now
         result = nil
@@ -60,14 +70,16 @@ enum AreaCaptureFlow {
             let displays = try await source.freezeDisplays()
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
 
-            let controller = AreaOverlayController(displays: displays, windows: windows, pointer: source.pointerLocation)
+            let controller = AreaOverlayController(
+                displays: displays, windows: windows, pointer: source.pointerLocation, mode: mode)
             controller.onFinish = { outcome in finish(outcome) }
             overlay = controller
             controller.show(takesFocus: !TestMode.isActive)
+            if mode == .window { WindowCaptureSources.current.prepare() }
             lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
-            NSLog("snapit: Area Capture failed: \(error)")
+            NSLog("snapit: \(mode == .window ? "Window" : "Area") Capture failed: \(error)")
             conclude(.failed("\(error)"))
             return .failed("\(error)")
         }
@@ -92,7 +104,14 @@ enum AreaCaptureFlow {
             let frozen = controller.displays[selection.displayIndex]
             controller.teardown()
             Task {
-                conclude(await capture(frozen, area: selection.pixels))
+                conclude(await capture(frozen.screen, area: selection.pixels))
+            }
+        case .timed(let selection, let seconds):
+            beginTimedCapture(from: controller, selection: selection, seconds: seconds)
+        case .window(let window):
+            controller.teardown()
+            Task {
+                conclude(await WindowCaptureFlow.capture(window))
             }
         case .cancel:
             controller.teardown()
@@ -101,11 +120,12 @@ enum AreaCaptureFlow {
         }
     }
 
-    /// Crops the frozen frame in the engine into a Capture file and opens the Editor on it.
-    private static func capture(_ frozen: FrozenDisplay, area: PixelRect) async -> Result {
+    /// Crops `screen` (a frozen frame, or a Timed Capture's fresh one) in the engine into a Capture
+    /// file and opens the Editor on it.
+    static func capture(_ screen: CapturedScreen, area: PixelRect) async -> Result {
         do {
             let clock = CaptureTiming.Clock()
-            let number = try await CaptureHandoff.publish(frozen.screen, cropping: area)
+            let number = try await CaptureHandoff.publish(screen, cropping: area)
             do {
                 try await EditorHelperLauncher.open(capture: number)
             } catch {
@@ -123,8 +143,12 @@ enum AreaCaptureFlow {
 
     /// The one exit of every Area Capture: whatever happened, the gate opens, the waiters learn
     /// the outcome, and when no Editor opened the app the user was in gets focus back.
-    private static func conclude(_ outcome: Result) {
+    static func conclude(_ outcome: Result) {
         result = outcome
+
+        // Window Capture: lets go of the shareable-window list fetched while the overlay showed.
+        WindowCaptureSources.current.release()
+
         let previous = previousApp
         previousApp = nil
         if case .opened = outcome {} else {
