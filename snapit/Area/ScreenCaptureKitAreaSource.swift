@@ -15,7 +15,10 @@ struct ScreenCaptureKitAreaSource: AreaCaptureSource {
                 let display = content.displays.first(where: { $0.displayID == id })
             else { continue }
             let origin = CGDisplayBounds(id).origin
-            jobs.append(Job(filter: ScreenCaptureKitSource.filter(for: display, in: content), frame: screen.frame, cgOrigin: origin))
+            jobs.append(
+                Job(
+                    displayID: id, filter: ScreenCaptureKitSource.filter(for: display, in: content), frame: screen.frame,
+                    cgOrigin: origin))
         }
         guard !jobs.isEmpty else { throw ScreenCaptureError.noDisplay }
 
@@ -29,12 +32,15 @@ struct ScreenCaptureKitAreaSource: AreaCaptureSource {
             return shots
         }
         return jobs.enumerated().compactMap { index, job in
-            shots[index].map { FrozenDisplay(frame: job.frame, cgOrigin: job.cgOrigin, screen: $0) }
+            shots[index].map {
+                FrozenDisplay(displayID: job.displayID, frame: job.frame, cgOrigin: job.cgOrigin, screen: $0)
+            }
         }
     }
 
     /// A display waiting to be captured. The filter is only read by the capture call.
     private nonisolated struct Job: @unchecked Sendable {
+        let displayID: CGDirectDisplayID
         let filter: SCContentFilter
         let frame: CGRect
         let cgOrigin: CGPoint
