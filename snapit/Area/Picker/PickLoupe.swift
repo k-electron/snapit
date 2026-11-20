@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// The Color picker's loupe: 15 x 15 device pixels at 16x, nearest neighbour, the sampled pixel
+/// The Color picker's loupe: 15 x 15 device pixels at 16x, nearest neighbour, the pixel read
 /// outlined in the middle cell, with a swatch of its color and `#RRGGBB` underneath. A persistent
 /// layer tree like `OverlayLoupe`: a nudge changes the image layer's `contentsRect`, the swatch's
 /// color and two strings, nothing is drawn. The swatch is filled in the frozen frame's own color
@@ -64,7 +64,7 @@ final class PickLoupe {
         grid.fillColor = nil
         layer.addSublayer(grid)
 
-        // The outline sits on the sampled pixel's cell: black under white, so it reads on any color.
+        // The outline sits on the pixel read's cell: black under white, so it reads on any color.
         let middle = CGFloat(Self.cells / 2) * Self.zoom
         let cell = CGPath(
             rect: CGRect(x: middle, y: middle, width: Self.zoom, height: Self.zoom).insetBy(dx: -0.5, dy: -0.5),
@@ -127,7 +127,7 @@ final class PickLoupe {
                 height: visible.height / heightPx)
         }
 
-        let space = PixelSampler.rgbSpace(of: cgImage) ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = PixelColorReader.rgbSpace(of: cgImage) ?? CGColorSpace(name: CGColorSpace.sRGB)!
         swatch.backgroundColor = CGColor(
             colorSpace: space,
             components: [CGFloat(color.red) / 255, CGFloat(color.green) / 255, CGFloat(color.blue) / 255, 1])
@@ -142,7 +142,7 @@ final class PickLoupe {
 
     func hide() { layer.isHidden = true }
 
-    /// Lets go of the frozen frame the image layer samples.
+    /// Lets go of the frozen frame the image layer reads.
     func releaseFrame() {
         image.contents = nil
         hasFrame = false

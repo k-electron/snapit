@@ -88,7 +88,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|left\|right\|up\|down\|<letter>\|<key code> [shift]` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does; `shift` adds the Shift modifier) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `picked #RRGGBB` (the Color picker copied that hex), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `area` (the display and the Area: `<display> <x>,<y> <w>x<h>`, or `none`), `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
 | `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
 | `overlay-picker` | the Color picker: `display`, `pixel=<x>,<y>` (device pixels of that display's frame), `hex`, `origin` (`bar` or `entry`), `frame` (the frame's size in pixels), `loupe` (its frame in display points, or `none`), `outlined` and `swatch` (the centres of the outlined cell and the swatch, in display points, to read back from an `overlay-snapshot`); `none` when the picker is not up |
 | `color-toast` | the text of the "Copied #…" toast showing now, or `none` |
@@ -351,7 +351,7 @@ The Action bar is drawn in layers on Liquid Glass. AppKit controls and SwiftUI c
 memory that never comes back (a bar of `NSButton`s +2.4 MB, of SwiftUI buttons +2.7 MB, of
 SwiftUI on glass +4.2 MB, a bare `NSGlassEffectView` +1.7 MB; each once per process), a layer
 bar about 1 MB; so the bar is layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
-`AreaOverlayView` (the scene) fills it and, once a selection is being adjusted, the bar sits above it as
+`AreaOverlayView` (the scene) fills it and, once an Area is being adjusted, the bar sits above it as
 two small views, `ActionBarBackdropView` (an `NSGlassEffectView`, the Liquid Glass capsule) and
 `ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
 container (it hands everything to the scene view): every click reaches `AreaOverlayView`, whose
@@ -377,7 +377,7 @@ badge are glass too and share that one cost: once the bar has loaded it a second
 
 The Color picker is a state of the Area overlay (`State.pickingColor`), not a second overlay system:
 the same frozen frames, panels and key monitor. It opens from the Action bar (`PickColorActionBarItem`:
-the button and P; Esc goes back to the bar with the selection kept), and from the menu's Pick Color
+the button and P; Esc goes back to the bar with the Area kept), and from the menu's Pick Color
 and the `pick-color` Shortcut (`AreaCaptureFlow.startPickingColor()`: the overlay starts in the picker,
 Esc ends it, and no Editor is warmed up because no Capture opens). `ColorPickerSession` is the sampled
 device pixel as a plain value: the pointer aims it with `AreaGeometry.pixel(of:scale:...)` (display-local
@@ -387,7 +387,7 @@ let go, wherever it was dragged to; the second click of a double-click on the Pi
 `NSEvent.doubleClickInterval` of the picker opening is that button's and picks nothing.
 
 The hex is the frozen frame's pixel as stored, in the display's own color space, never converted to
-sRGB: `PixelSampler` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
+sRGB: `PixelColorReader` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
 image's own color space, so a Display P3 display gives Display P3 values (the same numbers the Capture
 file and the Editor hold for that pixel) and any pixel layout reads alike. The loupe (`PickLoupe`)
 shows 15 x 15 device pixels at 16x with the sampled pixel outlined, and its swatch is filled in the
@@ -443,7 +443,7 @@ own, so a premultiplied or dropped alpha shows).
 
 An item's tile is its hit area and its `tooltip` is the pill the scene draws: the standard button control does both, and a custom control needs only to give `id` and `tooltip` to `ActionBarControl.init`. The bar's size follows the controls' `preferredSize`. A control changes layers inside `CATransaction.setDisableActions(true)`.
 `FrozenDisplay.displayID` is the display's `CGDirectDisplayID` for a
-feature that needs to know which display a selection is on (Timed Capture's fresh Capture).
+feature that needs to know which display an Area is on (Timed Capture's fresh Capture).
 
 ## Adding to the Editor
 

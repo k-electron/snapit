@@ -34,12 +34,12 @@ final class AreaOverlayContainerView: NSView {
         bounds.contains(convert(point, from: superview)) ? sceneView : nil
     }
 
-    /// Shows the Action bar for `selection` (display points) and returns its frame. The bar's
+    /// Shows the Action bar for `Area` (display points) and returns its frame. The bar's
     /// layers are made the first time and kept until `releaseActionBar()`.
     @discardableResult
-    func showActionBar(for selection: CGRect, host: any ActionBarHost, scale: CGFloat) -> CGRect {
+    func showActionBar(for area: CGRect, host: any ActionBarHost, scale: CGFloat) -> CGRect {
         let bar = actionBar ?? makeBar(host: host, scale: scale)
-        let frame = ActionBarPlacement.frame(size: bar.size, selection: selection, in: bounds)
+        let frame = ActionBarPlacement.frame(size: bar.size, area: area, in: bounds)
         if frame != actionBarFrame || backdrop?.isHidden == true {
             CATransaction.begin()
             CATransaction.setDisableActions(true)

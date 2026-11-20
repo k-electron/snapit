@@ -35,7 +35,7 @@ nonisolated enum AreaGeometry {
         return PixelRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
-    /// The Area an overlay selection snaps to: the pixel rectangle back in points, which is what
+    /// The Area an overlay Area snaps to: the pixel rectangle back in points, which is what
     /// the overlay draws and what the Capture holds.
     static func points(of pixels: PixelRect, scale: Double) -> CGRect {
         CGRect(

@@ -34,7 +34,7 @@ struct ColorPickerSession: Equatable {
         pixel = PixelPoint(x: under.x, y: under.y)
     }
 
-    /// Moves the sampled pixel by whole device pixels, stopping at the frame's edge.
+    /// Moves the pixel read by whole device pixels, stopping at the frame's edge.
     mutating func nudge(dx: Int, dy: Int, width: Int, height: Int) {
         pixel = PixelPoint(x: max(0, min(width - 1, pixel.x + dx)), y: max(0, min(height - 1, pixel.y + dy)))
     }

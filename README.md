@@ -58,7 +58,7 @@ Flow 58 covers the User Guide: the menu item and Onboarding's link open one wind
 
 [docs/testing.md](docs/testing.md) explains test mode and how to add a flow, a fixture, a test-mode command or an engine test.
 
-CI (`.github/workflows/ci.yml`) runs `scripts/test.sh` on the hosted `xcode-27` arm64 runner (macOS 27 with Xcode 27). OSV-Scanner runs on Ubuntu from `.github/workflows/osv-scanner.yml`.
+Run `scripts/test.sh` locally first: it is the first line of defense. CI is the final check, run on pushes to `main` and `integration/**` only (`.github/workflows/ci.yml`: `scripts/test.sh` on the hosted `xcode-27` arm64 runner, macOS 27 with Xcode 27). OSV-Scanner runs on the same pushes, on Ubuntu, from `.github/workflows/osv-scanner.yml`.
 
 ## Install
 

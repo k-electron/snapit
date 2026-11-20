@@ -125,7 +125,7 @@ fi
 mouse down 0 50 40 >/dev/null
 mouse drag 0 120 90 >/dev/null
 mouse drag 0 200 150 >/dev/null
-expect_equal "dragging selects an Area, on the display it started on" "0 50,40 150x110" "$(fact selection)"
+expect_equal "dragging selects an Area, on the display it started on" "0 50,40 150x110" "$(fact area)"
 send "$APP_SOCK" "overlay-snapshot 0 $RUN_ROOT/overlay.png" >/dev/null
 read -r R G B <<<"$("$INSPECT" pixel "$RUN_ROOT/overlay.png" 190 50)"
 # Fixture at 190,50: 161,68,200, shown undimmed inside the selection.
@@ -184,7 +184,7 @@ expect_equal "no Capture file was made by the click" "$FILES_BEFORE" "$(capture_
 mouse down 0 10 170 >/dev/null
 mouse drag 0 12 171 >/dev/null
 mouse up 0 12 171 >/dev/null
-expect_equal "a drag under 3 pt selects nothing" "none" "$(fact selection | sed 's/^[^ ]* //')"
+expect_equal "a drag under 3 pt selects nothing" "none" "$(fact area | sed 's/^[^ ]* //')"
 expect_equal "the overlay is still up" "1" "$(overlay_panels | grep -c '^301x187 ')"
 
 # 5. Esc cancels: the overlay closes, nothing is captured, and the Shortcut works at once.
@@ -214,9 +214,9 @@ expect_equal "each panel has its display's size" "1" "$(overlay_panels | grep -c
 mouse down 1 20 20 >/dev/null
 mouse drag 1 120 90 >/dev/null
 mouse drag 0 100 100 >/dev/null   # a drag event on the other display's panel is ignored
-expect_equal "an event on the other display does not move the selection" "1 20,20 100x70" "$(fact selection)"
+expect_equal "an event on the other display does not move the selection" "1 20,20 100x70" "$(fact area)"
 mouse drag 1 400 300 >/dev/null   # far outside the second display
-expect_equal "the Area stops at the edge of the display it started on" "1 20,20 180x130" "$(fact selection)"
+expect_equal "the Area stops at the edge of the display it started on" "1 20,20 180x130" "$(fact area)"
 mouse up 1 400 300 >/dev/null
 if area_result; then pass "the Area on the second display is captured"; else fail "the second display's Capture finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
