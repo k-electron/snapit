@@ -2,9 +2,9 @@
 # already running (check-run.sh starts it). Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
-# The menu: Capture Screen with its Shortcut, the engine version (read through the C ABI), Quit.
-expect_in_order "menu lists Capture Screen, the engine version and Quit snapit, in that order" \
-  "$(send "$APP_SOCK" menu-titles)" "Capture Screen" "Engine $EXPECTED_VERSION" "Quit snapit"
+# The menu: Capture Screen with its Shortcut, then Quit (the engine version is in Settings' About).
+expect_in_order "menu lists Capture Screen and Quit snapit, in that order" \
+  "$(send "$APP_SOCK" menu-titles)" "Capture Screen" "Quit snapit"
 expect_equal "engine version round-trips through the C ABI in the menu bar app" "$EXPECTED_VERSION" "$(send "$APP_SOCK" engine-version)"
 expect_equal "an engine panic comes back as a status code in the menu bar app" "panic" "$(send "$APP_SOCK" engine-probe-panic)"
 expect_equal "the menu bar app survives an engine panic" "$EXPECTED_VERSION" "$(send "$APP_SOCK" engine-version)"
