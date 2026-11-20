@@ -20,7 +20,7 @@ The vocabulary (Capture, Editor, Annotation, Export and so on) is in [GLOSSARY.m
 
 Dependencies: [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) 3.x (MIT) through Swift Package Manager, pinned in `snapit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
 
-You need Xcode 26 or later, [rustup](https://rustup.rs) and [cbindgen](https://github.com/mozilla/cbindgen) 0.29.4 (`cargo install cbindgen --version 0.29.4 --locked`).
+You need Xcode 27, [rustup](https://rustup.rs) and [cbindgen](https://github.com/mozilla/cbindgen) 0.29.4 (`cargo install cbindgen --version 0.29.4 --locked`).
 
 ```sh
 xcodebuild -project snapit.xcodeproj -scheme snapit -configuration Release \
@@ -54,7 +54,7 @@ Flow 56 of that run covers Check for Updates with the HTTP request faked (no rea
 
 [docs/testing.md](docs/testing.md) explains test mode and how to add a flow, a fixture, a test-mode command or an engine test.
 
-CI (`.github/workflows/ci.yml`) runs `scripts/test.sh` on the `macos-26` arm64 runner. OSV-Scanner runs on Ubuntu from `.github/workflows/osv-scanner.yml`.
+CI (`.github/workflows/ci.yml`) runs `scripts/test.sh` on the hosted `xcode-27` arm64 runner (macOS 27 with Xcode 27). OSV-Scanner runs on Ubuntu from `.github/workflows/osv-scanner.yml`.
 
 ## Install
 
@@ -73,7 +73,7 @@ git tag v1.2.3
 git push origin v1.2.3
 ```
 
-`.github/workflows/release.yml` runs on every `vX.Y.Z` tag, on the `macos-26` arm64 runner. It runs `scripts/package-release.sh`, then publishes with `gh release create`:
+`.github/workflows/release.yml` runs on every `vX.Y.Z` tag, on the hosted `xcode-27` arm64 runner (macOS 27 with Xcode 27). It runs `scripts/package-release.sh`, then publishes with `gh release create`:
 
 1. **Build.** Release configuration, with the bundle version taken from the tag (`1.2.3`) and the build number from the workflow run.
 2. **Sign.** Ad-hoc (`codesign --sign -`), the Editor helper first, then the outer app, with the hardened runtime, no `--deep` and no entitlements. There is no certificate and no notarization, which is why people need Open Anyway.

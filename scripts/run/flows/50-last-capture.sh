@@ -355,10 +355,10 @@ if capture_into_editor "menu-click capture.screen"; then
   else
     fail "the menu bar app's memory went from ${CYCLE_BASELINE} MB to ${CYCLE_AFTER} MB over five Reopen cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
   fi
-  if awk -v a="$CYCLE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  if awk -v a="$CYCLE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
     pass "the menu bar app is back near its at-rest footprint after the Reopen cycles (${AT_REST} MB at rest, ${CYCLE_AFTER} MB after)"
   else
-    fail "the menu bar app is at ${CYCLE_AFTER} MB after the Reopen cycles, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+    fail "the menu bar app is at ${CYCLE_AFTER} MB after the Reopen cycles, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
   fi
   if awk -v lo="$HELPER_MIN" -v hi="$HELPER_MAX" 'BEGIN { exit !(lo > 0 && hi - lo <= 15) }'; then
     pass "the helper's footprint with a reopened 5K Editor is the same every cycle (${HELPER_MIN} to ${HELPER_MAX} MB)"

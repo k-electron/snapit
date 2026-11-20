@@ -84,10 +84,10 @@ expect_equal "Not Now leaves the source as it was" "$SOURCE_QUARANTINED" "$(quar
 if answers "$APP_SOCK"; then pass "snapit keeps running after Not Now"; else fail "snapit stopped after Not Now"; fi
 sleep 1
 AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+if awk -v a="$AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
   pass "memory is back near the at-rest footprint after the Move screen (${AT_REST} MB at rest, ${AFTER} MB after)"
 else
-  fail "memory is ${AFTER} MB after the Move screen, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+  fail "memory is ${AFTER} MB after the Move screen, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
 fi
 assert_idle_cpu "menu bar app after the Move screen" "$APP_PID" 3
 

@@ -1,12 +1,24 @@
 import SwiftUI
 
-// The look of the Editor's toolbars: macOS 26 glass. Every button in them uses
+// The look of the Editor's toolbars: Liquid Glass. Every button in them uses
 // `ChromeButtonStyle`, whose whole tile (not just the glyph) is the hit area.
 
 extension View {
     /// Draws the view on a glass pill of the given shape.
     func chromeGlass<S: Shape>(_ shape: S) -> some View {
         glassEffect(.regular, in: shape)
+    }
+}
+
+extension View {
+    /// A button of a window (not of a toolbar) in Liquid Glass: the system glass style, tinted
+    /// when it is the main one.
+    @ViewBuilder func windowButton(prominent: Bool) -> some View {
+        if prominent {
+            buttonStyle(.glassProminent).controlSize(.large)
+        } else {
+            buttonStyle(.glass).controlSize(.large)
+        }
     }
 }
 

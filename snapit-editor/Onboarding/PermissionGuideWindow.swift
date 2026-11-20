@@ -88,11 +88,9 @@ struct PermissionGuideWindowView: View {
             PermissionGuideView(model: model)
             Button(action: close) {
                 Text(model.isGranted ? "Done" : "Close")
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
                     .frame(minWidth: 90)
             }
-            .buttonStyle(ChromeButtonStyle(look: model.isGranted ? .prominent : .plain, radius: 12))
+            .windowButton(prominent: model.isGranted)
             .help(model.isGranted ? "Close this window" : "Close this window; snapit cannot take Captures until Screen Recording is on")
             .keyboardShortcut(.cancelAction)
         }

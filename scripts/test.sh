@@ -5,7 +5,7 @@
 #   scripts/test.sh            all stages
 #   scripts/test.sh engine     only the repo checks and the Rust stages
 #
-# Needs: Xcode 26 or later, rustup (the pinned toolchain in rust-toolchain.toml), cbindgen 0.29.4.
+# Needs: Xcode 27, rustup (the pinned toolchain in rust-toolchain.toml), cbindgen 0.29.4.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
