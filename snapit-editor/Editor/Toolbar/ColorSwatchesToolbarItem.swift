@@ -18,6 +18,8 @@ struct ColorSwatchesToolbarItem: EditorToolbarItem {
         session.setAnnotationColor(swatches[(current + 1) % swatches.count].color)
     }
 
+    func isVisible(in session: EditorSession) -> Bool { !session.isCropping }
+
     func makeView(session: EditorSession) -> AnyView {
         AnyView(ColorSwatchesControl(session: session))
     }

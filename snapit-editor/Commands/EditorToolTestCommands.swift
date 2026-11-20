@@ -8,7 +8,7 @@ nonisolated extension SocketCommand {
     static let editorMouse = SocketCommand("editor-mouse")
     /// `editor-drag <N> <x1> <y1> <x2> <y2>`: press, drag in steps, release. Test mode only.
     static let editorDrag = SocketCommand("editor-drag")
-    /// `editor-keystroke <N> undo|redo|delete|<character>`: sends Editor N's window ⌘Z, ⇧⌘Z, ⌫ or
+    /// `editor-keystroke <N> undo|redo|delete|enter|<character>`: sends Editor N's window ⌘Z, ⇧⌘Z, ⌫ or
     /// the key itself (a tool's key), the way a key press arrives. A `caps-` prefix holds Caps Lock
     /// down; a `plain-` prefix hands the window the key press only, without first offering it as a
     /// key equivalent. Test mode only.
@@ -30,8 +30,8 @@ nonisolated extension SocketCommand {
     /// through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture.
     /// Replies `ok key-before=yes|no key-after=yes|no`. Test mode only.
     static let editorClick = SocketCommand("editor-click")
-    /// `editor-preview <N>`: renders the canvas's own layers (the Capture and the Annotations, no
-    /// selection) at the Capture's pixel size with Core Animation, writes the PNG into the run's
+    /// `editor-preview <N> [overlay]`: renders the canvas's own layers (the Capture and the Annotations, no
+    /// selection; `overlay` adds the selection's outline and handles and the crop rectangle's shade and handles) at the pixel size of what the canvas shows (the Capture, or what an applied crop keeps) with Core Animation, writes the PNG into the run's
     /// `probe` folder and replies `ok <path>`. The run compares it with the Export. Test mode only.
     static let editorPreview = SocketCommand("editor-preview")
     /// `editor-enabled <N> <item id>`: `yes` or `no`, whether the toolbar item is enabled now. Test mode only.
@@ -95,6 +95,7 @@ extension SocketCommandRegistry {
             case "undo": event = Self.keyEvent("z", code: 6, flags: extra.union(.command), window: window)
             case "redo": event = Self.keyEvent("z", code: 6, flags: extra.union([.command, .shift]), window: window)
             case "delete": event = Self.keyEvent("\u{7F}", code: 51, flags: extra, window: window)
+            case "enter": event = Self.keyEvent("\r", code: 36, flags: extra, window: window)
             default:
                 guard name.count == 1 else { return "error unknown key \(name)" }
                 event = Self.keyEvent(name, code: 0, flags: extra, window: window)
@@ -219,7 +220,8 @@ extension SocketCommandRegistry {
                 let canvas = session.canvas, let folder = TestMode.folder("probe")
             else { return "error editor-preview <N>" }
             do {
-                let png = try Self.renderPreview(of: canvas, capture: document.capture)
+                let withOverlay = request.arguments.dropFirst().first == "overlay"
+                let png = try Self.renderPreview(of: canvas, capture: document.capture, withSelection: withOverlay)
                 let url = folder.appendingPathComponent("preview.png")
                 try png.write(to: url)
                 return "ok \(url.path)"
@@ -290,19 +292,22 @@ extension SocketCommandRegistry {
         return found
     }
 
-    /// The canvas's layers rendered at the Capture's pixel size, as a PNG in the Capture's color space.
-    private static func renderPreview(of canvas: CanvasView, capture: OpenedCapture) throws -> Data {
-        let width = capture.info.width, height = capture.info.height
+    /// The canvas's layers rendered at the pixel size of what the canvas shows (the Capture, or the
+    /// part an applied crop keeps), as a PNG in the Capture's color space.
+    private static func renderPreview(of canvas: CanvasView, capture: OpenedCapture, withSelection: Bool = false) throws -> Data {
+        let width = canvas.cropPixels?.width ?? capture.info.width
+        let height = canvas.cropPixels?.height ?? capture.info.height
         let target = try capture.pixels.makeEmptyBuffer(width: width, height: height)
         try target.withCGContext { context in
             context.scaleBy(x: capture.info.scale, y: capture.info.scale)
-            canvas.selectionLayer.isHidden = true
+            let wasHidden = canvas.selectionLayer.isHidden
+            canvas.selectionLayer.isHidden = !withSelection
             // Text layers draw at the Capture's scale for this image, as the Export does.
             let texts = (canvas.annotationLayer.sublayers ?? []).compactMap { $0 as? TextAnnotationLayer }
             let saved = texts.map { $0.beginPreview(scale: capture.info.scale) }
             canvas.contentLayer.render(in: context)
             for (layer, scale) in zip(texts, saved) { layer.endPreview(scale) }
-            canvas.selectionLayer.isHidden = false
+            canvas.selectionLayer.isHidden = wasHidden
         }
         return try target.encodePNG(level: .fast, dpi: capture.info.dpi)
     }

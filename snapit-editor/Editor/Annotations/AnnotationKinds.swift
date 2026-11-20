@@ -7,6 +7,7 @@ nonisolated enum AnnotationKinds {
         OvalAnnotationKind(),
         TextAnnotationKind(),
         HighlighterAnnotationKind(),
+        RedactionAnnotationKind(),
     ]
 
     /// Kinds the scripted run adds (`EditorToolTestCommands`), to exercise what no kind in `all`

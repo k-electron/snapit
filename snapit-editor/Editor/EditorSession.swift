@@ -34,8 +34,13 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var toolbarState = AnnotationToolbarState()
     /// The move, resize or drawing the pointer is in the middle of.
     @ObservationIgnored var annotationGesture: AnnotationGesture? {
-        didSet { refreshToolbarState() }
+        didSet {
+            refreshToolbarState()
+            if annotationGesture == nil { canvas?.settlePreviews() }
+        }
     }
+    /// The Crop tool's rectangle and drag (`EditorSession+Crop.swift`).
+    @ObservationIgnored var cropState = CropState()
     /// True while Copy (or any Export) is running.
     var isExporting = false
     /// True when this session was built ahead of its Capture (a warm-up).
@@ -68,7 +73,10 @@ final class EditorSession: NSObject, NSWindowDelegate {
         cancelEyedropper()
         endColorGesture()
         abortAnnotationGesture()
+        let previousToolID = selectedToolID
         selectedToolID = id
+        cropToolChanged(from: previousToolID, to: id)
+        if (previousToolID == CropTool.toolID) != (id == CropTool.toolID) { chrome?.refitToolbars() }
         // A drawing tool starts from nothing selected: its options (the fill) are then the
         // tool's, not the previous selection's.
         if ToolRegistry.tool(id: id)?.annotationKind != nil, selectedAnnotationID != nil { selectAnnotation(nil) }
@@ -119,6 +127,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// typed, a crop) finishes that first, before this closes.
     func escape() {
         if commitTextEditing() || cancelEyedropper() { return }
+        if cancelCropIfCropping() { return }
         close()
     }
 

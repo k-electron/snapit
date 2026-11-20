@@ -13,6 +13,31 @@ nonisolated enum CapturePixelSampler {
         return (x, y)
     }
 
+    /// What the canvas shows at pixel (`x`, `y`) of the Capture, as a color: the Capture's own pixel, or
+    /// under a Redaction the pixelated value (the topmost Redaction that covers it, made by the engine
+    /// as the preview and the Export make it), never the original pixel it hides. `window` is the part
+    /// of the Capture a crop kept (nil for all of it).
+    static func shownColor(
+        atX x: Int, y: Int, in buffer: PixelBuffer, scale: Double, window: PixelRect?, redactions: [Annotation]
+    ) -> AnnotationColor? {
+        let window = window ?? PixelRect(x: 0, y: 0, width: buffer.width, height: buffer.height)
+        for annotation in redactions.reversed() {
+            guard
+                let geometry = RedactionGeometry(
+                    annotation: annotation, scale: scale, captureWidth: buffer.width, captureHeight: buffer.height,
+                    window: window)
+            else { continue }
+            let areaX = x - window.x - geometry.area.x, areaY = y - window.y - geometry.area.y
+            guard areaX >= 0, areaY >= 0, areaX < geometry.area.width, areaY < geometry.area.height else { continue }
+            // The pixel is under this Redaction: read it from the pixelated area, not the original.
+            guard let pixelated = try? buffer.makeEmptyBuffer(width: geometry.area.width, height: geometry.area.height),
+                (try? Engine.pixelate(buffer, window: window, area: geometry.area, block: geometry.block, into: pixelated)) != nil
+            else { return nil }
+            return color(atX: areaX, y: areaY, in: pixelated)
+        }
+        return color(atX: x, y: y, in: buffer)
+    }
+
     /// The color at pixel (`x`, `y`) in extended sRGB. A Display P3 pixel that sRGB cannot show keeps
     /// its channels beyond 0...1 instead of being clamped, so drawn back into that Capture it comes out
     /// the same.

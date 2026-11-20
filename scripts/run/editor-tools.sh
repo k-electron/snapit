@@ -99,6 +99,8 @@ expect_nothing_selected() { expect_disabled "$1" delete-annotation; }
 
 # preview_png: the canvas's own layers rendered at the Capture's pixel size; prints the PNG's path.
 preview_png() { send "$EDITOR_SOCK" "editor-preview $EDITOR_N" | sed -n 's/^ok //p'; }
+# preview_overlay_png: the same with the selection's and the crop rectangle's outline, shade and handles.
+preview_overlay_png() { send "$EDITOR_SOCK" "editor-preview $EDITOR_N overlay" | sed -n 's/^ok //p'; }
 # background_editor <N>: makes another Editor's window key, so Editor N is a background Editor.
 background_editor() { send "$EDITOR_SOCK" "editor-background $1" >/dev/null; }
 # click_on <N> tool|item <id> | canvas <x> <y>: a click (through the window's sendEvent) in Editor N.
