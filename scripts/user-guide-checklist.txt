@@ -1,0 +1,32 @@
+# What the User Guide must cover: one line per flow of the spec (issue #13, stories 93 and 94).
+#   <section id>|<term>;<term>;...
+# The section with that id must exist and its text must contain every term. Used by
+# scripts/check-user-guide.sh (the guide's source) and flow 58 (the guide the helper loaded).
+overview|Capture;Editor;Export;Last Capture
+install|Open Anyway;Privacy & Security;DMG;Applications
+move-to-applications|Move to Applications;Not Now;eject
+onboarding|Welcome;Screen Recording;Save location;Shortcuts;Open at Login;Done
+screen-recording|Open System Settings;Quit & Reopen;Later;Relaunch snapit;Don't Allow
+screen-recording-notices|Periodic;Screen Recording
+menu|Capture Area;Capture Window;Capture Screen;Pick Color;Reopen Last Capture;Settings…;User Guide;Check for Updates…;Quit snapit
+shortcuts|⌃⌥⌘4;⌃⌥⌘5;⌃⌥⌘3;Pick Color;Settings
+free-system-shortcuts|⌘⇧3;⌘⇧4;⌘⇧5;System Settings;Keyboard Shortcuts…;Screenshots
+capture-area|Area;crosshair;loupe;Esc;Capture on release;Show Action bar
+capture-window|Window;Esc;⌃⌥⌘5
+capture-screen|Screen;⌃⌥⌘3
+action-bar|Action bar;Enter;double-click;Esc;handles;Capture in N s;Pick Color;Cancel
+timed-capture|Timed Capture;countdown;✕;1 to 10
+color-picker|Color picker;Eyedropper;#RRGGBB;arrow keys;Esc;Copied
+editor|Editor;Dock;Delete Capture;Copy;Save
+tools|Select;Arrow;Rectangle;Oval;Text;Highlighter;Redaction;Crop
+annotation-color|Annotation color;Eyedropper;Color wheel;Outline;Solid
+undo-and-keys|⌘Z;⇧⌘Z;⌘C;⌘S;Esc;Delete Annotation;⌫
+export|Copy;Save;snapit-YYYYMMDD-HHMMSS.png;drag;1x;144 dpi;Close the Editor
+folder-permission|folder Permission guide;Choose another folder;Try again;Open System Settings
+last-capture|Last Capture;Reopen Last Capture;Quitting
+delete-and-prompts|Delete Capture;first click;Discard this Capture?;Quit snapit?
+settings|General;Capturing;Editor;Shortcuts;Export;About
+launch-at-login|Open at Login
+updates|Check for Updates…;GitHub;Download
+after-an-update|Open Anyway;Screen Recording
+quitting|Quit snapit;Last Capture
