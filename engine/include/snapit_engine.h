@@ -345,9 +345,9 @@ SnapitStatus snapit_crop(const uint8_t *src,
                          size_t dst_stride);
 
 /*
- Averages a BGRA image down to `out_width` x `out_height` and writes it as BGRA, opaque, into
- `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out thumbnail; the
- averaging is the one the PNG encoder uses for a 1x Export.
+ Averages a BGRA image down to `out_width` x `out_height` and writes it as premultiplied BGRA,
+ alpha included, into `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out
+ thumbnail; the averaging is the one the PNG encoder uses for a 1x Export.
 
  `out_width` and `out_height` must be at least 1 and no larger than the source, and the source
  no larger than 65535 pixels either way. `max_row_samples` limits how many source rows are read
@@ -371,7 +371,8 @@ SnapitStatus snapit_downscale(const uint8_t *pixels,
                               uint32_t max_row_samples);
 
 /*
- Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
+ Encodes premultiplied BGRA pixels as a PNG and stores the bytes in `out`: RGB when every pixel
+ is opaque, RGBA (colours un-premultiplied) when any is not.
 
  * `stride` is the distance in bytes between rows and must be at least `width * 4`; bytes
    between the end of a row and the start of the next are never read into the image.
