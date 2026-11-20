@@ -97,3 +97,19 @@ Run on a real install, with Screen Recording granted, before a release and after
 6. With another app frontmost, press ⌃⌥⌘4, drag an Area and press Esc (and again with the Cancel button): the overlay goes, that app is frontmost with the keyboard, and ⌃⌥⌘4 works again at once.
 7. With two displays, make a selection on one and drag a handle toward the other: the selection stops at its own display's edge, and the bar is on that display.
 8. Memory, with `footprint <pid>`: the first Action bar adds under 1 MB that stays; later bars add nothing. Idle CPU is 0% with the bar and a tooltip showing.
+
+## Timed Capture on a real screen (#20)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/Timed/`. The scripted run drives the countdown with synthetic mouse events and a fixture Capture; only a real screen shows ScreenCaptureKit excluding snapit's windows, clicks passing through the border to real apps, and the panels over full-screen Spaces and open menus. Start from the default ("After selecting an Area" at Show Action bar).
+
+1. Press ⌃⌥⌘4, drag an Area. The Action bar offers Capture, a slider, "Capture in 3 s" and Cancel. Drag the slider across its whole length: the button says 1 to 10 s, and it follows the pointer even when the pointer leaves the bar. Quit snapit and open it again: the slider and the button still show the last value.
+2. Click "Capture in N s". The dimmed overlay goes at once; the previous app is frontmost with the keyboard. A thin border sits just outside the Area (not over its pixels), and a small badge with the seconds left and a ✕ sits below it, at the Area's right edge (above it, or inside its corner, when there is no room below).
+3. While it counts, use the apps under the border: click, scroll and type into the window inside the Area and on the border itself. Every click passes through to the app beneath; the border never takes one. Open a menu, hover a button for its tooltip, or start a video: whatever is on screen at zero is what is captured.
+4. Let it reach zero. The Editor opens on exactly the Area as it is at that moment (the menu, the hover and the video frame), with no border, badge or tooltip of snapit's in it, also at the Area's edges. Zoom in on the Area's edge in the Editor: no pixel of the border.
+5. Rest the pointer on the ✕: after half a second a "Cancel the countdown" pill appears and goes when the pointer leaves. Press on the ✕ and let go away from it: nothing happens. Press and release on it: the countdown ends, the border and badge go, no Editor opens, and ⌃⌥⌘4 works again at once.
+6. Start another countdown and press ⌃⌥⌘4: it cancels the same way. Press ⌃⌥⌘3 during a countdown: nothing happens.
+7. Press ⌃⌥⌘4 with another app frontmost, start a countdown, switch to a third app and press the ✕: the third app stays frontmost.
+8. With an app in a full-screen Space, start a Timed Capture of an Area in it: the border and badge show over the full-screen app, and the Capture at zero is that Space as it is. Repeat with a menu open at zero: the menu is in the Capture.
+9. With two displays, start a countdown on one and move the mouse to the other: the border and badge stay with the Area. Change the display arrangement during a countdown: it ends.
+10. Close the last Editor (⌘W) while a countdown runs, then let it reach zero: the Capture still opens, in a new Editor.
+11. Memory and CPU, with `footprint <pid>` and Activity Monitor: while a countdown runs snapit holds no frozen frame (about the resting footprint, plus the first Action bar's under 1 MB); at zero and after the Editor opens it returns to the resting footprint and idles at 0% CPU.

@@ -54,7 +54,7 @@ class ActionBarControl {
 
 /// The standard tile: a rounded rectangle with an optional glyph and a title. Pressing and
 /// releasing on it runs the item.
-final class ActionBarButtonControl: ActionBarControl {
+class ActionBarButtonControl: ActionBarControl {
     enum Look { case plain, prominent }
 
     static let height: CGFloat = 34
@@ -64,13 +64,17 @@ final class ActionBarButtonControl: ActionBarControl {
     private let look: Look
     private let glyphLayer = CAShapeLayer()
     private let titleLayer = CATextLayer()
+    private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
 
-    init(item: any ActionBarItem, context: ActionBarContext) {
+    /// `widestTitle` sizes the tile for a title that changes (`setTitle`): the longest it will
+    /// have. By default the item's own title.
+    init(item: any ActionBarItem, context: ActionBarContext, widestTitle: String? = nil) {
         self.item = item
         host = context.host
         look = item.look
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
-        let textWidth = ceil(NSAttributedString(string: item.title, attributes: [.font: font]).size().width)
+        let font = Self.font
+        let textWidth = ceil(
+            NSAttributedString(string: widestTitle ?? item.title, attributes: [.font: font]).size().width)
         let glyphWidth: CGFloat = item.glyph == nil ? 0 : Self.glyphSize + 6
         super.init(
             id: item.id, tooltip: item.tooltip,
@@ -96,17 +100,30 @@ final class ActionBarButtonControl: ActionBarControl {
             glyphLayer.lineJoin = .round
             layer.addSublayer(glyphLayer)
         }
-        let content = glyphWidth + textWidth
-        let left = (preferredSize.width - content) / 2
+        setTitle(item.title)
+        stateChanged()
+    }
+
+    private static let glyphSize: CGFloat = 14
+
+    /// Shows `title` on the button, centred with the glyph in the tile (a button whose words
+    /// change, like "Capture in 7 s", is sized for its longest by `widestTitle`).
+    func setTitle(_ title: String) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titleLayer.string = NSAttributedString(
+            string: title, attributes: [.font: Self.font, .foregroundColor: NSColor.white])
+        let textWidth = ceil(NSAttributedString(string: title, attributes: [.font: Self.font]).size().width)
+        titleLayer.bounds.size.width = textWidth + 2
+        let glyphWidth: CGFloat = item.glyph == nil ? 0 : Self.glyphSize + 6
+        let left = (preferredSize.width - (glyphWidth + textWidth)) / 2
         let middle = preferredSize.height / 2
         if item.glyph != nil {
             glyphLayer.position = CGPoint(x: left + Self.glyphSize / 2, y: middle)
         }
         titleLayer.position = CGPoint(x: left + glyphWidth + titleLayer.bounds.width / 2, y: middle)
-        stateChanged()
+        CATransaction.commit()
     }
-
-    private static let glyphSize: CGFloat = 14
 
     override func stateChanged() {
         let color: CGColor
