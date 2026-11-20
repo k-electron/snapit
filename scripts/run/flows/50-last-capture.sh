@@ -191,6 +191,13 @@ $B" "$(open_editors)"
     drag 40 30 120 90 >/dev/null
     if wait_until 5 lc_has_state "$B"; then pass "the new Last Capture's Editor writes its state"; else fail "no state file for the new Last Capture"; fi
     expect_equal "only the Last Capture's files exist" "capture-$B.pixels capture-$B.state " "$(lc_entries)"
+    # Reopen with the Last Capture's Editor in the background brings that Editor forward.
+    send "$EDITOR_SOCK" "editor-background $B" >/dev/null
+    expect_equal "the older Editor is in front of the Last Capture's" "$A" "$(send "$EDITOR_SOCK" editor-front)"
+    expect_equal "Reopen with a background Last Capture Editor replies ok" "ok" "$(send_slow "$APP_SOCK" "menu-click reopen-last-capture")"
+    expect_equal "Reopen brings the Last Capture's open Editor in front" "$B" "$(send "$EDITOR_SOCK" editor-front)"
+    expect_equal "and opens no second Editor for it" "$A
+$B" "$(open_editors)"
     # Deleting the older Capture leaves the Last Capture alone.
     send_slow "$EDITOR_SOCK" "editor-press $A delete-capture" >/dev/null
     wait_until 5 lc_only_editor "$B"
@@ -314,13 +321,19 @@ fi
 #     about to happen as snapit quits never recreates a file.
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 if capture_into_editor "menu-click capture.screen"; then
+  # A change whose state write is queued, and held there, when snapit quits: the helper may only
+  # answer the quit once that write can no longer land, so the files go and stay gone. The write is
+  # released after snapit has exited, while the helper is still alive.
+  send "$EDITOR_SOCK" "last-capture-hold on" >/dev/null
   keystroke r >/dev/null
   drag 40 30 120 90 >/dev/null
   printf 'not snapit\n' >"$CAPS/unrelated.txt"
+  sleep 1
   OLD_APP_PID="$APP_PID"
   OLD_HELPER="$HELPER_PID"
-  send "$APP_SOCK" quit >/dev/null   # the change is still waiting for its state write
+  send "$APP_SOCK" quit >/dev/null
   if wait_until 10 gone "$OLD_APP_PID"; then pass "snapit quits with a Last Capture"; else fail "snapit is still running"; fi
+  send "$EDITOR_SOCK" "last-capture-hold off" >/dev/null
   if wait_until 10 gone "$OLD_HELPER"; then pass "the Editor helper quits with it"; else fail "the helper outlived snapit"; fi
   sleep 1
   expect_equal "quitting removes the Capture's pixels and state, and nothing else" "unrelated.txt " "$(lc_entries)"

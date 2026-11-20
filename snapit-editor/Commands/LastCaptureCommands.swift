@@ -21,6 +21,10 @@ nonisolated extension SocketCommand {
     /// image points (`none` for the whole Capture), as one Undo step. There is no Crop tool in this
     /// command's way: it stands in for one, to check the crop is stored. Test mode only.
     static let editorStateCrop = SocketCommand("editor-state-crop")
+    /// `editor-front`: the number of the Editor whose window is frontmost of the helper's windows,
+    /// or `none`. A scripted run never activates the helper, so no window is key; the order is what
+    /// "brought forward" shows. Test mode only.
+    static let editorFront = SocketCommand("editor-front")
     /// `reopen-notice`: `shown <message>` while "That Capture couldn't be reopened." is on
     /// screen, else `none`. Test mode only.
     static let reopenNotice = SocketCommand("reopen-notice")
@@ -94,6 +98,11 @@ extension SocketCommandRegistry {
             }
             guard let crop = document.history.state.crop else { return "none" }
             return [crop.minX, crop.minY, crop.width, crop.height].map { String(format: "%.1f", $0) }.joined(separator: " ")
+        }
+        register(.editorFront) { _ in
+            let sessions = EditorSessions.shared.sessions
+            let front = NSApp.orderedWindows.compactMap { window in sessions.first { $0.value.window === window }?.key }.first
+            return front.map(String.init) ?? "none"
         }
         register(.reopenNotice) { _ in
             ReopenNotice.current.map { _ in "shown \(ReopenNotice.message)" } ?? "none"
