@@ -8,6 +8,9 @@ nonisolated enum AppIdentity {
     /// Launch argument the menu bar app passes to every Editor helper it starts. A helper
     /// started without it was launched on its own (for example from a Dock pin).
     static let startedBySnapitArgument = "--started-by-snapit"
+    /// Launch argument for a helper started at a Shortcut press: it builds an Editor window,
+    /// hidden, as soon as it is up, so the Capture only has to be attached and shown.
+    static let warmArgument = "--warm"
 
     /// snapit's private cache folder (mode 0700). Holds the sockets, and later the Last Capture.
     /// In test mode it is the per-run temporary root.

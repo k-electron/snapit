@@ -54,6 +54,9 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
+| `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
+| `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
+| `capture-timing` | `capture-to-editor-ms=<n> warm=yes\|no` for the last Capture: its pixels being ready to the Editor window showing |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
 | `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished |
 | `bound-shortcuts` | the ids of the Shortcuts that are bound |
@@ -79,6 +82,19 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 `editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
 view (a layer-backed view would report `layer-backed`).
 
+## Warm-up
+
+A Capture that starts (its Shortcut was pressed) calls `EditorWarmUp.begin()` (`snapit/Helper/EditorWarmUp.swift`)
+and, if it ends without a Capture, `EditorWarmUp.cancel()`. `begin()` starts the Editor helper hidden
+(launch argument `--warm`, no activation: an agent with no Dock icon and no window) and sends it
+`warm-up`, so it builds the Editor's window, toolbars and canvas without a Capture. `cancel()` sends
+`cancel-warm-up`: the warm Editor goes and a helper that never showed a window quits, so no helper
+process exists at rest; a helper with an Editor open stays. Opening the Capture
+(`EditorHelperLauncher.open`) waits for a warm-up in progress, uses the warm Editor and ends the
+warm-up. A new Capture mode adds those two calls and nothing else; `scripts/run/flows/35-editor-warm-up.sh`
+shows what to assert. A helper launched without `--started-by-snapit` (a Dock pin) starts the menu
+bar app and quits without building anything.
+
 The menu bar app tells the helper to open a Capture with `open-capture <N>`; the pixels reach it
 through the Capture file `<root>/captures/capture-<N>.pixels` (memory-mapped, never the socket).
 
@@ -94,7 +110,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `90-` Editor helper and Quit, which must stay last).
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
