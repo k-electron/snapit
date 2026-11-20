@@ -5,6 +5,7 @@
 //! comes back as [`SNAPIT_STATUS_PANIC`].
 
 mod buffer;
+mod capture_file;
 mod png_encode;
 mod version;
 
@@ -13,6 +14,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 pub use buffer::{
     SNAPIT_BYTES_PER_PIXEL, SNAPIT_ROW_ALIGNMENT, SnapitPixelBuffer, snapit_buffer_alloc,
     snapit_buffer_free,
+};
+pub use capture_file::{
+    SNAPIT_PIXEL_FORMAT_BGRA8_PREMULTIPLIED, SnapitCaptureHeader, snapit_capture_file_create,
+    snapit_capture_file_icc, snapit_capture_file_info, snapit_capture_file_map,
 };
 pub use png_encode::{
     SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_PNG_HIGH, SnapitBytes, snapit_bytes_free,
@@ -38,6 +43,10 @@ pub const SNAPIT_STATUS_PANIC: SnapitStatus = 3;
 pub const SNAPIT_STATUS_OUT_OF_MEMORY: SnapitStatus = 4;
 /// The PNG encoder failed.
 pub const SNAPIT_STATUS_ENCODE_FAILED: SnapitStatus = 5;
+/// A file operation failed (the disk is full, the file could not be written).
+pub const SNAPIT_STATUS_IO_FAILED: SnapitStatus = 6;
+/// A Capture file is damaged, truncated or from another version.
+pub const SNAPIT_STATUS_INVALID_FILE: SnapitStatus = 7;
 
 /// Runs `body`, turning a panic into [`SNAPIT_STATUS_PANIC`].
 pub(crate) fn guard(body: impl FnOnce() -> SnapitStatus) -> SnapitStatus {

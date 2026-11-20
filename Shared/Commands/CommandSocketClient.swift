@@ -32,9 +32,9 @@ nonisolated enum CommandSocketClient {
     /// Blocking send for the last moments of a process, when nothing else needs the main
     /// thread (an application in `applicationWillTerminate` no longer services tasks).
     /// Does nothing when no process listens on `path`.
-    static func sendBeforeExit(_ command: SocketCommand, to path: String) {
+    static func sendBeforeExit(_ command: SocketCommand, arguments: [String] = [], to path: String) {
         guard isListeningBlocking(at: path) else { return }
-        _ = try? exchange(SocketRequest(command: command), path: path, timeoutSeconds: 1)
+        _ = try? exchange(SocketRequest(command: command, arguments: arguments), path: path, timeoutSeconds: 1)
     }
 
     private static func exchange(_ request: SocketRequest, path: String, timeoutSeconds: Int) throws -> String {

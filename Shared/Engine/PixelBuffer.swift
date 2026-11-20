@@ -24,6 +24,9 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
     let stride: Int
     /// The color space the pixel values are in. Embedded in the PNG as its ICC profile.
     private(set) var colorSpace: CGColorSpace
+    /// The ICC profile bytes the pixels came with (a Capture file carries the display's), used
+    /// byte for byte when encoding. Nil: the profile of `colorSpace`.
+    let iccProfile: Data?
 
     /// An empty (zeroed) buffer for a `width` x `height` image.
     init(width: Int, height: Int, colorSpace: CGColorSpace? = nil) throws {
@@ -37,6 +40,29 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
         self.height = height
         stride = buffer.stride
         self.colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        iccProfile = nil
+    }
+
+    /// Takes over a mapping the engine made (a Capture file's pixels). Freed, unmapped, when
+    /// the last reference goes.
+    init(adopting buffer: SnapitPixelBuffer, colorSpace: CGColorSpace, iccProfile: Data?) {
+        raw = buffer
+        width = Int(buffer.width)
+        height = Int(buffer.height)
+        stride = buffer.stride
+        self.colorSpace = colorSpace
+        self.iccProfile = iccProfile
+    }
+
+    /// The color space to draw `image` in without converting it: its own, or sRGB when a
+    /// bitmap can't hold that one.
+    static func bitmapColorSpace(for image: CGImage) -> CGColorSpace {
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let space = image.colorSpace else { return srgb }
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        let probe = CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space, bitmapInfo: bitmapInfo)
+        return probe == nil ? srgb : space
     }
 
     /// Copies `image` into engine memory without converting it: the pixel values stay in the
@@ -50,7 +76,8 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
         _ = snapit_buffer_free(&raw)
     }
 
-    private func draw(_ image: CGImage) throws {
+    /// Draws `image` over the whole buffer, copying its pixels without converting them.
+    func draw(_ image: CGImage) throws {
         let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         func makeContext(_ space: CGColorSpace) -> CGContext? {
             CGContext(
@@ -80,7 +107,7 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
     /// Encodes the pixels as a PNG that carries the physical size (`dpi`) and this buffer's
     /// color profile. The returned bytes are freed back to the engine when released.
     func encodePNG(level: PNGLevel, dpi: Int) throws -> Data {
-        let profile = (colorSpace.copyICCData() as Data?) ?? Data()
+        let profile = iccProfile ?? (colorSpace.copyICCData() as Data?) ?? Data()
         var bytes = SnapitBytes(data: nil, len: 0, capacity: 0)
         let status = profile.withUnsafeBytes { profileBytes in
             snapit_png_encode(

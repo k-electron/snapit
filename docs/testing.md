@@ -61,6 +61,20 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 
+Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
+
+| Command | What it does |
+|---|---|
+| `editors` | the numbers of the open Editors, one per line (a Capture's number is the `N` in `open-capture <N>`) |
+| `editor-facts <N>` | `key=value` lines about Editor N: `pixels`, `scale`, `dpi`, `window`, `canvas`, `tool`, `activation` |
+| `editor-key <N> copy\|escape\|close` | sends the window the ⌘C, Esc or ⌘W key event; replies `ok` when a Copy it started has finished. A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
+| `editor-press <N> <item id>` | runs a top toolbar item's action (`copy`, `delete-capture`, ...), as its button does |
+| `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
+| `export-stages` | the Export pipeline's steps in the order they run |
+
+The menu bar app tells the helper to open a Capture with `open-capture <N>`; the pixels reach it
+through the Capture file `<root>/captures/capture-<N>.pixels` (memory-mapped, never the socket).
+
 ## The fixture image
 
 `FixtureCaptureSource` returns a deterministic image. At `w` x `h` pixels, pixel `(x, y)` is
@@ -72,14 +86,20 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 ## Adding a flow to the scripted run
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
-menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture,
-`90-` Editor helper and Quit, which must stay last). A flow can use everything in
-`scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`, `expect_contains`, `wait_until`,
-`footprint_mb`, `assert_idle_cpu`, `png_field`, ...) and the variables `APP_SOCK`, `EDITOR_SOCK`,
-`RUN_ROOT`, `APP_PID`, `INSPECT` (the `png-inspect` tool).
+menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
+into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
+`expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
+helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
+`EDITOR_N` and `HELPER_PID`; `copy_closes_editor`, `app_type <pid>` for Foreground (Dock icon)
+versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variables `APP_SOCK`,
+`EDITOR_SOCK`, `RUN_ROOT`, `APP_PID`, `INSPECT` (the `png-inspect` tool, which also lists a
+process's windows: `png-inspect windows <pid>`).
 
 1. Pick the fixture: `send "$APP_SOCK" "fixture-display 2 301 187"`.
-2. Drive the app through a command, never the real system.
+2. Drive the app through a command, never the real system. A Capture opens an Editor in the helper:
+   `capture_into_editor "menu-click capture.screen"`, then drive the Editor with `editor-key` and
+   `editor-press` on `$EDITOR_SOCK`.
 3. Assert on what is observable: dump the pasteboard PNG (`pasteboard-dump-png`), read it with
    `"$INSPECT" info` and `"$INSPECT" verify-fixture`, look at files under `$RUN_ROOT/save`, measure
    `footprint_mb` and `assert_idle_cpu`.
@@ -106,6 +126,30 @@ A feature that touches a new part of the real system adds one file for that edge
 `snapit/Capture/CaptureSource.swift` with `FixtureCaptureSource.swift` and `CaptureCommands.swift`
 is the model to copy. Edges both processes need live in `Shared/Edges/`; their commands in
 `Shared/TestMode/TestModeCommands.swift`.
+
+## Adding to the Editor
+
+Each part of the Editor is one file plus one line in a registry, so tickets that run in parallel
+do not edit the same file:
+
+| To add | Add a file in `snapit-editor/Editor/` | And one line in |
+|---|---|---|
+| an Annotation tool on the left toolbar | `Tools/<Name>Tool.swift` (`EditorTool`: `id`, `order`, `title`, `symbol`, `key`, pointer hooks in image points) | `Tools/ToolRegistry.swift` |
+| a control in the top toolbar | `Toolbar/<Name>ToolbarItem.swift` (`EditorToolbarItem`: `id`, `slot`, `order`, `symbol`, `tooltip`, `perform`) | `Toolbar/ToolbarRegistry.swift` |
+| an Export pipeline step | `Export/<Name>Stage.swift` (`ExportStage`: `id`, `order`, `apply`) | `Export/ExportPipeline.swift` |
+| an Editor action | `EditorSession+<Name>.swift` (an extension of `EditorSession`, called by the button, the key and the test command) | the key handler in `EditorWindow.swift` or a menu item in `Menu/HelperMainMenu.swift` |
+| a helper socket command | `Commands/<Name>Commands.swift` with a `register…Commands()` | `Commands/HelperCommands.swift` |
+
+Position comes from each entry's `order` (and a toolbar item's `slot`), never from the line
+order, so appended lines never conflict. Stage orders: crop 100, Redaction 200, Annotations 300,
+1x 400, then the PNG encode. Tooltips and full-size hit areas come with `ToolbarButton` and
+`ChromeButtonStyle`; a custom control applies `.help` and `.contentShape` itself. Document state a
+stage reads is copied into `ExportJob` (`EditorDocument.makeExportJob`) so the pipeline runs off the
+main actor.
+
+The helper's windows all go through `HelperLifecycle`: call `windowWillShow()` before creating a
+window (it makes the helper a regular app) and `windowDidShow()` after it shows. The helper quits
+when its last window closes.
 
 ## Adding a Shortcut
 

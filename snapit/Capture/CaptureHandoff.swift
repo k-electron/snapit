@@ -1,0 +1,40 @@
+import Foundation
+
+/// Hands a Capture to the Editor: the pixels go into a Capture file (memory-mapped, never over
+/// the socket), then the Editor helper is told to open Capture N.
+///
+/// Only the newest Capture's file is kept (it becomes the Last Capture); taking another
+/// Capture, deleting the Capture, or quitting removes it. The menu bar app holds no pixels
+/// afterwards: the mapping is gone when `publish` returns.
+@MainActor
+enum CaptureHandoff {
+    private static var nextNumber = 1
+    private static var latestNumber: Int?
+
+    /// Writes `screen` as the next Capture's file and removes the one before it. Returns its number.
+    static func publish(_ screen: CapturedScreen) async throws -> Int {
+        let number = nextNumber
+        nextNumber += 1
+        try await write(number: number, screen: screen)
+        if let previous = latestNumber { CaptureFiles.remove(number: previous) }
+        latestNumber = number
+        return number
+    }
+
+    /// The user deleted Capture N in the Editor.
+    static func delete(number: Int) {
+        CaptureFiles.remove(number: number)
+        if latestNumber == number { latestNumber = nil }
+    }
+
+    /// Removes every Capture file: at launch (anything left by a crash) and at quit.
+    static func removeAll() {
+        CaptureFiles.removeAll()
+        latestNumber = nil
+    }
+
+    @concurrent
+    private static func write(number: Int, screen: CapturedScreen) async throws {
+        try CaptureFiles.write(number: number, image: screen.image, scale: screen.scale)
+    }
+}
