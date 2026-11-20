@@ -3,7 +3,7 @@ import Foundation
 nonisolated extension SocketCommand {
     /// `update-script release <tag> <html_url> <notes> [draft|prerelease]`: the next requests are
     /// answered with HTTP 200 and a release object of that tag, link and notes (arguments are
-    /// percent-encoded, so notes may hold spaces and lines). `update-script raw <status> [<body>]`:
+    /// percent-encoded, so notes may hold spaces and lines). The link is only there to be ignored. `update-script raw <status> [<body>]`:
     /// that status and that body, whatever it is. `update-script offline`, `update-script timeout`:
     /// the failures. `update-script hold on|off`: while on, a request waits to be answered, so a run
     /// can see a check in progress. Test mode only.
@@ -12,6 +12,9 @@ nonisolated extension SocketCommand {
     static let updateRequests = SocketCommand("update-requests")
     /// `update-installed-version <x.y.z>|reset`: pretend another bundle version. Test mode only.
     static let updateInstalledVersion = SocketCommand("update-installed-version")
+    /// `update-redirect <url>`: whether the real endpoint would follow a redirect of its request to
+    /// that address: `follow` or `refuse`. Test mode only.
+    static let updateRedirect = SocketCommand("update-redirect")
     /// `update-compare <a> <b>`: how version `a` compares with `b` through `ReleaseVersion`:
     /// `newer`, `same`, `older`, or `invalid a`, `invalid b`. Test mode only.
     static let updateCompare = SocketCommand("update-compare")
@@ -28,6 +31,10 @@ extension SocketCommandRegistry {
             guard let value = request.arguments.first else { return "error update-installed-version <x.y.z>|reset" }
             InstalledVersion.pretended = value == "reset" ? nil : value
             return "ok"
+        }
+        register(.updateRedirect) { request in
+            guard let text = request.arguments.first, let url = URL(string: text) else { return "error update-redirect <url>" }
+            return ReleaseRequest.latest.allowsRedirect(to: url) ? "follow" : "refuse"
         }
         register(.updateCompare) { request in
             guard request.arguments.count == 2 else { return "error update-compare <a> <b>" }

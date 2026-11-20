@@ -26,7 +26,12 @@ final class UpdateModel {
         let tooltip: String
     }
 
-    private(set) var state = State.checking
+    private(set) var state = State.checking {
+        didSet { blocks = ReleaseNotesBlocks.parse(notes ?? "") }
+    }
+
+    /// The release notes, parsed once when the answer arrives.
+    private(set) var blocks: [NotesBlock] = []
 
     /// Called when the user chooses Download or Close.
     var onClose: () -> Void = {}
@@ -56,7 +61,7 @@ final class UpdateModel {
     var headline: String {
         switch state {
         case .checking: "Checking for updates…"
-        case .answered(.newer(_, let version, _, _)): "snapit \(version) is available"
+        case .answered(.newer(_, let version, _, _)): "snapit \(version) is available."
         case .answered(.upToDate(let installed)): "snapit \(installed) is up to date."
         case .answered(.unreachable(let reason)):
             switch reason {
@@ -66,7 +71,7 @@ final class UpdateModel {
             case .noRelease: "GitHub has no release of snapit to compare with."
             case .badResponse: "Couldn't read GitHub's answer. Try again later."
             case .ownVersion: "Couldn't read the version of this snapit."
-            case .noAnswer: "snapit did not answer. Quit snapit and open it again."
+            case .noAnswer: "snapit didn't answer. Quit snapit and open it again."
             }
         }
     }

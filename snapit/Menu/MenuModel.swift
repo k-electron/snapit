@@ -12,6 +12,7 @@ final class MenuModel {
         CaptureMenu(),
         LastCaptureMenu(),
         SettingsMenu(),
+        // The spec's order: Settings…, User Guide, Check for Updates…, Quit snapit. User Guide goes above this line.
         CheckForUpdatesMenu(),
         QuitMenu(),
     ]

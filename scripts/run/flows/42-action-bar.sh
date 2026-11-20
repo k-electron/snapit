@@ -73,8 +73,8 @@ expect_contains "the overlay is still layer-hosted with the bar up" "view=layer-
 
 # 2. The bar's items: Capture and Cancel, each with a tooltip and a whole tile to click.
 ITEMS="$(send "$APP_SOCK" overlay-actionbar)"
-expect_in_order "the Action bar offers Capture before Cancel" "$(printf '%s\n' "$ITEMS" | grep '^item ' | cut -d'|' -f1-4)" \
-  "item capture|Capture|Capture this Area (Enter)|none" "item cancel|Cancel|Cancel (Esc)|none"
+expect_in_order "the Action bar offers Capture before Pick Color before Cancel" "$(printf '%s\n' "$ITEMS" | grep '^item ' | cut -d'|' -f1-4)" \
+  "item capture|Capture|Capture this Area (Enter)|none" "item pick-color|Pick Color|Pick a color from the screen (P)|p" "item cancel|Cancel|Cancel (Esc)|none"
 expect_contains "Capture has a tooltip that names Enter" "item capture|Capture|Capture this Area (Enter)|" "$ITEMS"
 expect_contains "Cancel has a tooltip that names Esc" "item cancel|Cancel|Cancel (Esc)|" "$ITEMS"
 TOOLTIPS_OK=1
@@ -130,8 +130,8 @@ expect_equal "a press on Cancel released elsewhere does not cancel" "adjusting" 
 expect_equal "and the overlay is still up" "1" "$(overlay_panels | grep -c '^600x400 ')"
 
 # 3. Keys: a key no item claims is ignored, Enter does nothing before a selection exists, and an
-#    item's own key would run it (the Color picker adds P).
-send "$APP_SOCK" "overlay-key p" >/dev/null
+#    item's own key would run it (47-color-picker.sh drives P).
+send "$APP_SOCK" "overlay-key z" >/dev/null
 expect_equal "a key no Action bar item claims does nothing" "adjusting" "$(fact state)"
 area_cancel
 sleep 1

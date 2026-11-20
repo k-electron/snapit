@@ -3,7 +3,7 @@ import AppKit
 nonisolated extension SocketCommand {
     /// Facts about the update window, one `key=value` line each: `window`, `title`, `activation`,
     /// `state` (`checking`, `newer`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`,
-    /// `url`, `notes` (percent-encoded); then one `notes-block <kind>|<text>` line per block of the
+    /// `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`; then one `notes-block <kind>|<text>` line per block of the
     /// rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test mode only.
     static let updateFacts = SocketCommand("update-facts")
     /// `update-press download|close`: presses a button of the update window. Test mode only.
@@ -69,8 +69,10 @@ enum UpdateFacts {
             "url=\(model.downloadURL?.absoluteString ?? "")",
             "notes=\(encoded(model.notes ?? ""))",
         ]
-        for block in ReleaseNotesBlocks.parse(model.notes ?? "") {
-            lines.append("notes-block \(block.kind)|\(block.plainText)")
+        lines.append("notes-bytes=\((model.notes ?? "").utf8.count)")
+        lines.append("notes-blocks=\(model.blocks.count)")
+        for block in model.blocks {
+            lines.append("notes-block \(block.kind.rawValue)|\(block.plainText)")
         }
         lines += model.buttons.map { "button \($0.id)|\($0.title)|\($0.tooltip)" }
         return lines.joined(separator: "\n")
