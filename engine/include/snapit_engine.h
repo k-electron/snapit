@@ -315,32 +315,6 @@ SnapitStatus snapit_capture_file_map(int32_t fd,
                                      struct SnapitPixelBuffer *out);
 
 /*
- Averages a BGRA image down to `out_width` x `out_height` and writes it as BGRA, opaque, into
- `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out thumbnail; the
- averaging is the one the PNG encoder uses for a 1x Export.
-
- `out_width` and `out_height` must be at least 1 and no larger than the source, and the source
- no larger than 65535 pixels either way. `max_row_samples` limits how many source rows are read
- for each output row (evenly spaced, equally weighted); 0 reads them all, which is the exact
- average. A preview of a big Capture passes a small number, so most of the Capture's memory-mapped
- pages are never read.
-
- # Safety
-
- `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes and `dst` for
- writes of `(out_height - 1) * dst_stride + out_width * 4` bytes; they must not overlap.
- */
-SnapitStatus snapit_downscale(const uint8_t *pixels,
-                              uint32_t width,
-                              uint32_t height,
-                              size_t stride,
-                              uint32_t out_width,
-                              uint32_t out_height,
-                              uint8_t *dst,
-                              size_t dst_stride,
-                              uint32_t max_row_samples);
-
-/*
  Copies the `width` x `height` pixels of an image that start at column `x`, row `y` into
  `dst`, byte for byte: no resampling, no color conversion. The result's top-left pixel is the
  source pixel at `(x, y)`.
@@ -369,6 +343,32 @@ SnapitStatus snapit_crop(const uint8_t *src,
                          uint32_t height,
                          uint8_t *dst,
                          size_t dst_stride);
+
+/*
+ Averages a BGRA image down to `out_width` x `out_height` and writes it as BGRA, opaque, into
+ `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out thumbnail; the
+ averaging is the one the PNG encoder uses for a 1x Export.
+
+ `out_width` and `out_height` must be at least 1 and no larger than the source, and the source
+ no larger than 65535 pixels either way. `max_row_samples` limits how many source rows are read
+ for each output row (evenly spaced, equally weighted); 0 reads them all, which is the exact
+ average. A preview of a big Capture passes a small number, so most of the Capture's memory-mapped
+ pages are never read.
+
+ # Safety
+
+ `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes and `dst` for
+ writes of `(out_height - 1) * dst_stride + out_width * 4` bytes; they must not overlap.
+ */
+SnapitStatus snapit_downscale(const uint8_t *pixels,
+                              uint32_t width,
+                              uint32_t height,
+                              size_t stride,
+                              uint32_t out_width,
+                              uint32_t out_height,
+                              uint8_t *dst,
+                              size_t dst_stride,
+                              uint32_t max_row_samples);
 
 /*
  Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
