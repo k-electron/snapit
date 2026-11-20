@@ -10,9 +10,9 @@ struct MenuBarContent: View {
                 Text(title)
             case .action(let title, let shortcut, let run):
                 if let shortcut {
-                    Button(title, action: run).keyboardShortcut(shortcut, modifiers: .command)
+                    Button(title, action: run).keyboardShortcut(shortcut, modifiers: .command).help(title)
                 } else {
-                    Button(title, action: run)
+                    Button(title, action: run).help(title)
                 }
             case .separator:
                 Divider()

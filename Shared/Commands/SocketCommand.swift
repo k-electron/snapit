@@ -36,4 +36,6 @@ extension SocketCommand {
     static let quit = SocketCommand("quit")
     /// Replies with the engine version read through the C ABI.
     static let engineVersion = SocketCommand("engine-version")
+    /// Makes the engine panic on purpose and replies with the status it came back as (`panic`).
+    static let engineProbePanic = SocketCommand("engine-probe-panic")
 }
