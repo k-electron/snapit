@@ -72,8 +72,10 @@ enum OnboardingProgress {
         return .welcome
     }
 
-    /// Records that `step` is the one showing now.
+    /// Records that `step` is the one showing now. A finished Onboarding stays finished: going back
+    /// from Done, or opening Onboarding again, does not start it over.
     static func store(_ step: OnboardingStep) {
+        guard !isFinished else { return }
         AppDefaults.store.set(step == .done ? finishedValue : step.rawValue, forKey: key)
     }
 }

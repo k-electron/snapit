@@ -24,12 +24,14 @@ the real system is replaced:
 | Area Capture source (frozen displays, the pointer) | one ScreenCaptureKit capture per display | the fixture image for each fake display, the pointer in the middle of the first | `snapit/Area/AreaCaptureSource.swift` |
 | Timed Capture's fresh Capture at zero | a new ScreenCaptureKit screenshot of the display, with snapit's whole application excluded by the content filter (its menu bar icon excepted), built from `OwnWindowExclusion.plan` | the fixture image of the fake display with a 4 x 4 pixel stamp in its corner (`R=250, G=<fresh Captures so far>, B=77`) and any of snapit's windows that the same `OwnWindowExclusion.plan` does not exclude painted over it. The 200 ms hide-and-fetch-again fallback (snapit missing from ScreenCaptureKit's list) is covered by `docs/manual-checks.md` only | `snapit/Area/Timed/TimedCaptureSource.swift` |
 | window list (hover highlight) | the window server's on-screen list | two fixed overlapping windows over the first fake display | `snapit/Area/OnScreenWindowSource.swift` |
-| Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
+| Screen Recording permission | `CGPreflightScreenCaptureAccess` and `CGRequestScreenCaptureAccess`, in the menu bar app only; the four states (`notDetermined`, `denied`, `granted`, `grantedStale`) are derived from that and from two remembered flags (granted before, asked) | the same derivation over a flag in the run's defaults that starts granted, so a run never meets a prompt; a request is a line in `<root>/screen-recording-requests`; `screen-recording-simulate` sets the fake macOS | `Shared/Edges/ScreenRecordingPermission.swift` |
+| resetting snapit's own Screen Recording entry | `/usr/bin/tccutil reset ScreenCapture <bundle id>`, run from inside the menu bar app, failures reported | a line in `<root>/tcc-resets` and the fake macOS no longer granting; fails while `<root>/tcc-reset-fail` exists (`tcc-reset-fail on`); the real `tccutil` and the real TCC database are never touched | `snapit/Onboarding/ScreenRecordingReset.swift` |
+| Onboarding's stored step | not stored: Welcome | finished, so no other flow meets Onboarding; a flow stores a step with `defaults-set onboardingStep <step>` first | `Shared/Onboarding/OnboardingStep.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist`, read and written straight through under a file lock (`FileBackedDefaults`): both processes see each other's writes at once | `Shared/Edges/AppDefaults.swift` |
 | Open at Login | `SMAppService.mainApp` (menu bar app) | a status kept in the run's defaults (so it survives a relaunch as the real one does), starting `notFound` like a fresh install; a copy that runs from an Applications folder registers it on launch (on by default); the real login items are never touched | `snapit/Settings/LoginItem.swift` |
-| macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5 | `Shared/Edges/SystemShortcutClashes.swift` |
+| macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5, and what a run adds with `system-shortcut-fixture add` | `Shared/Edges/SystemShortcutClashes.swift` |
 | System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
 | color panel (the Editor's color wheel button) | `NSColorPanel.shared`, which keeps its mode and swatches in the helper's own preferences | a fixture with no window and no preferences (`editor-color-panel`) | `snapit-editor/Editor/Color/ColorPanelEdge.swift`, `FixtureColorPanel.swift` |
@@ -98,6 +100,11 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
 | `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
 | `install-detect <path>` | detection with the real `statfs` and `/Volumes`, same reply as `install-location` |
+| `screen-recording-state`, `screen-recording-request`, `relaunch-snapit` | what the helper's Onboarding and Permission guide ask of the menu bar app, which alone asks macOS: where Screen Recording stands; ask afresh (after an update, reset snapit's own entry first; replies the state, then `reset-failed <why>` on a second line); relaunch (the helper quits first, so a reply may never reach the helper) |
+| `screen-recording-simulate notDetermined\|denied\|granted\|grantedStale` | puts the fake macOS where the user doing it would. `granted` is the default every other flow relies on: a flow that simulates anything else puts it back |
+| `screen-recording-facts` | `state=`, `requests=` (times snapit asked macOS) and `resets=` (times it reset its own entry) |
+| `tcc-reset-fail on\|off` | makes the fixture reset fail, as `tccutil` can |
+| `onboarding-launch-check` | runs what a launch does for Onboarding and the update's Permission guide: `onboarding`, `permission-guide` or `none` |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
 
@@ -141,6 +148,12 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-menu-quit` | chooses "Quit snapit" in the helper's own menu (replies at once, the quit goes on in the background) |
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
+| `onboarding-facts` | the Onboarding window: `window`, `title`, `activation`, `step`, `step-number`, `step-title`, `stored-step` (what a relaunch resumes at), `heading`, `text`, `try-it`, `user-guide` (`available` once the User Guide window sets its hook), the step's own lines (`save-location`, `shortcut <id>\|<combo>\|<glyphs>\|<flag>`, `login`, and at Screen Recording the guide's `guide-…` lines: `guide-state`, `guide-variant` (`prompt` or `systemSettings`), `guide-update`, `guide-checks`, `guide-animation` (`playing`, `stopped` or `idle`), `guide-loops`, `guide-loop-seconds`, `guide-plays`, `guide-headline`, `guide-message`, `guide-reset-failure`) and one `button <id>\|<title>\|<tooltip>` line per button |
+| `onboarding-press <button id>` | what clicking a button does (`next`, `back`, `done`, `open-at-login`, `user-guide`, `open-screenshot-shortcuts`, `open-system-settings`, `relaunch`, `replay`); `shortcut.<id>` starts a recorder and `shortcut-clear.<id>` clears one. The folder chooser is a real panel: `onboarding-choose-save-location <folder>` sets the folder |
+| `onboarding-activate` | what happens when the user comes back to snapit's window (it lost focus, then became active): the guide looks at Screen Recording again. A scripted run never activates the helper, so this stands in for it; nothing else makes the guide look |
+| `onboarding-hide`, `onboarding-unhide`, `onboarding-close`, `onboarding-key <key code> [<modifier>,...]`, `onboarding-snapshot <png>`, `onboarding-user-guide-fixture on\|off` | minimise and restore the window (the animation stops and plays again); press the close button (the helper quits); a key as a Shortcut recorder receives it; render the view; set or clear the User Guide hook with one that writes `<root>/user-guide-opened` |
+| `guide-facts`, `guide-press`, `guide-activate`, `guide-hide`, `guide-unhide`, `guide-close`, `guide-snapshot` | the same for a Permission guide that has its own window (after an update): `guide-facts` is `window`, `title`, `activation` and the guide's lines |
+| `system-shortcut-fixture add <key code> [<modifier>,...]\|reset` | macOS's own shortcuts a Shortcut can clash with, besides ⌘⇧3, ⌘⇧4 and ⌘⇧5 |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -528,6 +541,38 @@ While developing one flow, `SNAPIT_FLOWS="20 40 45 52" scripts/check-run.sh <app
 those flows (`52-settings.sh` uses helpers of 20, 40 and 45). The flow `52-settings.sh` is the model for driving a helper window: read `settings-facts`, act with
 `settings-press` and `settings-key`, and assert on what the rest of snapit does.
 
+## Onboarding and the Permission guide
+
+Onboarding is a window in the Editor helper (`snapit-editor/Onboarding/`): `OnboardingWindow` (one
+instance), `OnboardingModel` (the six `OnboardingStep`s, what each offers, the buttons), `OnboardingView`.
+It reuses Settings' pieces: its own `SettingsModel` for the Save location, the Shortcut recorders
+(`ShortcutRecorderRows`, `ShortcutRecorder`, `apply-shortcut`) and Open at Login. The step is stored
+through `AppDefaults.store` (`onboardingStep`) as it changes; reaching Done stores `finished` and a
+finished Onboarding never starts over. The menu bar app decides when it shows
+(`snapit/Onboarding/OnboardingLauncher.swift`): after the install location check passes at a launch,
+and from every Shortcut press (`ShortcutBindings` runs each action through `whenSetUp`) until it is
+finished. After Onboarding is finished, a launch that finds Screen Recording gone after it was granted
+(`grantedStale`) opens the Screen Recording guide alone.
+
+The Permission guide (`PermissionGuideModel`, `PermissionGuideView`, `PermissionGuideWindow` for its
+own window) is one component: Onboarding's second step and the standalone window show the same model. It
+asks the menu bar app over the socket (`screen-recording-state`, `screen-recording-request`); the helper
+never calls `ScreenRecordingPermission`, because macOS would list it as a second app. It looks at the
+permission when it first shows and when the window becomes active, never on a timer: a scripted run
+changes the fake macOS (`screen-recording-simulate`), waits, and asserts the guide has not looked until
+`onboarding-activate` / `guide-activate`. The drawing (`GuideDrawing`, `GuideTimeline`) is SwiftUI shapes
+whose whole state is one number, `GuideAnimation.progress`; a play is one finite animation of a few loops
+(`guide-loops`, `guide-loop-seconds`), and hiding the window or leaving the step cancels it by giving the
+drawing a new identity (without that, SwiftUI keeps evaluating the cancelled animation until its
+duration ends: measured at about 5% CPU in a hidden window). `flows/54-onboarding.sh` is the model: it
+stores a step, relaunches the menu bar app (a real relaunch keeps the test root), and drives every path.
+
+| To add | Do |
+|---|---|
+| a Permission guide for another permission | a case in `PermissionGuideKind` (`Shared/Commands/OnboardingCommands.swift`), a model and a drawing beside the Screen Recording ones, a branch in `show-permission-guide`'s handler (`OnboardingHelperCommands.swift`), and the menu bar app asks for it with `OnboardingLauncher.showPermissionGuide(_:)` |
+| a step of Onboarding | a case in `OnboardingStep`, its words and buttons in `OnboardingModel`, its view in `OnboardingView`, its lines in `OnboardingFacts` |
+| the User Guide link's target | set `UserGuideLink.open` when the User Guide window exists; the Done step shows the link only then |
+
 ## Engine tests
 
 `engine/tests/*.rs` call the C-ABI functions directly (`pixelate.rs`: the averaged-block pixelate, with its
@@ -541,6 +586,6 @@ the opaque case staying RGB, averaging, the thumbnail). After changing the C int
 ## Never in a test
 
 Touch the real clipboard, `~/Downloads`, the real cache folder or the bundle ID's `UserDefaults`
-domain; register a real hot key; trigger a Screen Recording prompt. The paths the scripted run does
+domain; register a real hot key; trigger a Screen Recording prompt; run the real `tccutil` or read the real TCC database. The paths the scripted run does
 not exercise are the real ScreenCaptureKit Capture, real hot keys, and the real Screen Recording
 permission and its prompt; they run only in a real install.
