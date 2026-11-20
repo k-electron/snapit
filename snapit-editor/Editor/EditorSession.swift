@@ -26,7 +26,10 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var toolbarState = AnnotationToolbarState()
     /// The move, resize or drawing the pointer is in the middle of.
     @ObservationIgnored var annotationGesture: AnnotationGesture? {
-        didSet { refreshToolbarState() }
+        didSet {
+            refreshToolbarState()
+            if annotationGesture == nil { canvas?.settlePreviews() }
+        }
     }
     /// The Crop tool's rectangle and drag (`EditorSession+Crop.swift`).
     @ObservationIgnored var cropState = CropState()

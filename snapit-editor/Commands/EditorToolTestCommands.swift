@@ -137,8 +137,6 @@ extension SocketCommandRegistry {
             lines.append("redo-steps=\(document.history.redoSteps.count)")
             lines.append("revision=\(document.revision)")
             lines.append("tool=\(session.selectedToolID)")
-            lines.append(
-                "crop=" + (document.crop.map { [$0.minX, $0.minY, $0.width, $0.height].map { String(format: "%.3f", $0) }.joined(separator: " ") } ?? "none"))
             lines.append("zoom=\(String(format: "%.3f", session.canvas?.zoom ?? 0))")
             return lines.joined(separator: "\n")
         }

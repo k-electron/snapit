@@ -172,7 +172,17 @@ final class CanvasView: NSView {
 
     /// What a kind's preview layer is given.
     var renderContext: AnnotationRenderContext {
-        AnnotationRenderContext(capture: capture, scale: captureScale, zoom: zoom, cropPixels: cropPixels)
+        AnnotationRenderContext(
+            capture: capture, scale: captureScale, zoom: zoom, cropPixels: cropPixels,
+            isLive: session?.annotationGesture != nil)
+    }
+
+    /// A drag of an Annotation ended: throttled previews catch up.
+    func settlePreviews() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        annotationLayers.settle()
+        CATransaction.commit()
     }
 
     /// Shows the Annotations, with `selected` outlined.
@@ -210,19 +220,38 @@ final class CanvasView: NSView {
         addCursorRect(bounds, cursor: cursor)
     }
 
+    /// True from a press outside an applied crop to its release: that gesture does nothing.
+    private var ignoresPointer = false
+
+    /// The pointer's place as a point of the Capture. With a crop applied, a press in the margin
+    /// around the visible part (further out than a handle reaches) is not on the Capture the
+    /// user sees, and a drag stops at the visible part's edge.
+    private func gesturePoint(_ event: NSEvent, isPress: Bool = false) -> CGPoint? {
+        let point = imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil))
+        guard cropPixels != nil else { return point }
+        let visible = viewRect
+        if isPress {
+            let reach = 10 / zoom
+            ignoresPointer = !visible.insetBy(dx: -reach, dy: -reach).contains(point)
+        }
+        guard !ignoresPointer else { return nil }
+        return CGPoint(x: min(max(point.x, visible.minX), visible.maxX), y: min(max(point.y, visible.minY), visible.maxY))
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        guard let session else { return }
-        session.currentTool.pointerDown(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
+        guard let session, let point = gesturePoint(event, isPress: true) else { return }
+        session.currentTool.pointerDown(at: point, in: session)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let session else { return }
-        session.currentTool.pointerDragged(to: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
+        guard let session, let point = gesturePoint(event) else { return }
+        session.currentTool.pointerDragged(to: point, in: session)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let session else { return }
-        session.currentTool.pointerUp(at: imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil)), in: session)
+        defer { ignoresPointer = false }
+        guard let session, let point = gesturePoint(event) else { return }
+        session.currentTool.pointerUp(at: point, in: session)
     }
 }

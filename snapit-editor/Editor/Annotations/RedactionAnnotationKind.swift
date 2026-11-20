@@ -41,6 +41,14 @@ nonisolated final class RedactionPreviewLayer: CALayer {
     }
 
     private var key: Key?
+    /// What a throttled update left for the catch-up, and when the last render was.
+    private var pending: (annotation: Annotation, context: AnnotationRenderContext)?
+    private var lastRender = ContinuousClock.now - .seconds(1)
+    private var catchUp: Task<Void, Never>?
+
+    /// While the pointer drags, the preview renders at most this often (about 30 per second): a
+    /// Redaction the size of a 6K Capture is tens of megabytes of pixels to make and upload.
+    private static let liveInterval = Duration.milliseconds(33)
 
     override init() {
         super.init()
@@ -69,7 +77,43 @@ nonisolated final class RedactionPreviewLayer: CALayer {
         let key = Key(
             area: geometry.area, block: geometry.block, window: window, scale: context.scale,
             capture: ObjectIdentifier(capture))
-        guard key != self.key else { return }
+        guard key != self.key else {
+            pending = nil
+            return
+        }
+        // During a drag, a render that comes too soon is left for one catch-up at the end of the
+        // interval (a one-shot wait the next update replaces, never a timer); everything else,
+        // including the last update of a drag, renders at once.
+        if context.isLive, ContinuousClock.now - lastRender < Self.liveInterval {
+            pending = (annotation, context)
+            if catchUp == nil {
+                catchUp = Task { [weak self] in
+                    try? await Task.sleep(for: Self.liveInterval)
+                    self?.flush()
+                }
+            }
+            return
+        }
+        pending = nil
+        render(geometry: geometry, key: key, window: window, in: context, capture: capture)
+    }
+
+    /// Renders what a throttled update left, now.
+    @MainActor func flush() {
+        catchUp?.cancel()
+        catchUp = nil
+        guard let (annotation, context) = pending else { return }
+        pending = nil
+        var settled = context
+        settled.isLive = false
+        show(annotation, in: settled)
+    }
+
+    @MainActor private func render(
+        geometry: RedactionGeometry, key: Key, window: PixelRect, in context: AnnotationRenderContext,
+        capture: PixelBuffer
+    ) {
+        lastRender = ContinuousClock.now
         do {
             let pixels = try capture.makeEmptyBuffer(width: geometry.area.width, height: geometry.area.height)
             try Engine.pixelate(capture, window: window, area: geometry.area, block: geometry.block, into: pixels)
@@ -85,6 +129,7 @@ nonisolated final class RedactionPreviewLayer: CALayer {
     }
 
     @MainActor private func hide() {
+        pending = nil
         contents = nil
         isHidden = true
         key = nil

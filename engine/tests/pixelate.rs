@@ -40,32 +40,33 @@ fn pixelate(
     }
 }
 
-/// What every pixel of the rectangle must be, worked out here and not by the engine: the grid of
-/// `block` x `block` tiles starts at the rectangle's top left, a tile cut off by the rectangle's
-/// right or bottom edge is smaller, and every pixel of a tile is the floored mean of the tile's
-/// source pixels, channel by channel (all four, alpha included).
+/// What every pixel of the rectangle must be, worked out here and not by the engine: the rectangle
+/// has `side / block` whole tiles across (at least one) starting at its top left, the last
+/// column and row of tiles take in whatever is left over (so they are between `block` and
+/// `2 * block - 1` wide, or the whole side when it is shorter than a block), and every pixel of a
+/// tile is the floored mean of the tile's source pixels, channel by channel (alpha included).
 fn expected(src: &[u8], stride: usize, rect: Rect, block: u32) -> Vec<[u8; 4]> {
     let (x, y, w, h) = rect;
-    let mut out = vec![[0u8; 4]; (w * h) as usize];
-    for ty in (0..h).step_by(block as usize) {
-        for tx in (0..w).step_by(block as usize) {
-            let (tw, th) = (block.min(w - tx), block.min(h - ty));
-            let mut sum = [0u64; 4];
-            for row in 0..th {
-                for col in 0..tw {
-                    let at = (y + ty + row) as usize * stride + (x + tx + col) as usize * 4;
-                    for (c, total) in sum.iter_mut().enumerate() {
-                        *total += u64::from(src[at + c]);
-                    }
-                }
+    let (cols, rows) = ((w / block).max(1), (h / block).max(1));
+    let tile_of = |col: u32, row: u32| ((col / block).min(cols - 1), (row / block).min(rows - 1));
+    let mut sums = vec![([0u64; 4], 0u64); (cols * rows) as usize];
+    for row in 0..h {
+        for col in 0..w {
+            let (tc, tr) = tile_of(col, row);
+            let at = (y + row) as usize * stride + (x + col) as usize * 4;
+            let (sum, n) = &mut sums[(tr * cols + tc) as usize];
+            for (c, total) in sum.iter_mut().enumerate() {
+                *total += u64::from(src[at + c]);
             }
-            let n = u64::from(tw) * u64::from(th);
-            let mean = [0, 1, 2, 3].map(|c| (sum[c] / n) as u8);
-            for row in 0..th {
-                for col in 0..tw {
-                    out[((ty + row) * w + tx + col) as usize] = mean;
-                }
-            }
+            *n += 1;
+        }
+    }
+    let mut out = Vec::with_capacity((w * h) as usize);
+    for row in 0..h {
+        for col in 0..w {
+            let (tc, tr) = tile_of(col, row);
+            let (sum, n) = sums[(tr * cols + tc) as usize];
+            out.push([0, 1, 2, 3].map(|c| (sum[c] / n) as u8));
         }
     }
     out
@@ -119,9 +120,68 @@ fn every_pixel_of_a_whole_number_of_blocks_is_its_blocks_mean() {
 }
 
 #[test]
-fn edge_blocks_are_smaller_and_averaged_over_their_own_pixels() {
-    // 101 x 53 with 16-pixel blocks: the last column of blocks is 5 wide, the last row 5 tall.
+fn the_leftover_at_the_edge_is_folded_into_the_last_tile() {
+    // 101 x 53 with 16-pixel blocks: 6 columns of tiles, the last 21 wide (16 + the 5 left over),
+    // and 3 rows, the last 21 tall.
     check((37, 19, 101, 53), 16, 101 * 4);
+}
+
+#[test]
+fn no_pixel_of_the_last_row_or_column_is_left_as_it_was() {
+    // (k * block + 1) x (m * block + 1): the corner pixel used to be a tile of its own, and so was
+    // its source pixel. It is now part of a tile of at least block x block pixels.
+    for (w, h, block) in [
+        (65u32, 49u32, 16u32),
+        (41, 41, 8),
+        (101, 61, 20),
+        (17, 17, 16),
+    ] {
+        let rect = (3, 5, w, h);
+        let src = fixture_bgra(SRC_W, SRC_H, SRC_STRIDE);
+        let mut dst = vec![PADDING; w as usize * 4 * h as usize];
+        assert_eq!(
+            pixelate(
+                &src,
+                (SRC_W, SRC_H),
+                SRC_STRIDE,
+                rect,
+                block,
+                &mut dst,
+                w as usize * 4
+            ),
+            SNAPIT_STATUS_OK
+        );
+        let source_at =
+            |col: u32, row: u32| (5 + row) as usize * SRC_STRIDE + (3 + col) as usize * 4;
+        let last = (h as usize - 1) * w as usize * 4 + (w as usize - 1) * 4;
+        let corner = source_at(w - 1, h - 1);
+        assert_ne!(
+            dst[last..last + 4],
+            src[corner..corner + 4],
+            "{w}x{h} block {block}: the corner pixel is the source pixel"
+        );
+        // Of the pixels in the last column and row, at most a couple may happen to equal their
+        // source pixel (the fixture's gradients and checker make that rare).
+        let mut same = 0;
+        for row in 0..h {
+            let d = (row as usize * w as usize + (w as usize - 1)) * 4;
+            let s = source_at(w - 1, row);
+            same += usize::from(dst[d..d + 4] == src[s..s + 4]);
+        }
+        for col in 0..w {
+            let d = ((h as usize - 1) * w as usize + col as usize) * 4;
+            let s = source_at(col, h - 1);
+            same += usize::from(dst[d..d + 4] == src[s..s + 4]);
+        }
+        assert!(
+            same <= 2,
+            "{w}x{h} block {block}: {same} edge pixels are source pixels"
+        );
+        let want = expected(&src, SRC_STRIDE, rect, block);
+        for (i, pixel) in dst.as_chunks::<4>().0.iter().enumerate() {
+            assert_eq!(*pixel, want[i], "{w}x{h} block {block}: pixel {i}");
+        }
+    }
 }
 
 #[test]
