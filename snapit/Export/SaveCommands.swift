@@ -6,6 +6,8 @@ nonisolated extension SocketCommand {
     static let saveHold = SocketCommand("save-hold")
     /// Test mode: lets the held Saves write. Replies `ok`.
     static let saveRelease = SocketCommand("save-release")
+    /// Test mode: `save-delay <seconds>` makes every Save's write start that much later. Replies `ok`.
+    static let saveDelay = SocketCommand("save-delay")
     /// Test mode: how many Saves are still being written.
     static let savePending = SocketCommand("save-pending")
 }
@@ -27,6 +29,11 @@ extension SocketCommandRegistry {
         }
         register(.saveRelease) { _ in
             SaveService.shared.releaseForTest()
+            return "ok"
+        }
+        register(.saveDelay) { request in
+            guard let seconds = request.arguments.first.flatMap(Double.init), seconds >= 0 else { return "error save-delay <seconds>" }
+            SaveService.shared.delayWritesForTest(seconds: seconds)
             return "ok"
         }
         register(.savePending) { _ in
