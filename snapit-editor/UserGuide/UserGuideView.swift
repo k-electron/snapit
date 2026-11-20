@@ -87,7 +87,7 @@ struct UserGuideView: View {
                         .lineLimit(1)
                         .padding(.horizontal, 6)
                 }
-                .buttonStyle(.glass)
+                .windowButton(prominent: false)
                 .help(model.previousButton.tooltip)
             }
             Spacer(minLength: 12)
@@ -98,7 +98,7 @@ struct UserGuideView: View {
                         .lineLimit(1)
                         .padding(.horizontal, 6)
                 }
-                .buttonStyle(.glass)
+                .windowButton(prominent: false)
                 .help(model.nextButton.tooltip)
             }
         }

@@ -24,7 +24,7 @@ snapit comes as one disk image (a DMG) with one app inside.
 
 > snapit is not notarized, so macOS blocks it the first time. Every update is a new build and needs **Open Anyway** again. See [After an update](#after-an-update).
 
-You approve snapit once. The Editor that lives inside the app is never blocked on its own, and you grant every permission once, to snapit itself.
+You approve snapit once, and you grant the one permission it needs once, to snapit itself: the Editor inside the app is part of snapit.
 
 If you opened snapit straight from the DMG, it offers to [move itself to Applications](#move-to-applications).
 
