@@ -259,10 +259,11 @@ clear_save_folder
 set_default closeEditorAfterSave true
 send "$APP_SOCK" pasteboard-clear >/dev/null
 
-# 9. Quit while a Save is still being written: snapit exits only after the file is written. A 7680 x 4320
-#    pixel Capture (3x of 2560 x 1440 points) takes the Balanced encode long enough for Quit to arrive in
-#    the middle of it. The run starts the menu bar app again afterwards, like flow 80 does.
-send "$APP_SOCK" "fixture-display 3 2560 1440" >/dev/null
+# 9. Quit while a Save is still being written: snapit exits only after the file is written. The write is
+#    delayed by 6 s (a sleeping thread, so nothing is held and the main thread stays free), which Quit
+#    arrives in the middle of. The run starts the menu bar app again afterwards, like flow 80 does.
+send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
+send "$APP_SOCK" "save-delay 6" >/dev/null
 clear_save_folder
 if capture_into_editor "menu-click capture.screen"; then
   NAME="$(send "$EDITOR_SOCK" "export-name $EDITOR_N")"
@@ -270,11 +271,13 @@ if capture_into_editor "menu-click capture.screen"; then
   wait_until 20 gone "$HELPER_PID"
   expect_equal "the Save is still being written when Quit comes" "1" "$(send "$APP_SOCK" save-pending)"
   expect_equal "the Saved file does not exist yet" "0" "$(saved_pngs | wc -l | tr -d ' ')"
+  QUIT_AT="$SECONDS"
   send "$APP_SOCK" quit >/dev/null
-  if wait_until 90 gone "$APP_PID"; then pass "Quit with a Save in progress still quits, once the Save is written"; else fail "snapit is still running 90 s after Quit with a Save in progress"; fi
+  if wait_until 60 gone "$APP_PID"; then pass "Quit with a Save in progress still quits"; else fail "snapit is still running 60 s after Quit with a Save in progress"; fi
+  if ((SECONDS - QUIT_AT >= 2)); then pass "snapit waited for the Save before it quit ($((SECONDS - QUIT_AT)) s)"; else fail "snapit quit after $((SECONDS - QUIT_AT)) s, before the delayed Save could be written"; fi
   if file_exists "$SAVE/$NAME"; then
     pass "the Save finished before snapit quit"
-    check_png "Save finished across Quit" "$SAVE/$NAME" 7680 4320 8504 "$P3_SHA" verify-fixture
+    check_png "Save finished across Quit" "$SAVE/$NAME" 602 374 5669 "$P3_SHA" verify-fixture
   else
     fail "snapit quit without writing $NAME"
   fi

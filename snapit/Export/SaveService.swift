@@ -36,6 +36,7 @@ nonisolated final class SaveService: @unchecked Sendable {
     private var inFlightPartials: Set<String> = []
     private var writeFailureObservers: [@Sendable (String) -> Void] = []
     private var heldForTest = false
+    private var testDelay: TimeInterval = 0
     private let testGate = DispatchSemaphore(value: 0)
 
     /// How many Saves are still being written (or checked).
@@ -203,8 +204,17 @@ nonisolated final class SaveService: @unchecked Sendable {
         if wasHeld { testGate.signal() }
     }
 
+    /// Makes every write start `seconds` late (test mode only). Unlike the hold it needs no command
+    /// to let go of it, so Quit can be tested with a Save in progress: the write thread just sleeps.
+    func delayWritesForTest(seconds: TimeInterval) {
+        lock.withLock { testDelay = seconds }
+    }
+
     private func awaitTestGate() {
-        guard TestMode.isActive, lock.withLock({ heldForTest }) else { return }
+        guard TestMode.isActive else { return }
+        let delay = lock.withLock { testDelay }
+        if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+        guard lock.withLock({ heldForTest }) else { return }
         testGate.wait()
     }
 }
