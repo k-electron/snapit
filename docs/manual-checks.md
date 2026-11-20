@@ -97,3 +97,19 @@ Run on a real install, with Screen Recording granted, before a release and after
 6. With another app frontmost, press ⌃⌥⌘4, drag an Area and press Esc (and again with the Cancel button): the overlay goes, that app is frontmost with the keyboard, and ⌃⌥⌘4 works again at once.
 7. With two displays, make a selection on one and drag a handle toward the other: the selection stops at its own display's edge, and the bar is on that display.
 8. Memory, with `footprint <pid>`: the first Action bar adds under 1 MB that stays; later bars add nothing. Idle CPU is 0% with the bar and a tooltip showing.
+
+## Window Capture on a real screen (#22)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Window/`. The scripted run drives the window overlay over a fixture window list and a fixture window image; only a real screen shows ScreenCaptureKit's single-window capture: the shadow, covered and full-screen windows, and the real corner alpha.
+
+1. Press ⌃⌥⌘5 (or choose Capture Window). The overlay appears at once; the screen is dimmed except the window under the pointer, which has a white and blue outline. There is no crosshair, loupe or Action bar. Move over overlapping windows: the front one is highlighted.
+2. Click a window: the Editor opens on exactly that window. Paste it into an app that shows transparency (Preview, a design tool): the rounded corners are transparent (no black or white corner pixels) and there is no shadow. Zoom in on an edge: it is where the window's edge was.
+3. Window Captures do not include the shadow (`WindowCapture.includesShadow` is false). The Capture's size is the window's size in points times the display's scale, e.g. a 1200 x 800 pt window on a Retina display is 2400 x 1600 pixels. To try the other choice, set the constant to true and rebuild: ScreenCaptureKit then scales the window plus its shadow into the requested size, so check the pixel size against `filter.contentRect` and add the shadow's margin to the requested width and height if the image is squeezed. Put the constant back afterwards.
+4. Cover part of a window with another one, hover the covered part, click: the Capture is the whole window, including the part that was covered (the single-window filter reads the window itself, not the screen). The overlay's frozen frame shows what was on screen when you pressed the Shortcut.
+5. A window with a sheet or popover (a Save dialog on a document window): the Capture includes the sheet (child windows are included).
+6. A window that is partly off the screen (dragged past an edge): the highlight is cut at the display's edge, the Capture is the whole window.
+7. A full-screen app in its own Space: press ⌃⌥⌘5 there; the overlay covers the display, the window is highlighted, and clicking captures it.
+8. Close the window you picked between pressing the Shortcut and clicking (a window that shows a timed dialog): the Capture fails without an Editor opening, and ⌃⌥⌘5 works again at once.
+9. With another app frontmost, press ⌃⌥⌘5 and then Esc: the overlay goes and that app is frontmost again with the keyboard; no Editor helper process is left (`pgrep -f "snapit Editor"`).
+10. Copy the Capture (⌘C) and Save it (⌘S); open the PNG in Preview's Inspector: it has an alpha channel and the corners are transparent. With "Export at standard resolution (1x)" on, the corners stay transparent and their edge is smooth (no dark fringe).
+11. With two displays of different scale, capture a window on each: each Capture is at its own display's native pixels.

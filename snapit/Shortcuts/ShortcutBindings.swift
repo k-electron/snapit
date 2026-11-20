@@ -3,6 +3,7 @@
 enum ShortcutBindings {
     static func registerAll() {
         Shortcuts.current.register(.area) { await AreaCaptureFlow.start() }
+        Shortcuts.current.register(.window) { await WindowCaptureFlow.start() }
         Shortcuts.current.register(.screen) { await ScreenCaptureFlow.run() }
     }
 }

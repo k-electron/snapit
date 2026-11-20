@@ -2,7 +2,10 @@ import AppKit
 import CoreGraphics
 
 /// A window on screen, for hover-picking.
-struct OnScreenWindow {
+struct OnScreenWindow: Equatable {
+    /// The window server's number for the window (`CGWindowID`): what a Window Capture asks
+    /// ScreenCaptureKit for.
+    let id: CGWindowID
     /// The window's frame in the global space the window list uses: points, origin at the top
     /// left of the primary display.
     let frame: CGRect
@@ -35,6 +38,7 @@ struct WindowServerWindowSource: OnScreenWindowSource {
         let ownProcess = ProcessInfo.processInfo.processIdentifier
         return list.compactMap { info in
             guard
+                let number = info[kCGWindowNumber as String] as? CGWindowID,
                 (info[kCGWindowLayer as String] as? Int) == 0,
                 (info[kCGWindowOwnerPID as String] as? Int32) != ownProcess,
                 ((info[kCGWindowAlpha as String] as? Double) ?? 1) > 0,
@@ -42,7 +46,7 @@ struct WindowServerWindowSource: OnScreenWindowSource {
                 let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
                 frame.width >= 8, frame.height >= 8
             else { return nil }
-            return OnScreenWindow(frame: frame)
+            return OnScreenWindow(id: number, frame: frame)
         }
     }
 }
@@ -50,18 +54,19 @@ struct WindowServerWindowSource: OnScreenWindowSource {
 /// Test mode's windows: overlapping rectangles over the first fake display, and two that reach
 /// out past its edge (into a second display placed to its left or above it, at negative
 /// coordinates). The list is the same in every run, so a hover can be aimed at a known window.
+/// Each has a fixed window number (`FixtureWindowCaptureSource` makes its image).
 ///
-///     front:  x 60, y 40, 100 x 60 points
-///     back:   x 20, y 20, 200 x 130 points
-///     left:   x -60, y 30, 80 x 60 points (crosses the first display's left edge)
-///     above:  x 100, y -40, 60 x 80 points (crosses the first display's top edge)
+///     front:  #9001, x 60, y 40, 100 x 60 points
+///     back:   #9004, x 20, y 20, 200 x 130 points
+///     left:   #9002, x -60, y 30, 80 x 60 points (crosses the first display's left edge)
+///     above:  #9003, x 100, y -40, 60 x 80 points (crosses the first display's top edge)
 struct FixtureWindowSource: OnScreenWindowSource {
-    static let front = CGRect(x: 60, y: 40, width: 100, height: 60)
-    static let back = CGRect(x: 20, y: 20, width: 200, height: 130)
-    static let left = CGRect(x: -60, y: 30, width: 80, height: 60)
-    static let above = CGRect(x: 100, y: -40, width: 60, height: 80)
+    static let front = OnScreenWindow(id: 9001, frame: CGRect(x: 60, y: 40, width: 100, height: 60))
+    static let back = OnScreenWindow(id: 9004, frame: CGRect(x: 20, y: 20, width: 200, height: 130))
+    static let left = OnScreenWindow(id: 9002, frame: CGRect(x: -60, y: 30, width: 80, height: 60))
+    static let above = OnScreenWindow(id: 9003, frame: CGRect(x: 100, y: -40, width: 60, height: 80))
 
     func windowsFrontToBack() -> [OnScreenWindow] {
-        [Self.front, Self.left, Self.above, Self.back].map { OnScreenWindow(frame: $0) }
+        [Self.front, Self.left, Self.above, Self.back]
     }
 }
