@@ -60,7 +60,7 @@ stage "xcodebuild"
 xcodebuild -version
 xcodebuild -project snapit.xcodeproj -scheme snapit -configuration Release \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" \
-  CODE_SIGN_IDENTITY=- -quiet build
+  -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_IDENTITY=- -quiet build
 
 stage "bundle checks"
 scripts/check-bundle.sh "$PRODUCTS/snapit.app"

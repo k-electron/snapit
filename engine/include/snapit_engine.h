@@ -9,12 +9,86 @@
 #include <stdint.h>
 
 /*
+ Bytes per pixel: BGRA, 8 bits per channel, alpha in the top byte (premultiplied; Captures
+ are opaque).
+ */
+#define SNAPIT_BYTES_PER_PIXEL 4
+
+/*
+ Rows start on this boundary, the alignment display buffers use.
+ */
+#define SNAPIT_ROW_ALIGNMENT 64
+
+/*
+ Fast: the encoder Copy and drag-out use.
+ */
+#define SNAPIT_PNG_FAST 0
+
+/*
+ Balanced: the encoder Save uses.
+ */
+#define SNAPIT_PNG_BALANCED 1
+
+/*
+ High: smallest file, slowest.
+ */
+#define SNAPIT_PNG_HIGH 2
+
+/*
  Result of every engine entry point: one of the `SNAPIT_STATUS_*` values.
 
  A plain integer rather than a C enum, so the header means the same thing to every C
  standard and Swift toolchain.
  */
 typedef int32_t SnapitStatus;
+
+/*
+ A block of pixels owned by the engine: BGRA, 8 bits per channel, top row first.
+
+ `stride` is the distance in bytes between the starts of two rows and is at least
+ `width * 4`; the engine pads rows, so never assume it is tight. Every engine call that
+ reads pixels takes the stride.
+ */
+typedef struct SnapitPixelBuffer {
+  /*
+   First byte of the top row. Null when the buffer is not mapped.
+   */
+  uint8_t *data;
+  /*
+   Width in pixels.
+   */
+  uint32_t width;
+  /*
+   Height in pixels.
+   */
+  uint32_t height;
+  /*
+   Bytes between the starts of two rows.
+   */
+  size_t stride;
+  /*
+   Length of the mapping in bytes (whole pages).
+   */
+  size_t mapped_len;
+} SnapitPixelBuffer;
+
+/*
+ Bytes the engine allocated and hands to the caller. Free with [`snapit_bytes_free`].
+ */
+typedef struct SnapitBytes {
+  /*
+   First byte. Null when empty.
+   */
+  uint8_t *data;
+  /*
+   Number of bytes in use.
+   */
+  size_t len;
+  /*
+   Number of bytes allocated.
+   */
+  size_t capacity;
+} SnapitBytes;
 
 /*
  The call succeeded.
@@ -37,10 +111,78 @@ typedef int32_t SnapitStatus;
 #define SNAPIT_STATUS_PANIC 3
 
 /*
+ The system had no memory to map.
+ */
+#define SNAPIT_STATUS_OUT_OF_MEMORY 4
+
+/*
+ The PNG encoder failed.
+ */
+#define SNAPIT_STATUS_ENCODE_FAILED 5
+
+/*
  Deliberately panics inside the guard. The scripted run and the Cargo tests use it to
  prove a panic reaches Swift as a status code.
  */
 SnapitStatus snapit_engine_probe_panic(void);
+
+/*
+ Maps a zero-filled buffer for a `width` x `height` image and stores it in `out`.
+
+ The stride is chosen by the engine. Free the buffer with [`snapit_buffer_free`].
+
+ # Safety
+
+ `out` must be valid for a write of one `SnapitPixelBuffer`.
+ */
+SnapitStatus snapit_buffer_alloc(uint32_t width, uint32_t height, struct SnapitPixelBuffer *out);
+
+/*
+ Unmaps a buffer from [`snapit_buffer_alloc`] and clears it. Freeing an already freed
+ buffer does nothing.
+
+ # Safety
+
+ `buffer` must point to a `SnapitPixelBuffer` the engine filled in (or one already freed),
+ and nothing may use its pixels afterwards.
+ */
+SnapitStatus snapit_buffer_free(struct SnapitPixelBuffer *buffer);
+
+/*
+ Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
+
+ * `stride` is the distance in bytes between rows and must be at least `width * 4`; bytes
+   between the end of a row and the start of the next are never read into the image.
+ * `level` is one of `SNAPIT_PNG_FAST`, `SNAPIT_PNG_BALANCED` or `SNAPIT_PNG_HIGH`.
+ * `dpi` becomes the `pHYs` chunk: 144 for a Retina Capture, 72 at 1x.
+ * `icc` and `icc_len` give the display's color profile, embedded as an `iCCP` chunk. Pass
+   null and 0 for none.
+
+ Free `out` with [`snapit_bytes_free`]. A refused call leaves `out` untouched.
+
+ # Safety
+
+ `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes, `icc` for
+ `icc_len` bytes (when not null), and `out` for a write of one `SnapitBytes`.
+ */
+SnapitStatus snapit_png_encode(const uint8_t *pixels,
+                               uint32_t width,
+                               uint32_t height,
+                               size_t stride,
+                               uint32_t level,
+                               uint32_t dpi,
+                               const uint8_t *icc,
+                               size_t icc_len,
+                               struct SnapitBytes *out);
+
+/*
+ Releases bytes from [`snapit_png_encode`] and clears them. Freeing empty bytes does nothing.
+
+ # Safety
+
+ `bytes` must be null or point to a `SnapitBytes` the engine filled in (or an empty one).
+ */
+void snapit_bytes_free(struct SnapitBytes *bytes);
 
 /*
  Copies the engine version, NUL terminated, into `buffer` (capacity `capacity` bytes)

@@ -18,5 +18,6 @@ extension SocketCommandRegistry {
         register(.echo) { request in
             request.arguments.joined(separator: "\n")
         }
+        registerTestModeCommands()
     }
 }
