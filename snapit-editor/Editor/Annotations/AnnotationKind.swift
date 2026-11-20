@@ -26,6 +26,13 @@ struct AnnotationRenderContext {
     /// Pixels per point.
     let scale: Double
     let zoom: CGFloat
+    /// The part of the Capture the canvas shows, in Capture pixels, when a crop is applied; nil
+    /// for all of it. A kind that previews from the Capture works on this part, as Export does.
+    var cropPixels: PixelRect?
+    /// True while the pointer is dragging (an Annotation being drawn, moved or resized): a kind
+    /// whose preview is costly may update at most every few milliseconds and catch up when the
+    /// drag ends (`AnnotationLayers.settle`).
+    var isLive = false
 }
 
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in
@@ -62,11 +69,26 @@ nonisolated protocol AnnotationKind: Sendable {
     /// Brings the layer up to date with the Annotation: on every change to it, and for every
     /// Annotation when the zoom changes.
     @MainActor func update(_ layer: CALayer, for annotation: Annotation, in context: AnnotationRenderContext)
+    /// An Annotation of this kind with every field set to something no default is, at `origin`
+    /// (image points), `index` telling the samples of the registry's kinds apart. The Last Capture's
+    /// round-trip stores and restores one of every kind and compares them field by field, so a field
+    /// a kind adds is checked the day it exists: a kind with fields of its own (Text's string and
+    /// size) overrides this and sets them to non-default values. A field missing from the `Codable`
+    /// keys of `Annotation` or `AnnotationStyle` makes that comparison fail.
+    func sampleAnnotation(id: Int, origin: CGPoint, index: Int) -> Annotation
 }
 
 nonisolated extension AnnotationKind {
     var drawnByAnnotationStage: Bool { true }
     var supportsFill: Bool { false }
+
+    func sampleAnnotation(id: Int, origin: CGPoint, index: Int) -> Annotation {
+        let style = AnnotationStyle(
+            color: AnnotationColor(red: 0.1 + Double(index % 5) * 0.15, green: 0.6, blue: 0.3, alpha: 0.9),
+            width: CGFloat(2 + index % 7), filled: index % 2 == 0)
+        return Annotation(
+            id: id, kind: self.id, start: origin, end: CGPoint(x: origin.x + 28, y: origin.y + 50), style: style)
+    }
 
     /// A box at least `AnnotationLimits.smallestSize` points each way.
     func isLargeEnough(_ annotation: Annotation) -> Bool {
