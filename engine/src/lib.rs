@@ -4,10 +4,20 @@
 //! Every entry point runs inside [`guard`], so a panic never unwinds into Swift: it
 //! comes back as [`SNAPIT_STATUS_PANIC`].
 
+mod buffer;
+mod png_encode;
 mod version;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+pub use buffer::{
+    SNAPIT_BYTES_PER_PIXEL, SNAPIT_ROW_ALIGNMENT, SnapitPixelBuffer, snapit_buffer_alloc,
+    snapit_buffer_free,
+};
+pub use png_encode::{
+    SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_PNG_HIGH, SnapitBytes, snapit_bytes_free,
+    snapit_png_encode,
+};
 pub use version::snapit_engine_version;
 
 /// Result of every engine entry point: one of the `SNAPIT_STATUS_*` values.
@@ -24,6 +34,10 @@ pub const SNAPIT_STATUS_INVALID_ARGUMENT: SnapitStatus = 1;
 pub const SNAPIT_STATUS_BUFFER_TOO_SMALL: SnapitStatus = 2;
 /// The engine panicked. The call had no effect.
 pub const SNAPIT_STATUS_PANIC: SnapitStatus = 3;
+/// The system had no memory to map.
+pub const SNAPIT_STATUS_OUT_OF_MEMORY: SnapitStatus = 4;
+/// The PNG encoder failed.
+pub const SNAPIT_STATUS_ENCODE_FAILED: SnapitStatus = 5;
 
 /// Runs `body`, turning a panic into [`SNAPIT_STATUS_PANIC`].
 pub(crate) fn guard(body: impl FnOnce() -> SnapitStatus) -> SnapitStatus {

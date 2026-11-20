@@ -10,7 +10,7 @@ struct MenuEntry: Identifiable {
     var title: String?
     var shortcut: KeyboardShortcut?
     var isEnabled = true
-    var run: (@MainActor () -> Void)?
+    var run: (@MainActor () async -> Void)?
 
     /// A disabled line of text.
     static func info(id: String, _ title: String) -> MenuEntry {
@@ -19,7 +19,7 @@ struct MenuEntry: Identifiable {
 
     static func action(
         id: String, _ title: String, shortcut: KeyboardShortcut? = nil, isEnabled: Bool = true,
-        run: @escaping @MainActor () -> Void
+        run: @escaping @MainActor () async -> Void
     ) -> MenuEntry {
         MenuEntry(id: id, kind: .action, title: title, shortcut: shortcut, isEnabled: isEnabled, run: run)
     }

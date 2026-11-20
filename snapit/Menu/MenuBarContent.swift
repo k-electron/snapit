@@ -10,7 +10,7 @@ struct MenuBarContent: View {
             case .info:
                 Text(entry.title ?? "")
             case .action:
-                Button(entry.title ?? "") { entry.run?() }
+                Button(entry.title ?? "") { Task { await entry.run?() } }
                     .keyboardShortcut(entry.shortcut)
                     .disabled(!entry.isEnabled)
                     .help(entry.title ?? "")
