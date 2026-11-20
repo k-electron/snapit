@@ -7,6 +7,9 @@ extension SocketCommandRegistry {
             guard let number = request.arguments.first.flatMap(Int.init) else { return "error open-capture <number>" }
             do {
                 try EditorSessions.shared.open(captureNumber: number)
+                // The Last Capture before this one writes nothing more once the menu bar app has
+                // our reply: it removes that Capture's files next.
+                await LastCaptureStore.shared.fence()
                 // The window is on screen when the reply goes out, not just ordered front.
                 CATransaction.flush()
                 return "ok"

@@ -9,6 +9,8 @@ enum AnnotationSettings {
     static let colorKey = "annotationColor"
     static let widthKey = "annotationWidth"
     static let filledKey = "annotationFilled"
+    static let textSizeKey = "annotationTextSize"
+    static let highlighterWidthKey = "highlighterWidth"
 
     /// The remembered color as `RRGGBB`; red until the user picks another.
     static var color: AnnotationColor {
@@ -32,8 +34,28 @@ enum AnnotationSettings {
         set { AppDefaults.store.set(newValue, forKey: filledKey) }
     }
 
+    /// The remembered Text size in points.
+    static var textSize: CGFloat {
+        get {
+            let stored = AppDefaults.store.object(forKey: textSizeKey)
+            let value = (stored as? Double) ?? (stored as? String).flatMap(Double.init)
+            return value.map { CGFloat(min(max($0, 6), 400)) } ?? 20
+        }
+        set { AppDefaults.store.set(Double(newValue), forKey: textSizeKey) }
+    }
+
+    /// The remembered Highlighter thickness in points (a marker is wider than a line).
+    static var highlighterWidth: CGFloat {
+        get {
+            let stored = AppDefaults.store.object(forKey: highlighterWidthKey)
+            let value = (stored as? Double) ?? (stored as? String).flatMap(Double.init)
+            return value.map { CGFloat(min(max($0, 2), 200)) } ?? 22
+        }
+        set { AppDefaults.store.set(Double(newValue), forKey: highlighterWidthKey) }
+    }
+
     /// The style a new Annotation starts with.
     static var style: AnnotationStyle {
-        AnnotationStyle(color: color, width: width, filled: filled)
+        AnnotationStyle(color: color, width: width, filled: filled, textSize: textSize)
     }
 }

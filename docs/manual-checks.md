@@ -113,3 +113,15 @@ Run on a real install, with Screen Recording granted, before a release and after
 9. With another app frontmost, press ⌃⌥⌘5 and then Esc: the overlay goes and that app is frontmost again with the keyboard; no Editor helper process is left (`pgrep -f "snapit Editor"`).
 10. Copy the Capture (⌘C) and Save it (⌘S); open the PNG in Preview's Inspector: it has an alpha channel and the corners are transparent. With "Export at standard resolution (1x)" on, the corners stay transparent and their edge is smooth (no dark fringe).
 11. With two displays of different scale, capture a window on each: each Capture is at its own display's native pixels.
+
+## Last Capture and Reopen Last Capture (#27)
+
+Run after changing the Last Capture store, the Editor's state file or the menu. The scripted run reads the files in the private cache and what the Editor shows and exports; it cannot look at the real menu bar menu's greyed item or at the real cache folder.
+
+1. **The real menu.** With no Capture since launch, open the menu bar menu: "Reopen Last Capture" is greyed out. Take a Capture and close its Editor: the item is enabled the next time the menu opens. Choose it: the Editor comes back with its Annotations and Undo history. Delete Capture in that Editor, then open the menu: the item is greyed out again.
+2. **The real cache.** While a Last Capture exists, `ls -la ~/Library/Caches/dev.snapit.snapit/captures` shows `capture-<N>.pixels` and, after an edit, `capture-<N>.state` (mode 600) in a folder of mode 700. Choose Quit snapit: the folder and both files are gone.
+3. **A real Retina Screen Capture.** Close its Editor and reopen it from the menu: the pixels, colors and size match the first Editor, and no pause longer than a blink shows (nothing is decoded).
+
+4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
+
+Clean up: quit snapit, so the cache folder's `captures` folder is removed.

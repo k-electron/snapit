@@ -11,8 +11,13 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     /// "Quit snapit" in the helper's menu quits snapit, not just the helper: to the user there
     /// is one app. The menu bar app quits the helper with it.
     @objc func quitSnapit(_ sender: Any?) {
-        CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
-        NSApplication.shared.terminate(nil)
+        // The same preparation the `quit` command makes (the Last Capture stops writing its state)
+        // goes first; the menu bar app then removes the files and quits the helper.
+        Task {
+            await QuitPreparation.run()
+            CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     /// LaunchServices re-opens the running helper when the menu bar app brings it forward;
