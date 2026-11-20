@@ -2,7 +2,7 @@ import SwiftUI
 
 /// One row of the menu bar menu.
 struct MenuEntry: Identifiable {
-    enum Kind { case info, action, separator }
+    enum Kind { case action, separator }
 
     let id: String
     let kind: Kind
@@ -11,11 +11,6 @@ struct MenuEntry: Identifiable {
     var shortcut: KeyboardShortcut?
     var isEnabled = true
     var run: (@MainActor () async -> Void)?
-
-    /// A disabled line of text.
-    static func info(id: String, _ title: String) -> MenuEntry {
-        MenuEntry(id: id, kind: .info, title: title)
-    }
 
     static func action(
         id: String, _ title: String, shortcut: KeyboardShortcut? = nil, isEnabled: Bool = true,

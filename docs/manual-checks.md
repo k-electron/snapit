@@ -98,6 +98,26 @@ Run on a real install, with Screen Recording granted, before a release and after
 7. With two displays, make a selection on one and drag a handle toward the other: the selection stops at its own display's edge, and the bar is on that display.
 8. Memory, with `footprint <pid>`: the first Action bar adds under 1 MB that stays; later bars add nothing. Idle CPU is 0% with the bar and a tooltip showing.
 
+## Timed Capture on a real screen (#20)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/Timed/`. The scripted run drives the countdown with synthetic mouse events and a fixture Capture; only a real screen shows ScreenCaptureKit excluding snapit's windows, clicks passing through the border to real apps, and the panels over full-screen Spaces and open menus. Start from the default ("After selecting an Area" at Show Action bar).
+
+1. Press ⌃⌥⌘4, drag an Area. The Action bar offers Capture, a slider, "Capture in 3 s" and Cancel. Drag the slider across its whole length: the button says 1 to 10 s, and it follows the pointer even when the pointer leaves the bar. Quit snapit and open it again: the slider and the button still show the last value.
+2. Click "Capture in N s". The dimmed overlay goes at once; the previous app is frontmost with the keyboard. A thin border sits just outside the Area (not over its pixels), and a small badge with the seconds left and a ✕ sits below it, at the Area's right edge (above it, or inside its corner, when there is no room below).
+3. While it counts, use the apps under the border: click, scroll and type into the window inside the Area and on the border itself. Every click passes through to the app beneath; the border never takes one. Open a menu, hover a button for its tooltip, or start a video: whatever is on screen at zero is what is captured.
+4. Let it reach zero. The Editor opens on exactly the Area as it is at that moment (the menu, the hover and the video frame), with no border, badge or tooltip of snapit's in it, also at the Area's edges. Zoom in on the Area's edge in the Editor: no pixel of the border.
+5. Rest the pointer on the ✕: after half a second a "Cancel the countdown" pill appears and goes when the pointer leaves. Press on the ✕ and let go away from it: nothing happens. Press and release on it: the countdown ends, the border and badge go, no Editor opens, and ⌃⌥⌘4 works again at once.
+6. Start another countdown and press ⌃⌥⌘4: it cancels the same way. Press ⌃⌥⌘3 (Screen) and ⌃⌥⌘5 (Window) during a countdown: nothing happens and the countdown carries on; the Pick Color Shortcut (once you have recorded one in Settings) does nothing either.
+7. Press ⌃⌥⌘4 with another app frontmost, start a countdown, switch to a third app and press the ✕: the third app stays frontmost.
+8. With an app in a full-screen Space, start a Timed Capture of an Area in it: the border and badge show over the full-screen app, and the Capture at zero is that Space as it is. Repeat with a menu open at zero: the menu is in the Capture.
+9. With two displays, start a countdown on one and move the mouse to the other: the border and badge stay with the Area. Change the display arrangement during a countdown: it ends.
+10. Close the last Editor (⌘W) while a countdown runs, then let it reach zero: the Capture still opens, in a new Editor.
+11. Memory and CPU, with `footprint <pid>` and Activity Monitor: while a countdown runs snapit holds no frozen frame (about the resting footprint, plus the first Action bar's under 1 MB); at zero and after the Editor opens it returns to the resting footprint and idles at 0% CPU.
+12. Take a Timed Capture right after launching snapit, before ScreenCaptureKit could have listed it. The fallback hides the border and badge, waits 200 ms and fetches again: the Capture has neither (the scripted run cannot reach this path).
+13. Rest the pointer on the ✕ in the last half second of a countdown: no tooltip is in the Capture.
+14. Quit snapit (menu, Quit) during a countdown: the border and badge go and nothing is captured. Switch Spaces, or enter and leave a full-screen app, during a countdown: note whether it ends (the display-change notification may or may not fire); if it carries on, the Capture at zero is of the Space you are in. Lock the screen or put the display to sleep during a countdown: it ends, with no Capture of the lock screen on waking.
+15. Make an Area against the display's edge, and one over the whole display: the border shows only on the display, and the badge sits inside the Area's top-right corner when there is no room outside.
+
 ## Window Capture on a real screen (#22)
 
 Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Window/`. The scripted run drives the window overlay over a fixture window list and a fixture window image; only a real screen shows ScreenCaptureKit's single-window capture: the shadow, covered and full-screen windows, and the real corner alpha.
@@ -125,3 +145,14 @@ Run after changing the Last Capture store, the Editor's state file or the menu. 
 4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
 
 Clean up: quit snapit, so the cache folder's `captures` folder is removed.
+
+## Settings (#29)
+
+Run after changing the Settings window, the recorders or Open at Login. The scripted run drives the window through its model, with the fake login item and injected Shortcuts; it cannot show a real chooser, real hot keys, the real login items or System Settings.
+
+1. **Rebind live.** Open Settings (menu bar menu, or ⌘, in the helper). Record a new Area Shortcut: the old keys stop working and the new ones start the Area Capture at once, with no relaunch, and the menu's Capture Area shows the new glyph the next time the menu opens. Record a combination another snapit Shortcut has: it is removed from that one, and only the new one fires. Press ⌘C, ⌥A and ⇧A while recording: each is refused with a beep and a hint.
+2. **Capture on release, live.** In Settings choose Capture on release, close the window, then press the Area Shortcut with no relaunch: letting go of the mouse takes the Capture. Choose Show Action bar again: the Action bar shows. (The two processes share the bundle ID's defaults through macOS; the scripted run replaces that with a file.)
+3. **Save location.** Choose… opens a folder chooser as a sheet; pick a folder, take a Capture and press ⌘S: the file lands there, and the page shows the folder (with `~`).
+4. **Open at Login.** On a fresh install in Applications, Login Items lists snapit after the first launch (there may be a "Background item added" notification). Turn Open at Login off in Settings: snapit leaves the list. Relaunch snapit: it stays off. From a build folder or a disk image the first launch registers nothing.
+5. **The deep link.** Keyboard Shortcuts in System Settings… opens System Settings on the Keyboard page; Keyboard Shortcuts… › Screenshots is one click further (the link has no anchor for it).
+6. **Look.** The page is a grouped form on macOS 26 glass; every button has a full-capsule hit area and a hover tooltip, and Settings alone shows a Dock icon that goes when it closes.

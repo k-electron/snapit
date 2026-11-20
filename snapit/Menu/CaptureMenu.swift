@@ -13,7 +13,7 @@ struct CaptureMenu: MenuSection {
                 await ScreenCaptureFlow.run()
             },
             .action(id: "capture.pick-color", "Pick Color", shortcut: Shortcuts.current.menuShortcut(for: .pickColor)) {
-                await AreaCaptureFlow.startPickingColor()
+                await AreaCaptureFlow.start(mode: .pickColor)
             },
             .separator(id: "capture.separator"),
         ]
