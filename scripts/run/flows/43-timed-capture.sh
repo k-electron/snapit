@@ -384,7 +384,19 @@ assert_idle_cpu "menu bar app at rest after the Timed Captures (no timer left ru
 expect_equal "no tick is scheduled at rest" "no" "$(timed ticking)"
 
 # 14. The slider's value is remembered across launches: the Action bar shows it after snapit quits
-#     and starts again. A stored value out of range is kept within 1-10 and one that is not a number is 3.
+#     and starts again. A stored value out of range is kept within 1-10 and one that is not a number
+#     is 3. This runs in a second snapit under its own root, so the run's own snapit is never
+#     relaunched (a relaunched snapit's test defaults cannot change a key an earlier launch stored,
+#     which the flows after this one need to do).
+send "$APP_SOCK" "timed-seconds-store 3" >/dev/null
+MAIN_APP_SOCK="$APP_SOCK"
+MAIN_APP_PID="$APP_PID"
+TIMED_ROOT="$(mktemp -d /tmp/snapit-run2.XXXXXX)"
+APP_SOCK="$TIMED_ROOT/app.sock"
+(SNAPIT_TEST_ROOT="$TIMED_ROOT" nohup "$APP_EXE" >"$TIMED_ROOT/app.log" 2>&1 &)
+if wait_until 15 answers "$APP_SOCK"; then pass "a second snapit starts for the relaunch check"; else fail "the second snapit did not start"; fi
+APP_PID="$(pgrep -f "$APP_EXE" | grep -v "^$MAIN_APP_PID\$" | head -1)"
+send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 for ENTRY in "99:Capture in 10 s" "0:Capture in 1 s" "nonsense:Capture in 3 s" "4:Capture in 4 s"; do
   send "$APP_SOCK" "timed-seconds-store ${ENTRY%%:*}" >/dev/null
   area_start "press-shortcut capture-area" >/dev/null
@@ -399,21 +411,25 @@ expect_equal "the slider moved to 8 s" "Capture in 8 s" "$(timer_title)"
 area_cancel
 send "$APP_SOCK" quit >/dev/null
 if wait_until 60 gone "$APP_PID"; then pass "snapit quits"; else fail "snapit did not quit"; fi
-(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
+(SNAPIT_TEST_ROOT="$TIMED_ROOT" nohup "$APP_EXE" >>"$TIMED_ROOT/app.log" 2>&1 &)
 if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else fail "snapit did not start again"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+APP_PID="$(pgrep -f "$APP_EXE" | grep -v "^$MAIN_APP_PID\$" | head -1)"
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 200 100 400 300
 expect_equal "the timer is still 8 s after a relaunch: the button says so" "Capture in 8 s" "$(timer_title)"
 expect_equal "and the slider says so" "Timer 8 s" "$(slider_title)"
 area_cancel
+send "$APP_SOCK" quit >/dev/null
+wait_until 60 gone "$APP_PID"
+APP_SOCK="$MAIN_APP_SOCK"
+APP_PID="$MAIN_APP_PID"
+chmod -R u+w "$TIMED_ROOT" 2>/dev/null
+rm -rf "$TIMED_ROOT"
+expect_equal "this run's snapit was not disturbed" "$APP_PID" "$(pid_of "$APP_EXE")"
 
 # Leave what the next flows expect: no helper, a small fixture display, nothing on the pasteboard.
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 no_helper_running
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
-# The relaunch started a new process: the flows after this one measure against what it uses at rest.
-sleep 1
-AT_REST="$(footprint_mb "$APP_PID")"
