@@ -50,6 +50,6 @@ final class EditorDocument {
         let image = ExportImage(pixels: capture.pixels, scale: info.scale, dpi: info.dpi)
         return ExportJob(
             image: image, level: level, standardResolution: ExportSettings.standardResolution,
-            annotations: history.annotations)
+            annotations: history.annotations, crop: history.state.crop)
     }
 }

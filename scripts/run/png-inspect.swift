@@ -14,9 +14,28 @@
 //                                               how many pixels differ from the fixture formula, their bounding
 //                                               box (`x0,y0,x1,y1`, end exclusive) and, given a rectangle
 //                                               (end exclusive), how many of them lie outside and inside it
+//   png-inspect diff-crop <file> <w> <h> <full w> <full h> <ox> <oy> [<x0> <y0> <x1> <y1>]
+//                                               diff-fixture for a crop: the file is the w x h pixels of the
+//                                               full w x full h fixture that start at column ox, row oy; the
+//                                               bounding box and the rectangle are in the file's pixels
 //   png-inspect compare <a> <b>                 how two PNGs of the same size differ: `max_diff=` (the largest
 //                                               difference of any channel, 0-255) and `over_<n>=` (how many
 //                                               pixels differ by more than 8 in any channel)
+//   png-inspect verify-redaction <file> <w> <h> <full w> <full h> <ox> <oy> <x0> <y0> <x1> <y1> <block>
+//                                               the file is the w x h pixels of the full w x full h fixture that
+//                                               start at column ox, row oy, with the rectangle (x0,y0)-(x1,y1)
+//                                               (file pixels, end exclusive) pixelated: side / block tiles of
+//                                               `block` pixels across (at least one) from the rectangle's top
+//                                               left corner, the last column and row of tiles taking in what is
+//                                               left over, every pixel of a tile the floored mean of the
+//                                               fixture's pixels in it, per channel. Prints `mismatches=`
+//                                               (pixels of the rectangle that are not their tile's mean),
+//                                               `outside_mismatches=` (pixels outside it that are not the
+//                                               fixture), `blocks=`, `colors=` (distinct colors in the
+//                                               rectangle), `survivors=` (pixels of the rectangle that still
+//                                               have their original value: in a lone-pixel tile, or a tile that
+//                                               held different pixels) and `smallest_tile=` (the shortest side
+//                                               of any tile)
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect verify-fixture <file> <w> <h> <full w> <full h> <x> <y>
 //                                               the same for a crop: the file is the w x h pixels of the
@@ -411,6 +430,45 @@ case "diff-fixture":
         print("inside=\(inside)")
     }
 
+case "diff-crop":
+    guard arguments.count == 9 || arguments.count == 13 else { fail("diff-crop <file> <w> <h> <full w> <full h> <ox> <oy> [<x0> <y0> <x1> <y1>]") }
+    let n = arguments[3...].compactMap { Int($0) }
+    guard n.count == arguments.count - 3 else { fail("diff-crop: every argument after the file is a number") }
+    let (width, height, fullWidth, fullHeight, originX, originY) = (n[0], n[1], n[2], n[3], n[4], n[5])
+    let rect = Array(n.dropFirst(6))
+    let (image, _) = loadImage(arguments[2])
+    guard image.width == width, image.height == height else {
+        print("size=\(image.width)x\(image.height)")
+        print("changed=all")
+        exit(0)
+    }
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    var changed = 0, outside = 0, inside = 0
+    var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+    for y in 0..<height {
+        for x in 0..<width {
+            let at = pixels + (y * width + x) * 4
+            let sx = originX + x, sy = originY + y
+            let expected = (
+                UInt8(sx * 255 / max(fullWidth - 1, 1)), UInt8(sy * 255 / max(fullHeight - 1, 1)),
+                UInt8((sx / 8 + sy / 8) % 2 == 0 ? 40 : 200)
+            )
+            guard at[0] != expected.0 || at[1] != expected.1 || at[2] != expected.2 else { continue }
+            changed += 1
+            minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y)
+            if rect.count == 4 {
+                if x < rect[0] || x >= rect[2] || y < rect[1] || y >= rect[3] { outside += 1 } else { inside += 1 }
+            }
+        }
+    }
+    print("changed=\(changed)")
+    print(changed == 0 ? "bbox=none" : "bbox=\(minX),\(minY),\(maxX + 1),\(maxY + 1)")
+    if rect.count == 4 {
+        print("outside=\(outside)")
+        print("inside=\(inside)")
+    }
+
 case "compare":
     guard arguments.count == 4 else { fail("compare <a> <b>") }
     let (imageA, _) = loadImage(arguments[2])
@@ -433,6 +491,83 @@ case "compare":
     }
     print("max_diff=\(maxDiff)")
     print("over_8=\(over)")
+
+case "verify-redaction":
+    guard arguments.count == 14 else { fail("verify-redaction <file> <w> <h> <full w> <full h> <ox> <oy> <x0> <y0> <x1> <y1> <block>") }
+    let n = arguments[3...].compactMap { Int($0) }
+    guard n.count == 11, n[10] > 0 else { fail("verify-redaction: every argument after the file is a number, the block more than 0") }
+    let (width, height, fullWidth, fullHeight, originX, originY) = (n[0], n[1], n[2], n[3], n[4], n[5])
+    let (x0, y0, x1, y1, block) = (n[6], n[7], n[8], n[9], n[10])
+    let (image, _) = loadImage(arguments[2])
+    guard image.width == width, image.height == height else {
+        print("size=\(image.width)x\(image.height)")
+        print("mismatches=all")
+        exit(0)
+    }
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    func original(_ x: Int, _ y: Int) -> [Int] {
+        let sx = originX + x, sy = originY + y
+        return [sx * 255 / max(fullWidth - 1, 1), sy * 255 / max(fullHeight - 1, 1), (sx / 8 + sy / 8) % 2 == 0 ? 40 : 200]
+    }
+    func actual(_ x: Int, _ y: Int) -> [Int] {
+        let at = pixels + (y * width + x) * 4
+        return [Int(at[0]), Int(at[1]), Int(at[2])]
+    }
+    var mismatches = 0, outside = 0, blocks = 0, survivors = 0
+    var colors = Set<[Int]>()
+    var first = ""
+    for y in 0..<height {
+        for x in 0..<width where x < x0 || x >= x1 || y < y0 || y >= y1 {
+            if actual(x, y) != original(x, y) { outside += 1 }
+        }
+    }
+    // The grid, worked out from the rule alone: the rectangle has side / block tiles across (at
+    // least one) from its top left; the last column and row of tiles take in what is left over.
+    let rectWidth = x1 - x0, rectHeight = y1 - y0
+    let columns = max(rectWidth / block, 1), rows = max(rectHeight / block, 1)
+    var smallestTile = Int.max
+    for row in 0..<rows {
+        let ty = y0 + row * block
+        let th = row == rows - 1 ? y1 - ty : block
+        for column in 0..<columns {
+            let tx = x0 + column * block
+            let tw = column == columns - 1 ? x1 - tx : block
+            smallestTile = min(smallestTile, tw, th)
+            var sum = [0, 0, 0]
+            var distinct = Set<[Int]>()
+            for y in ty..<(ty + th) {
+                for x in tx..<(tx + tw) {
+                    let value = original(x, y)
+                    distinct.insert(value)
+                    for c in 0..<3 { sum[c] += value[c] }
+                }
+            }
+            let mean = sum.map { $0 / (tw * th) }
+            for y in ty..<(ty + th) {
+                for x in tx..<(tx + tw) {
+                    let got = actual(x, y)
+                    colors.insert(got)
+                    if got != mean {
+                        if mismatches == 0 { first = "\(x),\(y) got \(got) want \(mean)" }
+                        mismatches += 1
+                    }
+                    // A pixel that is still its original value, in a tile that is a lone pixel or
+                    // that held different pixels, survived the pixelate.
+                    if (tw * th == 1 || distinct.count > 1), got == original(x, y) { survivors += 1 }
+                }
+            }
+            blocks += 1
+        }
+    }
+    print("size=\(width)x\(height)")
+    print("mismatches=\(mismatches)")
+    if mismatches > 0 { print("first_mismatch=\(first)") }
+    print("outside_mismatches=\(outside)")
+    print("blocks=\(blocks)")
+    print("colors=\(colors.count)")
+    print("survivors=\(survivors)")
+    print("smallest_tile=\(smallestTile)")
 
 case "profile-sha":
     guard arguments.count == 3 else { fail("profile-sha <srgb|displayP3>") }

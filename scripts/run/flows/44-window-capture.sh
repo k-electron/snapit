@@ -200,6 +200,45 @@ else
   fail "the Capture for the Annotation check finished with '$AREA_REPLY'"
 fi
 
+# 7b. A Redaction over the transparent corner pixelates premultiplied pixels: the tile there is
+#     partly transparent (neither clear nor opaque), and the far corner is untouched.
+area_start "press-shortcut capture-window" >/dev/null
+win_click 0 70 50
+if area_result; then
+  send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N x" >/dev/null
+  send "$EDITOR_SOCK" "editor-drag $EDITOR_N 0 0 30 30" >/dev/null
+  send "$APP_SOCK" pasteboard-clear >/dev/null
+  copy_closes_editor
+  send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/window.png" >/dev/null
+  REDACTED_ALPHA="$("$INSPECT" rgba-pixel "$RUN_ROOT/window.png" 1 1 | cut -d, -f4)"
+  if ((REDACTED_ALPHA > 0 && REDACTED_ALPHA < 255)); then pass "a Redaction over the corner leaves a partly transparent tile (alpha $REDACTED_ALPHA at 1,1)"; else fail "the Redaction's tile at the corner has alpha $REDACTED_ALPHA (expected between 0 and 255)"; fi
+  expect_equal "the far corner is untouched by the Redaction" "0" "$("$INSPECT" rgba-pixel "$RUN_ROOT/window.png" 99 59 | cut -d, -f4)"
+  expect_equal "the Redaction's PNG is RGBA" "6" "$(png_field "$("$INSPECT" info "$RUN_ROOT/window.png")" color_type)"
+  rm -f "$RUN_ROOT/window.png"
+else
+  fail "the Capture for the Redaction check finished with '$AREA_REPLY'"
+fi
+
+# 7c. A Crop keeps the alpha of what is left: cut to the top-left 60 x 40 points, the corner is still
+#     clear and the inside is opaque.
+area_start "press-shortcut capture-window" >/dev/null
+win_click 0 70 50
+if area_result; then
+  send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N c" >/dev/null
+  send "$EDITOR_SOCK" "editor-drag $EDITOR_N 100 60 60 40" >/dev/null
+  send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N enter" >/dev/null
+  send "$APP_SOCK" pasteboard-clear >/dev/null
+  copy_closes_editor
+  send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/window.png" >/dev/null
+  WIN_CROP_INFO="$("$INSPECT" info "$RUN_ROOT/window.png")"
+  expect_equal "the cropped window is 60 x 40, colour type 6" "60x40 6" "$(png_field "$WIN_CROP_INFO" width)x$(png_field "$WIN_CROP_INFO" height) $(png_field "$WIN_CROP_INFO" color_type)"
+  expect_equal "the corner of the cropped window is still transparent" "0" "$("$INSPECT" rgba-pixel "$RUN_ROOT/window.png" 0 0 | cut -d, -f4)"
+  expect_equal "and its inside is opaque, with the window's own colour there" "255" "$("$INSPECT" rgba-pixel "$RUN_ROOT/window.png" 59 39 | cut -d, -f4)"
+  rm -f "$RUN_ROOT/window.png"
+else
+  fail "the Capture for the Crop check finished with '$AREA_REPLY'"
+fi
+
 # 8. Opaque Captures keep producing RGB PNGs: a Screen Capture, an Area (also from a frozen frame
 #    with no alpha channel), and a window-sized crop of one.
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null

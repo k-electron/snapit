@@ -8,6 +8,7 @@ mod buffer;
 mod capture_file;
 mod crop;
 mod downscale;
+mod pixelate;
 mod png_encode;
 mod version;
 
@@ -23,6 +24,7 @@ pub use capture_file::{
 };
 pub use crop::snapit_crop;
 pub use downscale::snapit_downscale;
+pub use pixelate::snapit_pixelate;
 pub use png_encode::{
     SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_PNG_HIGH, SnapitBytes, SnapitPngParams,
     snapit_bytes_free, snapit_png_encode, snapit_png_encode_ex, snapit_png_encode_to_fd,
