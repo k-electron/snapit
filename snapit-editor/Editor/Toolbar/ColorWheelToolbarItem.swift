@@ -29,7 +29,7 @@ struct ColorWheelToolbarItem: EditorToolbarItem {
                         .frame(width: 9, height: 9)
                         .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
                 }
-                .frame(minWidth: 32, minHeight: 34)
+                .frame(minWidth: 28, minHeight: 34)
             }
             .buttonStyle(ChromeButtonStyle())
             .help(tooltip)

@@ -36,7 +36,7 @@ private struct TextSizeControl: View {
                 } label: {
                     Text("A")
                         .font(.system(size: [11, 14, 18][index % 3], weight: .semibold))
-                        .frame(minWidth: 30, minHeight: 34)
+                        .frame(minWidth: 26, minHeight: 34)
                 }
                 .buttonStyle(ChromeButtonStyle(look: chosen && session.textSizeApplies ? .selected : .plain))
                 .help(tooltip)

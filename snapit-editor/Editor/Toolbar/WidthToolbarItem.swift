@@ -42,7 +42,7 @@ private struct WidthControl: View {
                 } label: {
                     RoundedRectangle(cornerRadius: 1.5)
                         .frame(width: 16, height: min(max(width * (choice == .highlighter ? 0.3 : 1), 2), 10))
-                        .frame(minWidth: 30, minHeight: 34)
+                        .frame(minWidth: 26, minHeight: 34)
                 }
                 .buttonStyle(ChromeButtonStyle(look: chosen && choice != .none ? .selected : .plain))
                 .help(tooltip)

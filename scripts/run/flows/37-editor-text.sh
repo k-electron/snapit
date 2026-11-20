@@ -185,3 +185,30 @@ if capture_into_editor "menu-click capture.screen"; then
   wait_until 10 gone "$HELPER_PID"
 fi
 send "$APP_SOCK" "defaults-set annotationTextSize 20" >/dev/null
+
+# Memory: Capture, type, highlight, recolor, Copy, close. The menu bar app stays flat and no helper is left.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
+send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null
+TEXT_BASELINE="$(footprint_mb "$APP_PID")"
+for _ in 1 2 3; do
+  if capture_into_editor "menu-click capture.screen"; then
+    keystroke t >/dev/null
+    click 100 100 >/dev/null
+    type_text Hello%0Aworld >/dev/null
+    click 800 600 >/dev/null
+    keystroke h >/dev/null
+    drag 100 300 900 300 >/dev/null
+    send "$EDITOR_SOCK" "editor-click $EDITOR_N control Blue" >/dev/null
+    copy_closes_editor
+  fi
+done
+sleep 1
+TEXT_AFTER="$(footprint_mb "$APP_PID")"
+if awk -v a="$TEXT_AFTER" -v b="$TEXT_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+  pass "the menu bar app's memory is flat over Capture, Text, Highlighter, Copy cycles (${TEXT_BASELINE} MB before, ${TEXT_AFTER} MB after)"
+else
+  fail "the menu bar app went from ${TEXT_BASELINE} MB to ${TEXT_AFTER} MB over Text cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
+fi
+if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Text cycles"; else fail "a helper is still running after the Text cycles"; fi
+expect_equal "no Editor is left open by the Text flow" "" "$(open_editors)"
+send "$APP_SOCK" pasteboard-clear >/dev/null

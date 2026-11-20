@@ -84,3 +84,15 @@ Run on a real install, with Screen Recording granted, before a release and after
 7. Start the overlay on a display showing a full-screen app in its own Space (the menu bar and the notch are covered): the overlay covers the whole display, menu bar and notch included, and Esc and a drag both work.
 8. With another app frontmost, press ⌃⌥⌘4 and then Esc: the overlay goes and that app is frontmost again, with the keyboard.
 9. Plug in or unplug a display (or change the arrangement) while the overlay is up: the overlay ends.
+
+## Save and drag-out (#26)
+
+Run after changing Save, the Export pipeline, the drag-out thumbnail or the Save location. The scripted run covers the files Save and drag-out write; it cannot drag with a real mouse or answer macOS's folder prompt. Do these with the real app, so the Save location is the real folder.
+
+1. **Real Save folder prompt.** In Settings choose `~/Documents` (or `~/Desktop`) as the Save location after `tccutil reset SystemPolicyDocumentsFolder dev.snapit.snapit` (`SystemPolicyDesktopFolder` for Desktop). Take a Capture and press ⌘S. macOS asks for access: allow it, and the file `snapit-YYYYMMDD-HHMMSS.png` appears and the Editor closes. Then reset again, press ⌘S and choose "Don't Allow": the Editor stays open and the folder Permission guide appears (once #31 is in). The Save never leaves a hidden `.snapit-….partial` file in the folder.
+2. **Drag into Finder.** Open a Capture, drag the toolbar thumbnail onto a Finder window or the Desktop. A file `snapit-YYYYMMDD-HHMMSS.png` with the Capture's time lands there, and Preview shows the same pixels. Drag it again after editing: the new copy has the edit.
+3. **Drag into other apps.** Drop the thumbnail into a Mail message, a browser upload field or a chat window. Each takes the PNG as an attachment or upload, named like the Saved file.
+4. **Drag, then Esc.** Drop onto Mail or a browser, then press Esc (or close the Editor with ⌘W) straight away. The receiving app still has the whole image: the file stays in the cache for several minutes after its Editor closes.
+5. **Quit during a Save.** Capture a large display, press ⌘S, then choose Quit snapit at once. snapit exits only after the file is written, and the PNG opens.
+
+Clean up: delete the files you saved or dragged, put the Save location back to Downloads, and `tccutil reset SystemPolicyDocumentsFolder dev.snapit.snapit` (and Desktop) afterwards.

@@ -14,6 +14,8 @@ enum ToolbarRegistry {
         DeleteAnnotationToolbarItem(),
         DeleteCaptureToolbarItem(),
         EyedropperToolbarItem(),
+        DragOutToolbarItem(),
+        SaveToolbarItem(),
         RedoToolbarItem(),
         ShapeFillToolbarItem(),
         TextSizeToolbarItem(),
