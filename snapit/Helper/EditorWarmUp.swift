@@ -55,6 +55,21 @@ enum EditorWarmUp {
         enqueue { await release() }
     }
 
+    /// A Capture that waited a while for its pixels (a Timed Capture's countdown) asks again just
+    /// before them: a warm helper may have quit meanwhile (its last Editor was closed), leaving
+    /// `state` at `warm` for an Editor that is gone. The helper is started and told to warm up
+    /// again; both are no-ops for one that is still warm. Does nothing when no warm-up has begun.
+    static func revalidate() {
+        guard begun, state == .warm else { return }
+        state = .starting
+        generation += 1
+        let mine = generation
+        enqueue {
+            let ready = await prepare()
+            if generation == mine && state == .starting { state = ready ? .warm : .idle }
+        }
+    }
+
     /// Waits for the warm-up in progress to finish, so a Capture opens in the helper that was
     /// started for it instead of starting another.
     static func settle() async {
