@@ -5,6 +5,9 @@ enum ToolRegistry {
     static let all: [any EditorTool] = {
         let tools: [any EditorTool] = [
             SelectTool(),
+            ArrowTool(),
+            RectangleTool(),
+            OvalTool(),
         ]
         return tools.sorted { $0.order < $1.order }
     }()

@@ -15,6 +15,19 @@ final class EditorSession: NSObject, NSWindowDelegate {
     private(set) var document: EditorDocument?
     /// The id of the active tool in `ToolRegistry`.
     private(set) var selectedToolID = ToolRegistry.initial.id
+    /// The Annotation Select has picked, or the one just drawn (see `EditorSession+Annotations`).
+    var selectedAnnotationID: Int?
+    /// The style a new Annotation starts with: the color, width and fill used last, which
+    /// `AnnotationSettings` remembers across launches.
+    var annotationStyle = AnnotationSettings.style
+    /// What the toolbar shows about the Annotations. Changes when a gesture starts or ends, a
+    /// selection changes or Undo history changes, never while the pointer moves, so the toolbar
+    /// pills are not rebuilt on every mouse move.
+    var toolbarState = AnnotationToolbarState()
+    /// The move, resize or drawing the pointer is in the middle of.
+    @ObservationIgnored var annotationGesture: AnnotationGesture? {
+        didSet { refreshToolbarState() }
+    }
     /// True while Copy (or any Export) is running.
     var isExporting = false
     /// True when this session was built ahead of its Capture (a warm-up).
@@ -40,7 +53,13 @@ final class EditorSession: NSObject, NSWindowDelegate {
 
     func selectTool(id: String) {
         guard ToolRegistry.tool(id: id) != nil else { return }
+        abortAnnotationGesture()
         selectedToolID = id
+        // A drawing tool starts from nothing selected: its options (the fill) are then the
+        // tool's, not the previous selection's.
+        if ToolRegistry.tool(id: id)?.annotationKind != nil, selectedAnnotationID != nil { selectAnnotation(nil) }
+        refreshToolbarState()
+        canvas.map { $0.window?.invalidateCursorRects(for: $0) }
     }
 
     // MARK: Window
@@ -48,7 +67,11 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// Gives the Editor its Capture and sizes the window to it.
     func attach(_ document: EditorDocument) {
         self.document = document
+        // A warmed-up Editor was built before the last style was chosen.
+        annotationStyle = AnnotationSettings.style
         chrome?.attach(document)
+        document.onChange = { [weak self] in self?.annotationsDidChange() }
+        annotationsDidChange()
     }
 
     /// Puts the window on screen. The helper is already a regular app by now.
