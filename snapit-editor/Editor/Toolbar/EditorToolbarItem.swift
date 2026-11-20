@@ -37,7 +37,8 @@ struct EditorKeyEquivalent: Equatable {
     var menuKey: String { key == "\u{7F}" ? "\u{8}" : key }
 
     func matches(_ event: NSEvent) -> Bool {
-        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers
+        // Caps Lock is a state, not part of the combination.
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers
             && event.charactersIgnoringModifiers?.lowercased() == key
     }
 }

@@ -21,9 +21,13 @@ final class EditorWindow: NSWindow {
 
     override func keyDown(with event: NSEvent) {
         guard let session else { return super.keyDown(with: event) }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
         if event.keyCode == 53 {  // Esc
             session.escape()
+        } else if let item = ToolbarRegistry.item(matching: event), item.isEnabled(in: session) {
+            // A key equivalent that reached the window as a plain key press (AppKit does not
+            // offer every key, ⌫ among them, to `performKeyEquivalent`).
+            item.perform(in: session)
         } else if flags.isEmpty, let key = event.charactersIgnoringModifiers?.first,
             let tool = ToolRegistry.tool(forKey: key)
         {

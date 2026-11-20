@@ -169,6 +169,22 @@ if capture_into_editor "menu-click capture.screen"; then
   keystroke delete >/dev/null
   expect_equal "⌫ deletes the Arrow" "0" "$(annotation_count)"
 
+  # Keys work with Caps Lock on, and ⌫ works when it reaches the window as a plain key press
+  # (the window is not offered it as a key equivalent first).
+  keystroke caps-r >/dev/null
+  expect_equal "the R key picks Rectangle with Caps Lock on" "rectangle" "$(document_field tool)"
+  drag 40 30 120 90 >/dev/null
+  expect_equal "the Rectangle is drawn" "1" "$(annotation_count)"
+  keystroke caps-undo >/dev/null
+  expect_equal "⌘Z undoes with Caps Lock on" "0" "$(annotation_count)"
+  keystroke caps-redo >/dev/null
+  expect_equal "⇧⌘Z redoes with Caps Lock on" "1" "$(annotation_count)"
+  keystroke v >/dev/null
+  click 40 60 >/dev/null  # an outline Rectangle is picked on its line
+  expect_selected "the Rectangle is selected"
+  keystroke plain-delete >/dev/null
+  expect_equal "⌫ as a plain key press deletes the selected Annotation" "0" "$(annotation_count)"
+
   # 6. The color, width and fill used last are remembered across launches.
   style fill solid >/dev/null
   style color 0a84ff >/dev/null
