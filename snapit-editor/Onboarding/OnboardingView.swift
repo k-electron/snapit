@@ -47,7 +47,7 @@ struct OnboardingView: View {
                 } label: {
                     label(button.title)
                 }
-                .buttonStyle(ChromeButtonStyle(look: button.id == "back" ? .plain : .prominent, radius: 12))
+                .windowButton(prominent: button.id != "back")
                 .help(button.tooltip)
             }
         }
@@ -55,8 +55,6 @@ struct OnboardingView: View {
 
     private func label(_ title: String) -> some View {
         Text(title)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 8)
             .frame(minWidth: 90)
     }
 
@@ -118,7 +116,7 @@ struct OnboardingView: View {
             } label: {
                 label(model.chooseSaveLocationButton.title)
             }
-            .buttonStyle(ChromeButtonStyle(look: .plain, radius: 12))
+            .windowButton(prominent: false)
             .help(model.chooseSaveLocationButton.tooltip)
         }
         .padding(16)
@@ -134,7 +132,7 @@ struct OnboardingView: View {
             } label: {
                 label(model.screenshotShortcutsButton.title)
             }
-            .buttonStyle(ChromeButtonStyle(look: .plain, radius: 12))
+            .windowButton(prominent: false)
             .help(model.screenshotShortcutsButton.tooltip)
         }
         .padding(16)
@@ -192,7 +190,7 @@ struct OnboardingView: View {
             } label: {
                 label(model.userGuideButton.title)
             }
-            .buttonStyle(ChromeButtonStyle(look: .plain, radius: 12))
+            .windowButton(prominent: false)
             .help(model.userGuideButton.tooltip)
         }
     }

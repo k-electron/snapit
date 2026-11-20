@@ -71,7 +71,7 @@ struct MoveToApplicationsView: View {
                 Button(action: { model.later() }) {
                     label(model.laterButton.title)
                 }
-                .buttonStyle(ChromeButtonStyle(look: .plain, radius: 12))
+                .windowButton(prominent: false)
                 .help(model.laterButton.tooltip)
                 .keyboardShortcut(.cancelAction)
                 .disabled(model.state == .moving)
@@ -79,7 +79,7 @@ struct MoveToApplicationsView: View {
                 Button(action: { Task { _ = await model.move() } }) {
                     label(model.moveButton.title)
                 }
-                .buttonStyle(ChromeButtonStyle(look: .prominent, radius: 12))
+                .windowButton(prominent: true)
                 .help(model.moveButton.tooltip)
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.state == .moving)
@@ -108,8 +108,6 @@ struct MoveToApplicationsView: View {
 
     private func label(_ title: String) -> some View {
         Text(title)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
             .frame(minWidth: 120)
     }
 }

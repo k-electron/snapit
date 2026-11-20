@@ -36,10 +36,8 @@ struct FolderGuideView: View {
                 Text(button.title)
                     .lineLimit(1)
                     .fixedSize()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
             }
-            .buttonStyle(ChromeButtonStyle(look: button.id == model.openSystemSettingsButton.id ? .prominent : .plain, radius: 12))
+            .windowButton(prominent: button.id == model.openSystemSettingsButton.id)
             .help(button.tooltip)
             .disabled(model.isRetrying)
         }

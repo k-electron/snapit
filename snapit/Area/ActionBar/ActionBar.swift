@@ -27,10 +27,7 @@ final class ActionBar {
         layer.bounds = CGRect(origin: .zero, size: size)
         layer.cornerRadius = height / 2
         layer.masksToBounds = true
-        // A tint over the backdrop, and a hairline edge like glass has.
-        layer.backgroundColor = CGColor(gray: 0, alpha: 0.18)
-        layer.borderColor = CGColor(gray: 1, alpha: 0.22)
-        layer.borderWidth = 1
+        // No fill and no edge of its own: the glass behind the tiles (`ActionBarBackdropView`) is the capsule.
 
         var x = Self.padding
         for control in controls {

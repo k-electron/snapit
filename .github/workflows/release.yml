@@ -21,12 +21,11 @@ permissions:
 
 env:
   CBINDGEN_VERSION: "0.29.4"
-  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
 
 jobs:
   release:
-    name: Build, package and publish (macOS 26, arm64)
-    runs-on: macos-26
+    name: Build, package and publish (Xcode 27, arm64)
+    runs-on: xcode-27
     timeout-minutes: 60
     permissions:
       contents: write # create the release and attach the DMG (only the publish step gets the token)
@@ -39,10 +38,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Xcode 26 toolchain
+      - name: Xcode 27 toolchain
         run: |
-          xcodebuild -version
-          xcodebuild -version | head -1 | grep -q '^Xcode 26' || { echo "expected Xcode 26 on the macos-26 image" >&2; exit 1; }
+          # The newest Xcode 27 on the image (a patch release replaces the previous one).
+          XCODE="$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)"
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$XCODE/Contents/Developer" xcodebuild -version
 
       - name: Pinned Rust toolchain
         run: rustup toolchain install

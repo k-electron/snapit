@@ -365,10 +365,10 @@ if awk -v peak="$PICK_PEAK" -v base="$PICK_BASELINE" 'BEGIN { exit !(peak - base
 else
   fail "the picker peaks at ${PICK_PEAK} MB over a ${PICK_BASELINE} MB base: more than one copy of a 16 MB frame"
 fi
-if awk -v a="$PICK_AFTER" -v b="$PICK_BEFORE" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+if awk -v a="$PICK_AFTER" -v b="$PICK_BEFORE" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
   pass "memory is where it was before the first pick (${PICK_BEFORE} MB then, ${PICK_AFTER} MB now)"
 else
-  fail "memory is ${PICK_AFTER} MB after the picks, ${PICK_BEFORE} MB before the first (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+  fail "memory is ${PICK_AFTER} MB after the picks, ${PICK_BEFORE} MB before the first (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
 fi
 area_start "menu-click capture.pick-color" >/dev/null
 assert_idle_cpu "menu bar app with the Color picker over a large display" "$APP_PID" 4
