@@ -82,9 +82,8 @@ if open_editor; then
   expect_contains "Cancel Crop has its tooltip" "item crop-cancel options Cancel Crop (Esc)" "$TOOLBAR"
   # Every control of the top toolbar can be clicked: no two are on top of each other, even in the
   # smallest window (this Capture is small, so the window is at its smallest).
-  CONTROLS="$(send "$EDITOR_SOCK" "editor-controls $EDITOR_N")"
-  CLOSEST="$(printf '%s\n' "$CONTROLS" | awk '{ x[NR] = $(NF-1); y[NR] = $NF } END { min = 9999; for (i = 1; i <= NR; i++) for (j = i + 1; j <= NR; j++) if (y[i] == y[j]) { d = x[i] - x[j]; if (d < 0) d = -d; if (d < min) min = d } print min }')"
-  if ((CLOSEST >= 30)); then pass "no two controls of the top toolbar overlap (the closest centres are $CLOSEST points apart)"; else fail "two controls of the top toolbar overlap: centres $CLOSEST points apart"; fi
+  expect_equal "no two controls of the top toolbar overlap (frames, not centres: a swatch is narrower than a button)" \
+    "overlapping-controls=0" "$(send "$EDITOR_SOCK" "editor-layout $EDITOR_N" | grep '^overlapping-controls=')"
   expect_disabled "Apply Crop is disabled until the Crop tool is chosen" crop-apply
   expect_disabled "Cancel Crop is disabled until the Crop tool is chosen" crop-cancel
 

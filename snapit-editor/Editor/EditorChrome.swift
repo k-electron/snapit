@@ -86,6 +86,9 @@ final class EditorChrome {
         let optionsWidth = topLeading?.frame.width ?? 0
         singleRowWidth = 82 + optionsWidth + rightWidth + 6
         minimumContent.width = max(Self.baseMinimumContent.width, 82 + rightWidth + 6, rail.frame.maxX + optionsWidth + Self.margin)
+        // The tool rail hangs from the title bar row and must fit whole, whatever the registry holds.
+        let barHeight = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.height }.max() ?? 0
+        minimumContent.height = max(Self.baseMinimumContent.height, rail.frame.height + barHeight + Self.margin)
 
         window = EditorWindow(
             contentRect: NSRect(origin: .zero, size: minimumContent),
