@@ -6,6 +6,8 @@ nonisolated enum EngineStatus: Int32, Sendable {
     case invalidArgument = 1
     case bufferTooSmall = 2
     case panic = 3
+    case outOfMemory = 4
+    case encodeFailed = 5
 }
 
 nonisolated struct EngineError: Error, CustomStringConvertible {

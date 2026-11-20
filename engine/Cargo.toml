@@ -9,3 +9,7 @@ description = "snapit's image engine, exposed to Swift through a C ABI"
 [lib]
 name = "snapit_engine"
 crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+libc = "0.2.191"
+png = "0.18.1"

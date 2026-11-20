@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		7A0000000000000000000B02 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0000000000000000000A12 /* KeyboardShortcuts */; };
 		7A0000000000000000000B01 /* snapit Editor.app in Embed Editor helper */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000F02 /* snapit Editor.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -92,6 +93,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A0000000000000000000B02 /* KeyboardShortcuts in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,6 +160,7 @@
 			);
 			name = snapit;
 			packageProductDependencies = (
+				7A0000000000000000000A12 /* KeyboardShortcuts */,
 			);
 			productName = snapit;
 			productReference = 7A0000000000000000000F01 /* snapit.app */;
@@ -206,6 +209,9 @@
 			);
 			mainGroup = 7A0000000000000000000901;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7A0000000000000000000A11 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7A0000000000000000000903 /* Products */;
 			projectDirPath = "";
@@ -485,6 +491,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7A0000000000000000000A11 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A0000000000000000000A12 /* KeyboardShortcuts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A0000000000000000000A11 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
+			productName = KeyboardShortcuts;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7A0000000000000000000001 /* Project object */;
 }
