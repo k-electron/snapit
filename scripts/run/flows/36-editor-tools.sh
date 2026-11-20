@@ -4,7 +4,7 @@
 # pasteboard) with the independent decoder in png-inspect. The fixture at scale 2 is a
 # 301 x 187 point Capture of 602 x 374 pixels in Display P3, so an Annotation in image points
 # lands on twice the pixels, and a flipped or shifted transform shows up as pixels changed in the
-# wrong place. Sourced by scripts/check-run.sh, after flow 30.
+# wrong place. Sourced by scripts/check-run.sh, after flow 35.
 # shellcheck shell=bash
 # shellcheck source=../editor-tools.sh
 source "$ROOT_DIR/scripts/run/editor-tools.sh"

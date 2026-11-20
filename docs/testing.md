@@ -26,6 +26,7 @@ the real system is replaced:
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
+| install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
 Product code always asks the edge (`AppPasteboard.current`, `SaveLocation.folder`,
 `AppDefaults.store`, `CaptureSources.current`, `Shortcuts.current`, ...) and never the real system
@@ -54,6 +55,10 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
+| `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
+| `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
+| `fixture-fail on\|off` | makes the fixture Capture fail, so a flow can check what a Capture that ends without a Capture does (it cancels the warm-up) |
+| `capture-timing` | `capture-to-editor-ms=<n> warm=yes\|no` for the last Capture: from its pixels being ready (the Capture itself is not counted) to the Editor window on screen: writing the Capture file, the command to the helper, attaching, showing, and the helper flushing its drawing before it replies. A normal run adds asking macOS to bring the helper forward |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
 | `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished |
 | `bound-shortcuts` | the ids of the Shortcuts that are bound |
@@ -61,6 +66,10 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
+| `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
+| `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
+| `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
+| `install-detect <path>` | detection with the real `statfs` and `/Volumes`, same reply as `install-location` |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
 
@@ -81,9 +90,26 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=` |
 | `editor-menu-keys` | the key equivalent each Edit menu item shows: `<title> key=<hex codes> modifiers=<mask>` |
 | `editor-first-click <N>` | one line per control host in the window, `<name> yes\|no`: whether the first click on a background Editor reaches it |
+| `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
+| `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
 `editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
 view (a layer-backed view would report `layer-backed`).
+
+## Warm-up
+
+A Capture that starts (its Shortcut was pressed) calls `EditorWarmUp.begin()` (`snapit/Helper/EditorWarmUp.swift`)
+and, if it ends without a Capture, `EditorWarmUp.cancel()`. `begin()` starts the Editor helper hidden
+(launch argument `--warm`, no activation: an agent with no Dock icon and no window) and sends it
+`warm-up`, so it builds the Editor's window, toolbars and canvas without a Capture. `cancel()` sends
+`cancel-warm-up`: the warm Editor goes and a helper that never showed a window quits, so no helper
+process exists at rest; a helper with an Editor open stays. A warm helper also watches the menu bar
+app that started it (its pid is a launch argument and an argument of `warm-up`, so a restarted snapit
+adopts a running helper) and quits when that process exits while the helper has shown nothing. Opening the Capture
+(`EditorHelperLauncher.open`) waits for a warm-up in progress, uses the warm Editor and ends the
+warm-up. A new Capture mode adds those two calls and nothing else; `scripts/run/flows/35-editor-warm-up.sh`
+shows what to assert. A helper launched without `--started-by-snapit` (a Dock pin) starts the menu
+bar app and quits without building anything.
 
 The menu bar app tells the helper to open a Capture with `open-capture <N>`; the pixels reach it
 through the Capture file `<root>/captures/capture-<N>.pixels` (memory-mapped, never the socket).
@@ -100,7 +126,10 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` the Editor's tools, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `80-` Move to Applications and the translocation
+check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
+menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
+is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
@@ -111,7 +140,7 @@ process's windows: `png-inspect windows <pid>`, reads one pixel: `png-inspect pi
 compares a PNG with the fixture: `png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]` prints how
 many pixels changed, their bounding box and how many lie inside and outside a rectangle). A flow that draws in
 the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`,
-`fixture_diff`, `fixture_pixel`, ...; `35-editor-tools.sh` is the model).
+`fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
 
 1. Pick the fixture: `send "$APP_SOCK" "fixture-display 2 301 187"`.
 2. Drive the app through a command, never the real system. A Capture opens an Editor in the helper:

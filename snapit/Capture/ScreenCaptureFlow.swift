@@ -28,8 +28,11 @@ enum ScreenCaptureFlow {
             ScreenRecordingPermission.current.request()
             return .permissionNeeded
         }
+        // The Capture has started: the Editor helper warms up while the pixels are taken.
+        EditorWarmUp.begin()
         do {
             let screen = try await CaptureSources.current.captureDisplayUnderPointer()
+            let clock = CaptureTiming.Clock()
             let number = try await CaptureHandoff.publish(screen)
             do {
                 try await EditorHelperLauncher.open(capture: number)
@@ -37,9 +40,11 @@ enum ScreenCaptureFlow {
                 CaptureHandoff.discard(number: number)
                 throw error
             }
+            clock.stop()
             CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {
+            EditorWarmUp.cancel()
             NSLog("snapit: Screen Capture failed: \(error)")
             return .failed("\(error)")
         }

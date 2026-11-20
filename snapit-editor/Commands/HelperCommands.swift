@@ -5,7 +5,9 @@ extension SocketCommandRegistry {
     /// `register…Commands()` in its own file and calls it here with one line.
     func registerHelperCommands() {
         registerEditorCommands()
+        registerWarmUpCommands()
         registerEditorTestCommands()
         registerEditorToolTestCommands()
+        registerInstallHelperCommands()
     }
 }
