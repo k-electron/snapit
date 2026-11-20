@@ -15,8 +15,11 @@ nonisolated enum ActionBarPlacement {
         if y > maxY { y = selection.minY - gap - size.height }
         if y < minY { y = selection.maxY - gap - size.height }
         y = max(minY, min(maxY, y))
+        // A bar wider than the display (less its margins) is centred on it, overflowing both
+        // sides equally rather than only the right.
+        let minX = bounds.minX + margin
         let maxX = bounds.maxX - margin - size.width
-        let x = max(bounds.minX + margin, min(maxX, selection.midX - size.width / 2))
+        let x = minX <= maxX ? max(minX, min(maxX, selection.midX - size.width / 2)) : bounds.midX - size.width / 2
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 }
