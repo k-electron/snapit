@@ -285,6 +285,36 @@ SnapitStatus snapit_capture_file_map(int32_t fd,
                                      struct SnapitPixelBuffer *out);
 
 /*
+ Copies the `width` x `height` pixels of an image that start at column `x`, row `y` into
+ `dst`, byte for byte: no resampling, no color conversion. The result's top-left pixel is the
+ source pixel at `(x, y)`.
+
+ Both images are BGRA, 8 bits per channel. Each is read or written through its own stride
+ (the distance in bytes between the starts of two rows, at least `width * 4`), so neither
+ has to be tight. Only the `width * 4` pixel bytes of each destination row are written; the
+ padding after them is left alone.
+
+ Returns `SNAPIT_STATUS_INVALID_ARGUMENT`, writing nothing, when a pointer is null, a size is
+ zero, a stride is too small, the rectangle is not wholly inside the source image, or the two
+ images overlap in memory.
+
+ # Safety
+
+ `src` must be valid for reads of `src_stride * (src_height - 1) + src_width * 4` bytes and
+ `dst` valid for writes of `dst_stride * (height - 1) + width * 4` bytes, for the whole call.
+ */
+SnapitStatus snapit_crop(const uint8_t *src,
+                         uint32_t src_width,
+                         uint32_t src_height,
+                         size_t src_stride,
+                         uint32_t x,
+                         uint32_t y,
+                         uint32_t width,
+                         uint32_t height,
+                         uint8_t *dst,
+                         size_t dst_stride);
+
+/*
  Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
 
  * `stride` is the distance in bytes between rows and must be at least `width * 4`; bytes
