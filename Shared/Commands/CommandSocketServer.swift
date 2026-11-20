@@ -55,6 +55,9 @@ nonisolated final class CommandSocketServer: @unchecked Sendable {
 
     /// Stops listening and removes the socket file before returning.
     func stop() {
+        // A server that is not listening (never started, or already stopped) does not own the
+        // path any more: a relaunched snapit may be listening on it.
+        guard source != nil else { return }
         source?.cancel()
         source = nil
         unlink(path)

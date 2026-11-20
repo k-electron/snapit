@@ -26,6 +26,7 @@ the real system is replaced:
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
+| install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
 Product code always asks the edge (`AppPasteboard.current`, `SaveLocation.folder`,
 `AppDefaults.store`, `CaptureSources.current`, `Shortcuts.current`, ...) and never the real system
@@ -61,6 +62,10 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
+| `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
+| `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
+| `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
+| `install-detect <path>` | detection with the real `statfs` and `/Volumes`, same reply as `install-location` |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
 
@@ -75,6 +80,8 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
+| `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
+| `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
 `editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
 view (a layer-backed view would report `layer-backed`).
@@ -94,7 +101,8 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `80-` Move to Applications and the translocation
+check, `90-` Editor helper and Quit, which must stay last).
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
