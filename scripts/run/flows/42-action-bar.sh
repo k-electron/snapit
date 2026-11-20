@@ -130,7 +130,7 @@ expect_equal "a press on Cancel released elsewhere does not cancel" "adjusting" 
 expect_equal "and the overlay is still up" "1" "$(overlay_panels | grep -c '^600x400 ')"
 
 # 3. Keys: a key no item claims is ignored, Enter does nothing before a selection exists, and an
-#    item's own key would run it (44-color-picker.sh drives P).
+#    item's own key would run it (43-color-picker.sh drives P).
 send "$APP_SOCK" "overlay-key z" >/dev/null
 expect_equal "a key no Action bar item claims does nothing" "adjusting" "$(fact state)"
 area_cancel
