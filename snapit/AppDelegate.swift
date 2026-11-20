@@ -40,23 +40,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A quit nobody has been asked about (logout, an AppleEvent, Activity Monitor) asks the Editor
+    /// helper first, on a background queue: an Editor holding unexported edits is brought forward
+    /// and the user chooses. The Quit snapit menu item and the internal quits (the `quit` command, a
+    /// relaunch) have decided already (`QuitPreparation.isDecided`).
+    ///
     /// A Save the user already made still lands when they quit: quitting waits for the write.
     ///
-    /// The reply is queued on the main run loop in the common modes. `reply(toApplicationShouldTerminate:)`
-    /// through `DispatchQueue.main.async` never runs when `terminate` was called from inside a main
-    /// queue block (which is how the socket `quit` calls it).
+    /// Every reply is queued on the main run loop in the common modes.
+    /// `reply(toApplicationShouldTerminate:)` through `DispatchQueue.main.async` never runs when
+    /// `terminate` was called from inside a main queue block (which is how the socket `quit` calls it).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let wait = SaveService.shared.waitForSavesBeforeQuit {
-            let mainLoop = CFRunLoopGetMain()
-            CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
-                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+        // A copy that never owned the menu bar has no helper of its own to ask.
+        if commandServer != nil, !QuitPreparation.isDecided {
+            DispatchQueue.global().async {
+                let allowed = EditorHelperQuitCheck.allowsQuitBlocking()
+                Self.onMainLoop {
+                    guard allowed else { return NSApplication.shared.reply(toApplicationShouldTerminate: false) }
+                    QuitPreparation.markConsented()
+                    Self.finishQuitting()
+                }
             }
-            CFRunLoopWakeUp(mainLoop)
+            return .terminateLater
         }
-        // Quitting for good from here on (the quit has been agreed to): a Save that fails while the last ones finish
-        // opens no window. A quit that is deferred or cancelled later must set this back to false.
+        let wait = SaveService.shared.waitForSavesBeforeQuit {
+            Self.onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+        }
+        // The quit is decided (agreed to, or it needed no asking): a Save that fails while the last ones finish
+        // opens no window. A quit the user cancels never gets here.
         SaveFailureNotice.isQuitting = true
         return wait ? .terminateLater : .terminateNow
+    }
+
+    /// The quit is agreed: it goes on once the Saves already made have landed.
+    private static func finishQuitting() {
+        // The quit has been agreed to: a Save that fails while the last ones finish opens no window.
+        SaveFailureNotice.isQuitting = true
+        let wait = SaveService.shared.waitForSavesBeforeQuit {
+            onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+        }
+        if !wait { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+    }
+
+    private nonisolated static func onMainLoop(_ body: @escaping @MainActor @Sendable () -> Void) {
+        let mainLoop = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) { MainActor.assumeIsolated { body() } }
+        CFRunLoopWakeUp(mainLoop)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

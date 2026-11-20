@@ -14,8 +14,6 @@ enum HelperLifecycle {
     /// True when one of the helper's windows has shown since its last window closed: a helper that is
     /// quitting because it has no windows stays for it (`HelperDelegate.applicationShouldTerminate`).
     static var windowShownSinceLastClose = false
-    /// True once the helper was told to quit (the `quit` command, "Quit snapit"): nothing keeps it.
-    static var isQuitRequested = false
 
     static func windowWillShow() {
         // Become a regular app before the window shows, so it appears once, already owned by
