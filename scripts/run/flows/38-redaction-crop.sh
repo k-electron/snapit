@@ -9,7 +9,8 @@
 #
 # The block rule the checks apply (docs/testing.md): the block is a third of the Redaction's
 # short side, between 14 and 48 points, at least 4 pixels; its grid starts at the Redaction's
-# top left corner in pixels, and after a crop at the corner of what is left of it.
+# top left corner in pixels (after a crop, at the corner of what is left of it), and what is left
+# over at the right and bottom edge is folded into the last tile, so no tile is a sliver.
 #
 # Fixture at scale 2: a 301 x 187 point Capture of 602 x 374 pixels in Display P3, so a point
 # position lands on twice the pixels. Sourced by scripts/check-run.sh, after flow 36.
@@ -56,6 +57,12 @@ expect_redacted() {
   out="$(verify_redaction "$@")"
   expect_equal "$description" "0" "$(field "$out" mismatches)"
   [[ "$(field "$out" mismatches)" == "0" ]] || echo "     $(field "$out" first_mismatch)"
+  expect_equal "$description: no original pixel survives" "0" "$(field "$out" survivors)"
+  # No tile is a sliver: the shortest side of a tile is the block, or all of a side shorter than that.
+  local x0="${8}" y0="${9}" x1="${10}" y1="${11}" block="${12}" shortest
+  shortest=$((x1 - x0 < y1 - y0 ? x1 - x0 : y1 - y0))
+  ((shortest < block)) || shortest="$block"
+  if (($(field "$out" smallest_tile) >= shortest)); then pass "$description: no tile is thinner than the block"; else fail "$description: a tile is only $(field "$out" smallest_tile) pixels thick (block $block)"; fi
 }
 # expect_exact_preview <description> <export png>: the canvas's own rendering is the Export, bit for bit.
 expect_exact_preview() {
@@ -138,6 +145,23 @@ if open_editor; then
   close_editor
 fi
 
+# 4c. A width and a height one pixel over a whole number of blocks (the leftover is a single pixel
+#     column and row, which used to be left as the original): (10,10) to (110.5,70.5) points is
+#     pixels (20,20) to (221,141), 201 x 121 with 40-pixel blocks, so the last tiles are 41 pixels.
+if open_editor; then
+  keystroke x >/dev/null
+  drag 10 10 110.5 70.5 >/dev/null
+  BLOCK="$(redaction_block 201 121 2)"
+  expect_equal "a third of its 60.5 point short side is 20.17 points: 40 pixel blocks" "40" "$BLOCK"
+  EDGE="$(export_png one-over)"
+  expect_redacted "a Redaction one pixel over a whole number of blocks has no original pixel left in its last column and row" \
+    "$EDGE" $W $H $W $H 0 0 20 20 221 141 "$BLOCK"
+  expect_equal "the corner pixel is not the Capture's" "no" \
+    "$([[ "$(pixel "$EDGE" 220 140)" == "$(fixture_pixel 220 140 $W $H)" ]] && echo yes || echo no)"
+  expect_exact_preview "and the preview is the Export, bit for bit" "$EDGE"
+  close_editor
+fi
+
 # 5. Overlapping Redactions each pixelate the original pixels (what the canvas shows), the later
 #    one over the earlier, never the earlier one's blocks.
 if open_editor; then
@@ -199,12 +223,9 @@ if open_editor; then
   expect_equal "the handle in the middle of the right edge is white" "255,255,255" "$(pixel "$OVERLAY" 341 136)"
   expect_equal "with the shade and handles hidden the canvas's rendering is still the whole Capture" "0" \
     "$(changed_pixels "$(preview_png)" $W $H)"
-  expect_equal "a crop that is not applied is not in the document" "crop=none" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep '^crop=')"
   expect_unchanged "and the Export is still the whole Capture" "$(export_png uncropped)" $W $H
   expect_equal "Enter replies ok" "ok" "$(keystroke enter)"
   expect_tool select
-  expect_equal "the crop in the document is the snapped rectangle in points (pixels (40,31) to (341,242) at 2x)" \
-    "crop=20.000 15.500 150.500 105.500" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep '^crop=')"
   CROPPED="$(export_png cropped-enter)"
   CROPPED_INFO="$("$INSPECT" info "$CROPPED")"
   expect_equal "the Export is the 301 pixels wide that the crop keeps" "301" "$(png_field "$CROPPED_INFO" width)"
@@ -221,7 +242,6 @@ if open_editor; then
   keystroke undo >/dev/null
   expect_unchanged "one Undo takes the crop back: the Export is the whole Capture" "$(export_png crop-undone)" $W $H
   expect_exact_preview "and the canvas shows the whole Capture again" "$(export_png crop-undone2)"
-  expect_equal "the document has no crop" "crop=none" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep '^crop=')"
   keystroke redo >/dev/null
   expect_equal "Redo brings the crop back: the same Export" "max_diff=0" \
     "$("$INSPECT" compare "$CROPPED" "$(export_png crop-redone)" | grep '^max_diff=')"
@@ -264,7 +284,7 @@ if open_editor; then
   drag 60 40 200 130 >/dev/null  # inside the whole-Capture rectangle: moves it, clamped to the Capture
   keystroke enter >/dev/null
   expect_unchanged "a rectangle that is the whole Capture (moved nowhere) crops nothing" "$(export_png whole)" $W $H
-  expect_equal "so no Undo step was made" "undo-steps=0" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep '^undo-steps=')"
+  expect_disabled "so no Undo step was made: Undo is disabled" undo
   close_editor
 fi
 
@@ -313,6 +333,14 @@ fi
 #     at its corner: (60,40) to (140,100) points is pixels (120,80) to (280,200), which is (80,49) to
 #     (240,169) in the cropped Export.
 if open_editor; then
+  # A Redaction that reaches past where the crop will end (drawn first, on the whole Capture): its
+  # blocks are a third of the whole box's short side (140 pixels is 70 points, 47 pixel blocks), and
+  # the part inside the crop, which is all that is left of it, is pixelated on a grid that starts at
+  # that part's corner (240,169) in the cropped Export; it is 61 x 42, narrower than a block, so a
+  # single tile.
+  keystroke x >/dev/null
+  drag 140 100 240 170 >/dev/null
+  BLOCK2="$(redaction_block 200 140 2)"
   keystroke c >/dev/null
   drag 0 0 20.15 15.35 >/dev/null
   drag 301 187 170.65 120.8 >/dev/null
@@ -321,26 +349,38 @@ if open_editor; then
   drag 60 40 140 100 >/dev/null
   BLOCK="$(redaction_block 160 120 2)"
   AFTER="$(export_png redaction-after-crop)"
-  OUT="$(verify_redaction "$AFTER" 301 211 $W $H 40 31 80 49 240 169 "$BLOCK")"
-  expect_equal "a Redaction drawn after the crop is pixelated at its own place, from the Capture's pixels" "0" "$(field "$OUT" mismatches)"
-  expect_equal "nothing else in the cropped Export changed" "0" "$(field "$OUT" outside_mismatches)"
-  expect_equal "no original pixel survives under it" "0" "$(field "$OUT" survivors)"
-  expect_exact_preview "the cropped canvas's preview of the Redaction is the Export, bit for bit" "$AFTER"
-  # A second Redaction that reaches past the crop's right and bottom edge: its blocks are a third of
-  # the whole box's short side (140 pixels is 70 points, 47 pixel blocks), and the part inside the crop
-  # is pixelated on a grid that starts at its corner (240,169).
-  drag 140 100 240 170 >/dev/null
-  BLOCK2="$(redaction_block 200 140 2)"
-  AFTER2="$(export_png redaction-past-crop)"
+  expect_redacted "a Redaction drawn after the crop is pixelated at its own place, from the Capture's pixels" \
+    "$AFTER" 301 211 $W $H 40 31 80 49 240 169 "$BLOCK"
   expect_redacted "a Redaction reaching past the crop is pixelated inside it, its grid starting at the visible corner" \
-    "$AFTER2" 301 211 $W $H 40 31 240 169 301 211 "$BLOCK2"
-  expect_redacted "the first Redaction is unchanged" "$AFTER2" 301 211 $W $H 40 31 80 49 240 169 "$BLOCK"
-  expect_exact_preview "the preview of a Redaction cut by the crop is the Export, bit for bit" "$AFTER2"
+    "$AFTER" 301 211 $W $H 40 31 240 169 301 211 "$BLOCK2"
+  expect_exact_preview "the cropped canvas's preview of both Redactions is the Export, bit for bit" "$AFTER"
   keystroke undo >/dev/null
-  expect_redacted "Undo takes the second Redaction back and leaves the first" "$(export_png redaction-undone)" 301 211 $W $H 40 31 80 49 240 169 "$BLOCK"
+  expect_redacted "Undo takes the Redaction drawn after the crop back and leaves the other" "$(export_png redaction-undone)" 301 211 $W $H 40 31 240 169 301 211 "$BLOCK2"
   keystroke undo >/dev/null
   keystroke undo >/dev/null
   expect_unchanged "Undo of the Redactions and the crop gives the whole untouched Capture" "$(export_png all-undone)" $W $H
+  close_editor
+fi
+
+# 10b. With a crop applied, the margin around the visible part is not the Capture the user sees: a
+#      press there does nothing, and a drag that leaves the visible part stops at its edge. A solid
+#      Rectangle dragged from (160,100) points to (250,170), past the crop's right (170.5) and bottom
+#      (121) edges, ends there: pixels (280,169) to (301,211) of the cropped Export.
+if open_editor; then
+  keystroke c >/dev/null
+  drag 0 0 20.15 15.35 >/dev/null
+  drag 301 187 170.65 120.8 >/dev/null
+  keystroke enter >/dev/null
+  keystroke r >/dev/null
+  style fill solid >/dev/null
+  drag 250 170 280 180 >/dev/null  # begins well outside the visible part
+  expect_equal "a press in the margin around the cropped Capture draws nothing" "changed=0" \
+    "$("$INSPECT" diff-crop "$(export_png margin)" 301 211 $W $H 40 31 | grep '^changed=')"
+  drag 160 100 250 170 >/dev/null
+  CUT="$("$INSPECT" diff-crop "$(export_png margin-drag)" 301 211 $W $H 40 31)"
+  expect_equal "a drag past the crop's edge ends at the edge" "bbox=280,169,301,211" "$(printf '%s\n' "$CUT" | grep '^bbox=')"
+  expect_equal "and covers every pixel of what is visible of it" "changed=882" "$(printf '%s\n' "$CUT" | grep '^changed=')"
+  style fill outline >/dev/null
   close_editor
 fi
 
@@ -360,6 +400,8 @@ if open_editor; then
   drag 50 40 130 100 >/dev/null  # pixels (50,40) to (130,100): (30,25) to (110,85) after the crop; 20 pixel blocks
   expect_redacted "at 1x a Redaction after the crop is exact" "$(export_png one-x-redaction)" 151 106 301 187 20 15 30 25 110 85 "$(redaction_block 80 60 1)"
   expect_exact_preview "and so is its preview" "$(export_png one-x-redaction2)"
+  drag 60 60 89 89 >/dev/null  # 29 x 29 pixels: 14 pixel blocks and a leftover pixel, at (40,45) in the cropped Export
+  expect_redacted "at 1x a 29 x 29 Redaction (14 pixel blocks, 2 x 14 + 1) has no original pixel left" "$(export_png one-x-29)" 151 106 301 187 20 15 40 45 69 74 "$(redaction_block 29 29 1)"
   close_editor
 fi
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
@@ -380,11 +422,12 @@ if open_editor; then
     background_editor "$FIRST_N"
     click_on "$FIRST_N" item crop-apply >/dev/null
     expect_tool select
-    expect_equal "the first click on Apply Crop in a background Editor applies the crop" "crop=50.000 40.000 251.000 147.000" \
-      "$(send "$EDITOR_SOCK" "editor-document $FIRST_N" | grep '^crop=')"
+    BACKGROUND_INFO="$("$INSPECT" info "$(export_png first-click-crop)")"
+    expect_equal "the first click on Apply Crop in a background Editor applies the crop: the Export is 502 x 294 pixels" "502x294" \
+      "$(png_field "$BACKGROUND_INFO" width)x$(png_field "$BACKGROUND_INFO" height)"
     background_editor "$FIRST_N"
     click_on "$FIRST_N" item undo >/dev/null
-    expect_equal "and the first click on Undo takes it back" "crop=none" "$(send "$EDITOR_SOCK" "editor-document $FIRST_N" | grep '^crop=')"
+    expect_unchanged "and the first click on Undo takes it back: the Export is the whole Capture" "$(export_png first-click-undo)" $W $H
     send "$EDITOR_SOCK" "editor-key $SECOND_N escape" >/dev/null
     EDITOR_N="$FIRST_N"
     close_editor
@@ -425,6 +468,9 @@ if open_editor; then
 fi
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 
+REDACT_FIVE_MB_MAX="${SNAPIT_REDACT_FIVE_MB_MAX:-450}"
+FLATTEN_MS_MAX="${SNAPIT_FLATTEN_MS_MAX:-60}"
+COPY_MS_MAX="${SNAPIT_COPY_MS_MAX:-150}"
 # 14. Speed: a full 6K Copy (6016 x 3384 pixels) with a crop, Redactions and Annotations.
 send "$APP_SOCK" "fixture-display 2 3008 1692" >/dev/null
 if open_editor; then
@@ -444,7 +490,11 @@ if open_editor; then
   START="$(now_ms)"
   send_slow "$EDITOR_SOCK" "editor-press $EDITOR_N copy" >/dev/null
   COPY_MS=$(($(now_ms) - START))
-  if ((COPY_MS < 1000)); then pass "a full 6K Copy with a crop, 2 Redactions and 30 Annotations takes well under a second (${COPY_MS} ms, with the pasteboard write)"; else fail "the 6K Copy took ${COPY_MS} ms"; fi
+  TIMING="$(send_slow "$EDITOR_SOCK" "editor-export-timing $EDITOR_N")"
+  FLATTEN_MS="$(printf '%s\n' "$TIMING" | sed -n 's/.*flatten-ms=\([0-9]*\).*/\1/p')"
+  echo "     6K Export: $TIMING; Copy end to end ${COPY_MS} ms"
+  if [[ -n "$FLATTEN_MS" ]] && ((FLATTEN_MS <= FLATTEN_MS_MAX)); then pass "the pipeline's own time (crop, 2 Redactions, 30 Annotations) on a 6K Capture is ${FLATTEN_MS} ms (limit ${FLATTEN_MS_MAX})"; else fail "the 6K pipeline took '$FLATTEN_MS' ms (limit ${FLATTEN_MS_MAX}): $TIMING"; fi
+  if ((COPY_MS <= COPY_MS_MAX)); then pass "a full 6K Copy with a crop, 2 Redactions and 30 Annotations takes ${COPY_MS} ms end to end (limit ${COPY_MS_MAX}, with the pasteboard write)"; else fail "the 6K Copy took ${COPY_MS} ms (limit ${COPY_MS_MAX})"; fi
   send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/tools/six-k.png" >/dev/null
   SIX_K="$("$INSPECT" info "$RUN_ROOT/tools/six-k.png")"
   expect_equal "the 6K Export is the cropped size, 5700 x 3200 pixels" "5700x3200" "$(png_field "$SIX_K" width)x$(png_field "$SIX_K" height)"
@@ -472,6 +522,20 @@ if open_editor; then
     keystroke undo >/dev/null
     keystroke c >/dev/null
   done
+  keystroke v >/dev/null
+  # Five Redactions of almost the whole Capture at once (each preview is tens of megabytes of
+  # pixels): the Editor holds them while they are on the canvas and gives them all back.
+  keystroke x >/dev/null
+  for i in 1 2 3 4 5; do drag $((50 + i * 20)) 50 $((2000 + i * 20)) 1200 >/dev/null; done
+  sleep 1
+  REDACT_HELD="$(footprint_mb "$HELPER_PID")"
+  echo "     five large Redactions: ${REDACT_BASELINE} MB before, ${REDACT_HELD} MB with them"
+  if awk -v a="$REDACT_HELD" -v b="$REDACT_BASELINE" -v max="$REDACT_FIVE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+    pass "five large Redactions on a 2560 x 1440 point Capture cost the Editor ${REDACT_HELD} MB (${REDACT_BASELINE} MB before, limit +${REDACT_FIVE_MB_MAX} MB)"
+  else
+    fail "five large Redactions took the Editor from ${REDACT_BASELINE} MB to ${REDACT_HELD} MB (limit +${REDACT_FIVE_MB_MAX} MB)"
+  fi
+  for _ in 1 2 3 4 5; do keystroke undo >/dev/null; done
   keystroke v >/dev/null
   sleep 1
   REDACT_AFTER="$(footprint_mb "$HELPER_PID")"

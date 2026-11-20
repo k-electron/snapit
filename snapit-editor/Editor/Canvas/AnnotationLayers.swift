@@ -92,6 +92,13 @@ final class AnnotationLayers {
         layoutSelection()
     }
 
+    /// A drag ended: layers whose previews were throttled while it lasted catch up now.
+    func settle() {
+        for entry in entries.values where entry.isEffect {
+            (entry.layer as? RedactionPreviewLayer)?.flush()
+        }
+    }
+
     /// The canvas's zoom or Capture changed (the window was resized): the layers that depend on
     /// it are updated and the selection is drawn again.
     func contextChanged(_ context: AnnotationRenderContext) {

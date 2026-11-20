@@ -374,9 +374,11 @@ SnapitStatus snapit_downscale(const uint8_t *pixels,
  Pixelates the `width` x `height` rectangle of a BGRA image that starts at column `x`, row
  `y`, writing the result into `dst`: the rectangle is cut into square tiles of `block` pixels
  with the first tile at the rectangle's top left corner, and every pixel of a tile becomes the
- mean of the tile's source pixels, channel by channel (all four, rounded down). A tile cut off
- by the rectangle's right or bottom edge is smaller and averaged over the pixels it has. The
- result's top-left pixel is the pixelated source pixel `(x, y)`.
+ mean of the tile's source pixels, channel by channel (all four, rounded down). What is left at
+ the right and bottom edge, when the sides are not whole numbers of blocks, is folded into the
+ last tile of its row or column, so the edge tiles are between `block` and `2 * block - 1`
+ pixels on a side and never a thin strip or a lone pixel; a side shorter than one block is a
+ single tile. The result's top-left pixel is the pixelated source pixel `(x, y)`.
 
  The source is never changed, so a caller can pixelate the same pixels again after the
  destination has been drawn on, and Redactions that overlap each average the original

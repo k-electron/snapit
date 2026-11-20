@@ -24,16 +24,18 @@
 //   png-inspect verify-redaction <file> <w> <h> <full w> <full h> <ox> <oy> <x0> <y0> <x1> <y1> <block>
 //                                               the file is the w x h pixels of the full w x full h fixture that
 //                                               start at column ox, row oy, with the rectangle (x0,y0)-(x1,y1)
-//                                               (file pixels, end exclusive) pixelated: `block` x `block` tiles
-//                                               from the rectangle's top left corner (tiles at its right and
-//                                               bottom edge are smaller), every pixel of a tile the floored mean
-//                                               of the fixture's pixels in it, per channel. Prints `mismatches=`
+//                                               (file pixels, end exclusive) pixelated: side / block tiles of
+//                                               `block` pixels across (at least one) from the rectangle's top
+//                                               left corner, the last column and row of tiles taking in what is
+//                                               left over, every pixel of a tile the floored mean of the
+//                                               fixture's pixels in it, per channel. Prints `mismatches=`
 //                                               (pixels of the rectangle that are not their tile's mean),
 //                                               `outside_mismatches=` (pixels outside it that are not the
 //                                               fixture), `blocks=`, `colors=` (distinct colors in the
-//                                               rectangle) and `survivors=` (pixels of the rectangle that still
-//                                               have their original value although their tile held different
-//                                               pixels)
+//                                               rectangle), `survivors=` (pixels of the rectangle that still
+//                                               have their original value: in a lone-pixel tile, or a tile that
+//                                               held different pixels) and `smallest_tile=` (the shortest side
+//                                               of any tile)
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect verify-fixture <file> <w> <h> <full w> <full h> <x> <y>
 //                                               the same for a crop: the file is the w x h pixels of the
@@ -383,12 +385,18 @@ case "verify-redaction":
             if actual(x, y) != original(x, y) { outside += 1 }
         }
     }
-    var ty = y0
-    while ty < y1 {
-        let th = min(block, y1 - ty)
-        var tx = x0
-        while tx < x1 {
-            let tw = min(block, x1 - tx)
+    // The grid, worked out from the rule alone: the rectangle has side / block tiles across (at
+    // least one) from its top left; the last column and row of tiles take in what is left over.
+    let rectWidth = x1 - x0, rectHeight = y1 - y0
+    let columns = max(rectWidth / block, 1), rows = max(rectHeight / block, 1)
+    var smallestTile = Int.max
+    for row in 0..<rows {
+        let ty = y0 + row * block
+        let th = row == rows - 1 ? y1 - ty : block
+        for column in 0..<columns {
+            let tx = x0 + column * block
+            let tw = column == columns - 1 ? x1 - tx : block
+            smallestTile = min(smallestTile, tw, th)
             var sum = [0, 0, 0]
             var distinct = Set<[Int]>()
             for y in ty..<(ty + th) {
@@ -407,13 +415,13 @@ case "verify-redaction":
                         if mismatches == 0 { first = "\(x),\(y) got \(got) want \(mean)" }
                         mismatches += 1
                     }
-                    if distinct.count > 1, got == original(x, y) { survivors += 1 }
+                    // A pixel that is still its original value, in a tile that is a lone pixel or
+                    // that held different pixels, survived the pixelate.
+                    if (tw * th == 1 || distinct.count > 1), got == original(x, y) { survivors += 1 }
                 }
             }
             blocks += 1
-            tx += tw
         }
-        ty += th
     }
     print("size=\(width)x\(height)")
     print("mismatches=\(mismatches)")
@@ -422,6 +430,7 @@ case "verify-redaction":
     print("blocks=\(blocks)")
     print("colors=\(colors.count)")
     print("survivors=\(survivors)")
+    print("smallest_tile=\(smallestTile)")
 
 case "profile-sha":
     guard arguments.count == 3 else { fail("profile-sha <srgb|displayP3>") }

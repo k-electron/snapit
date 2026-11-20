@@ -103,7 +103,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a mouse event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The point is placed by asking the canvas's layer tree where it is, and the event goes through the window's `sendEvent`, as a click does |
 | `editor-keystroke <N> undo\|redo\|delete\|enter\|<character>` | ⌘Z, ⇧⌘Z, ⌫, Return or a plain key (a tool's key) as the window receives it |
 | `editor-style <N> fill outline\|solid`, `width <points>`, `color <RRGGBB>` | what the style controls do: the selected Annotation and the next ones, remembered through `AppDefaults.store` |
-| `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `crop=<x> <y> <w> <h>` (the applied crop in points, or `none`), `zoom=`. For setup and for the zoom precondition; assertions are on pixels and on which items are enabled |
+| `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=`. For setup and for the zoom precondition; assertions are on pixels and on which items are enabled |
 | `editor-menu-keys` | the key equivalent each Edit menu item shows: `<title> key=<hex codes> modifiers=<mask>` |
 | `editor-enabled <N> <item id>` | `yes` or `no`: whether a toolbar item is enabled (Delete Annotation is enabled exactly when something is selected) |
 | `editor-controls <N>` | one line per toolbar control, `control <tooltip> <x> <y>`: its centre in window coordinates. Test mode puts an invisible marker view behind each control (`ControlMarker`) |
@@ -145,16 +145,12 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 ## Adding a flow to the scripted run
 
-`SNAPIT_FLOWS="37 40" scripts/check-run.sh <app>` runs only the flows whose names start with those numbers, for
+`SNAPIT_FLOWS="38 40" scripts/check-run.sh <app>` runs only the flows whose names start with those numbers, for
 working on one flow (flows share state, so `scripts/test.sh` always runs them all).
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-<<<<<<< HEAD
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Redaction and Crop, `40-` Area Capture, `80-` Move to Applications and the translocation
-=======
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture, `45-` Save and drag-out, `80-` Move to Applications and the translocation
->>>>>>> integration/snapit-v1
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `38-` Redaction and Crop, `40-` Area Capture, `45-` Save and drag-out, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -325,9 +321,14 @@ kept.
 The rule (`RedactionGeometry`), which the flow works out again on its own: the box in image points snaps
 to device pixels, each edge to the nearest pixel, and is cut to the Capture. The block is a third of its
 short side, between 14 and 48 points, at least 4 pixels. The grid of blocks starts at the corner of the
-part of the box that is inside the image shown (the Capture, or what a crop kept), a block cut off by the
-box's right or bottom edge is smaller, and every pixel of a block is the floored mean of the original pixels
-in it, per channel. Blocks are 40 pixels for a 60 point box at 2x.
+part of the box that is inside the image shown (the Capture, or what a crop kept). It has side / block
+blocks across and down (at least one), and what is left over at the right and bottom edge is folded into
+the last block of its row or column, so the edge blocks are between `block` and `2 * block - 1` pixels
+wide and never a sliver or a lone pixel (a side shorter than one block is a single block). Every pixel of
+a block is the floored mean of the original pixels in it, per channel. Blocks are 40 pixels for a 60 point
+box at 2x; a 201 x 121 pixel Redaction has 40 pixel blocks with a last column and row 41 pixels wide.
+`png-inspect verify-redaction` works the grid out from this paragraph alone and reports `survivors=` (an
+original pixel left under the Redaction) and `smallest_tile=`.
 
 Crop: `DocumentState.crop` is a rectangle in image points, set by Apply Crop (Enter or the toolbar item, one
 Undo step) after the Crop tool's handles (`EditorSession+Crop.swift`, `Canvas/CropOverlayLayers.swift`). It is

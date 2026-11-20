@@ -42,12 +42,13 @@ struct EditorKeyEquivalent: Equatable {
 
     func matches(_ event: NSEvent) -> Bool {
         // Caps Lock is a state, not part of the combination.
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers else {
-            return false
-        }
+        var flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
+        // Enter on the numeric keypad is the same as Return; its events carry the keypad flag.
+        let isReturn = key == "\r"
+        if isReturn { flags.subtract([.numericPad, .function]) }
+        guard flags == modifiers else { return false }
         let typed = event.charactersIgnoringModifiers?.lowercased()
-        // Enter on the numeric keypad is the same as Return.
-        return typed == key || (key == "\r" && typed == "\u{3}")
+        return typed == key || (isReturn && typed == "\u{3}")
     }
 }
 

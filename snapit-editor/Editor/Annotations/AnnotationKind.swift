@@ -29,6 +29,10 @@ struct AnnotationRenderContext {
     /// The part of the Capture the canvas shows, in Capture pixels, when a crop is applied; nil
     /// for all of it. A kind that previews from the Capture works on this part, as Export does.
     var cropPixels: PixelRect?
+    /// True while the pointer is dragging (an Annotation being drawn, moved or resized): a kind
+    /// whose preview is costly may update at most every few milliseconds and catch up when the
+    /// drag ends (`AnnotationLayers.settle`).
+    var isLive = false
 }
 
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in
