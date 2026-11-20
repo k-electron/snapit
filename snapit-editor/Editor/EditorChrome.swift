@@ -91,7 +91,11 @@ final class EditorChrome {
     func attach(_ document: EditorDocument) {
         let screen = Self.screenForNewWindow()
         let image = document.capture.pixels.makeCGImage()
-        if let image { canvas.setCapture(image: image, pointSize: document.pointSize) }
+        if let image {
+            canvas.setCapture(
+                image: image, pointSize: document.pointSize, pixels: document.capture.pixels,
+                scale: document.capture.info.scale)
+        }
         size(for: document.pointSize, on: screen)
     }
 

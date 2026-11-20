@@ -44,7 +44,7 @@ enum HelperMainMenu {
         for item in ToolbarRegistry.items(in: kind) {
             let menuItem = NSMenuItem(
                 title: item.menuTitle, action: #selector(EditorWindow.performToolbarItem(_:)),
-                keyEquivalent: item.keyEquivalent?.key ?? "")
+                keyEquivalent: item.keyEquivalent?.menuKey ?? "")
             menuItem.keyEquivalentModifierMask = item.keyEquivalent?.modifiers ?? []
             menuItem.representedObject = item.id
             menu.addItem(menuItem)
