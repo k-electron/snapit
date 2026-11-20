@@ -32,6 +32,7 @@ extension SocketCommandRegistry {
         registerShortcutTestCommands()
         registerInstallCommands()
         registerSettingsAppCommands()
+        registerOnboardingAppCommands()
         registerUpdateAppCommands()
     }
 
