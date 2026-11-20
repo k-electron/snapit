@@ -1,10 +1,10 @@
 import Foundation
 
 /// Maps each `SocketCommand` a process accepts to its handler. Handlers run on the main
-/// actor and return the reply text (without a trailing newline).
+/// actor, may suspend, and return the reply text (without a trailing newline).
 @MainActor
 final class SocketCommandRegistry {
-    typealias Handler = @MainActor (SocketRequest) -> String
+    typealias Handler = @MainActor (SocketRequest) async -> String
 
     private var handlers: [SocketCommand: Handler] = [:]
 
@@ -12,11 +12,11 @@ final class SocketCommandRegistry {
         handlers[command] = handler
     }
 
-    func handle(line: String) -> String {
+    func handle(line: String) async -> String {
         guard let request = SocketRequest(line: line) else { return "error empty command" }
         guard let handler = handlers[request.command] else {
             return "error unknown command \(request.command.name)"
         }
-        return handler(request)
+        return await handler(request)
     }
 }

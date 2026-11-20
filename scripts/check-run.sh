@@ -72,6 +72,13 @@ expect_equal "engine version round-trips through the C ABI in the menu bar app" 
 expect_equal "an engine panic comes back as a status code in the menu bar app" "panic" "$(send "$APP_SOCK" engine-probe-panic)"
 expect_equal "the menu bar app survives an engine panic" "$EXPECTED_VERSION" "$(send "$APP_SOCK" engine-version)"
 expect_equal "unknown commands are refused" "error unknown command nope" "$(send "$APP_SOCK" nope)"
+expect_equal "arguments with spaces survive the socket" "hello world" "$(send "$APP_SOCK" 'echo hello%20world')"
+
+# A second copy on the same socket quits and leaves the running one alone.
+"$APP_EXE" >"$RUN_ROOT/second.log" 2>&1 &
+SECOND_PID=$!
+if wait_until 10 gone "$SECOND_PID"; then pass "a second copy of the menu bar app quits"; else fail "a second copy of the menu bar app kept running"; kill "$SECOND_PID" 2>/dev/null; fi
+if answers "$APP_SOCK" && kill -0 "$APP_PID" 2>/dev/null; then pass "the running menu bar app keeps its socket"; else fail "the second copy took over the socket"; fi
 
 # 3. It is an agent app: no Dock icon.
 ASN="$(lsappinfo find pid="$APP_PID")"
@@ -98,8 +105,8 @@ else
   fail "menu bar app footprint is '${FOOTPRINT}' MB (ceiling ${FOOTPRINT_MB_MAX} MB)"
 fi
 
-# 6. The Editor helper starts as an agent, links the same engine and quits when told to.
-(nohup "$HELPER_EXE" >"$RUN_ROOT/helper.log" 2>&1 &)
+# 6. snapit starts the Editor helper, which is an agent, links the same engine and quits when told to.
+expect_equal "snapit starts the Editor helper" "ok" "$(send "$APP_SOCK" start-editor)"
 if wait_until 10 answers "$EDITOR_SOCK"; then pass "Editor helper starts and answers on its socket"; else fail "Editor helper did not answer"; fi
 HELPER_PID="$(pid_of "$HELPER_EXE")"
 if lsappinfo info -only applicationType "$(lsappinfo find pid="$HELPER_PID")" 2>/dev/null | grep -q 'UIElement'; then
@@ -114,7 +121,7 @@ expect_equal "Editor helper replies ok to quit" "ok" "$(send "$EDITOR_SOCK" quit
 if wait_until 5 gone "$HELPER_PID"; then pass "Editor helper quits when told to"; else fail "Editor helper is still running after quit"; fi
 
 # 7. Quitting snapit also quits a running helper.
-(nohup "$HELPER_EXE" >"$RUN_ROOT/helper.log" 2>&1 &)
+send "$APP_SOCK" start-editor >/dev/null
 wait_until 10 answers "$EDITOR_SOCK"
 HELPER_PID="$(pid_of "$HELPER_EXE")"
 expect_equal "menu bar app replies ok to quit" "ok" "$(send "$APP_SOCK" quit)"

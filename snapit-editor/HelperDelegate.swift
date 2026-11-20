@@ -5,8 +5,9 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Launched on its own (for example from a Dock pin): start the menu bar app and quit.
-        guard CommandSocketClient.isListening(at: AppIdentity.appSocketPath) else {
+        // Started by snapit: serve commands. Anything else (for example a Dock pin)
+        // launched the helper on its own: start the menu bar app and quit.
+        guard CommandLine.arguments.contains(AppIdentity.startedBySnapitArgument) else {
             MenuBarAppLauncher.startMenuBarAppThenQuit()
             return
         }
@@ -29,6 +30,6 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
         commandServer?.stop()
     }
 
-    // The helper quits when its last window closes (a later feature), never before.
+    // The helper quits through its `quit` command or when its last window closes, never before.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

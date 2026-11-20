@@ -1,7 +1,7 @@
 import AppKit
 
 // The Editor helper: an agent (no Dock icon) nested in snapit.app/Contents/Helpers.
-// Windows switch it to a regular app while they are open; none exist yet.
+// It becomes a regular app while it has a window open.
 let application = NSApplication.shared
 let delegate = HelperDelegate()
 application.delegate = delegate

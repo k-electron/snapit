@@ -1,14 +1,17 @@
 import Darwin
 import Foundation
 
-enum SocketError: Error, CustomStringConvertible {
+nonisolated enum SocketError: Error, CustomStringConvertible {
     case pathTooLong(String)
+    case alreadyRunning(String)
     case system(String, Int32)
 
     var description: String {
         switch self {
         case .pathTooLong(let path):
             return "socket path is longer than \(UnixSocket.maxPathLength) bytes: \(path)"
+        case .alreadyRunning(let path):
+            return "another snapit process is already listening on \(path)"
         case .system(let call, let code):
             return "\(call) failed: \(String(cString: strerror(code)))"
         }
@@ -16,7 +19,7 @@ enum SocketError: Error, CustomStringConvertible {
 }
 
 /// Small helpers over POSIX Unix-domain sockets.
-enum UnixSocket {
+nonisolated enum UnixSocket {
     /// `sun_path` holds 104 bytes on macOS, including the terminating NUL.
     static let maxPathLength = 103
 

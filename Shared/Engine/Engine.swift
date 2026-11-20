@@ -1,14 +1,14 @@
 import SnapitEngineFFI
 
 /// Status code returned by every engine entry point.
-enum EngineStatus: Int32, Sendable {
+nonisolated enum EngineStatus: Int32, Sendable {
     case ok = 0
     case invalidArgument = 1
     case bufferTooSmall = 2
     case panic = 3
 }
 
-struct EngineError: Error, CustomStringConvertible {
+nonisolated struct EngineError: Error, CustomStringConvertible {
     let status: EngineStatus?
     let rawValue: Int32
 
@@ -19,7 +19,7 @@ struct EngineError: Error, CustomStringConvertible {
 
 /// Thin Swift wrapper over the Rust engine's C ABI, linked statically into both executables.
 /// Each feature that needs the engine adds its own `extension Engine` in its own file.
-enum Engine {
+nonisolated enum Engine {
     static func check(_ rawStatus: Int32) throws {
         guard rawStatus != 0 else { return }
         throw EngineError(status: EngineStatus(rawValue: rawStatus), rawValue: rawStatus)

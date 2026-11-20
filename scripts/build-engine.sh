@@ -5,7 +5,7 @@
 # Engine target (Xcode gives scripts no shell profile, so scripts/cargo-env.sh locates
 # cargo) and by scripts/test.sh and CI.
 #
-# The Engine target sets ENABLE_USER_SCRIPT_SANDBOXING = NO: cargo reads the whole
+# Only the Engine target turns ENABLE_USER_SCRIPT_SANDBOXING off: cargo reads the whole
 # workspace and ~/.cargo, and writes target/, none of which a sandboxed script can declare.
 set -euo pipefail
 
