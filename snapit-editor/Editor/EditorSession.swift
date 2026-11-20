@@ -20,8 +20,14 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The style a new Annotation starts with: the color, width and fill used last, which
     /// `AnnotationSettings` remembers across launches.
     var annotationStyle = AnnotationSettings.style
+    /// What the toolbar shows about the Annotations. Changes when a gesture starts or ends, a
+    /// selection changes or Undo history changes, never while the pointer moves, so the toolbar
+    /// pills are not rebuilt on every mouse move.
+    var toolbarState = AnnotationToolbarState()
     /// The move, resize or drawing the pointer is in the middle of.
-    @ObservationIgnored var annotationGesture: AnnotationGesture?
+    @ObservationIgnored var annotationGesture: AnnotationGesture? {
+        didSet { refreshToolbarState() }
+    }
     /// True while Copy (or any Export) is running.
     var isExporting = false
     /// True when this session was built ahead of its Capture (a warm-up).
@@ -49,6 +55,10 @@ final class EditorSession: NSObject, NSWindowDelegate {
         guard ToolRegistry.tool(id: id) != nil else { return }
         abortAnnotationGesture()
         selectedToolID = id
+        // A drawing tool starts from nothing selected: its options (the fill) are then the
+        // tool's, not the previous selection's.
+        if ToolRegistry.tool(id: id)?.annotationKind != nil, selectedAnnotationID != nil { selectAnnotation(nil) }
+        refreshToolbarState()
         canvas.map { $0.window?.invalidateCursorRects(for: $0) }
     }
 
@@ -57,6 +67,8 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// Gives the Editor its Capture and sizes the window to it.
     func attach(_ document: EditorDocument) {
         self.document = document
+        // A warmed-up Editor was built before the last style was chosen.
+        annotationStyle = AnnotationSettings.style
         chrome?.attach(document)
         document.onChange = { [weak self] in self?.annotationsDidChange() }
         annotationsDidChange()

@@ -17,6 +17,10 @@ nonisolated struct ArrowAnnotationKind: AnnotationKind {
 
     func handles(of annotation: Annotation) -> [CGPoint] { [annotation.start, annotation.end] }
 
+    func isLargeEnough(_ annotation: Annotation) -> Bool {
+        hypot(annotation.end.x - annotation.start.x, annotation.end.y - annotation.start.y) >= AnnotationLimits.smallestSize
+    }
+
     func moveHandle(_ index: Int, to point: CGPoint, in annotation: Annotation) -> Annotation {
         var copy = annotation
         if index == 0 { copy.start = point } else if index == 1 { copy.end = point }

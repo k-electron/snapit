@@ -17,6 +17,7 @@ struct ToolRailView: View {
                     }
                     .buttonStyle(ChromeButtonStyle(look: session.selectedToolID == tool.id ? .selected : .plain, radius: 12))
                     .help(tool.tooltip)
+                    .controlMarker(tool.tooltip)
                 }
             }
             .padding(6)

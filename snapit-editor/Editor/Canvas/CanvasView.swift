@@ -19,6 +19,9 @@ import QuartzCore
 final class CanvasView: NSView {
     /// The Capture's size in points, scaled to fit the view.
     let contentLayer = CALayer()
+    /// Where the layers of the kinds drawn beneath the Annotations are (Redaction: Export
+    /// pixelates before it draws any Annotation), in image points, origin at the top left.
+    let effectLayer = CALayer()
     /// Where the Annotations' layers are, in image points, origin at the top left.
     let annotationLayer = CALayer()
     /// The selected Annotation's outline and handles, above the Annotations and not clipped.
@@ -27,6 +30,8 @@ final class CanvasView: NSView {
     private let root = CALayer()
     private let imageLayer = CALayer()
     private var pointSize = CGSize(width: 1, height: 1)
+    private var capture: PixelBuffer?
+    private var captureScale = 1.0
     weak var session: EditorSession?
 
     /// Space kept free around the Capture.
@@ -41,24 +46,31 @@ final class CanvasView: NSView {
         imageLayer.contentsGravity = .resize
         imageLayer.minificationFilter = .trilinear
         imageLayer.magnificationFilter = .nearest
+        effectLayer.isGeometryFlipped = true
+        effectLayer.masksToBounds = true
         annotationLayer.isGeometryFlipped = true
         annotationLayer.masksToBounds = true
         selectionLayer.isGeometryFlipped = true
         contentLayer.addSublayer(imageLayer)
+        contentLayer.addSublayer(effectLayer)
         contentLayer.addSublayer(annotationLayer)
         contentLayer.addSublayer(selectionLayer)
-        annotationLayers = AnnotationLayers(host: annotationLayer, selectionHost: selectionLayer)
+        annotationLayers = AnnotationLayers(host: annotationLayer, effectHost: effectLayer, selectionHost: selectionLayer)
         root.addSublayer(contentLayer)
     }
 
     required init?(coder: NSCoder) { fatalError("CanvasView is made in code") }
 
-    /// Shows the Capture: `pointSize` is its size in points.
-    func setCapture(image: CGImage, pointSize: CGSize) {
+    /// Shows the Capture: `pointSize` is its size in points, `pixels` its read-only mapping
+    /// (what a kind's preview may read) and `scale` the pixels per point.
+    func setCapture(image: CGImage, pointSize: CGSize, pixels: PixelBuffer, scale: Double) {
         self.pointSize = CGSize(width: max(pointSize.width, 1), height: max(pointSize.height, 1))
+        capture = pixels
+        captureScale = scale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         contentLayer.bounds = CGRect(origin: .zero, size: self.pointSize)
+        effectLayer.frame = contentLayer.bounds
         annotationLayer.frame = contentLayer.bounds
         selectionLayer.frame = contentLayer.bounds
         imageLayer.frame = contentLayer.bounds
@@ -90,20 +102,17 @@ final class CanvasView: NSView {
         contentLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
         contentLayer.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
         CATransaction.commit()
-        annotationLayers.relayoutSelection(zoom: zoom)
+        annotationLayers.contextChanged(renderContext)
+    }
+
+    /// What a kind's preview layer is given.
+    var renderContext: AnnotationRenderContext {
+        AnnotationRenderContext(capture: capture, scale: captureScale, zoom: zoom)
     }
 
     /// Shows the Annotations, with `selected` outlined.
     func showAnnotations(_ annotations: [Annotation], selected: Annotation?) {
-        annotationLayers.show(annotations, selected: selected, zoom: zoom)
-    }
-
-    /// A point of the Capture (origin at its top left), as a point in the view.
-    func viewPoint(fromImagePoint point: CGPoint) -> CGPoint {
-        let zoom = zoom
-        let originX = bounds.midX - pointSize.width * zoom / 2
-        let originY = bounds.midY + pointSize.height * zoom / 2
-        return CGPoint(x: originX + point.x * zoom, y: originY - point.y * zoom)
+        annotationLayers.show(annotations, selected: selected, context: renderContext)
     }
 
     /// A point in the view, as a point of the Capture (origin at its top left).
@@ -118,6 +127,8 @@ final class CanvasView: NSView {
     func tearDown() {
         imageLayer.contents = nil
         annotationLayers.tearDown()
+        capture = nil
+        effectLayer.sublayers = nil
         annotationLayer.sublayers = nil
         contentLayer.sublayers = nil
         root.sublayers = nil

@@ -36,6 +36,10 @@ struct EditorKeyEquivalent: Equatable {
     /// The character a menu item uses for this key: a menu knows ⌫ as backspace (U+0008).
     var menuKey: String { key == "\u{7F}" ? "\u{8}" : key }
 
+    /// True for a combination with ⌘. One without (⌫) is a plain key press, which a text being
+    /// edited keeps for itself.
+    var usesCommand: Bool { modifiers.contains(.command) }
+
     func matches(_ event: NSEvent) -> Bool {
         // Caps Lock is a state, not part of the combination.
         event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers
@@ -116,5 +120,6 @@ struct ToolbarButton: View {
         .buttonStyle(ChromeButtonStyle(look: item.look))
         .disabled(!item.isEnabled(in: session))
         .help(item.tooltip)
+        .controlMarker(item.tooltip)
     }
 }

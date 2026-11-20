@@ -1,10 +1,11 @@
 # Flow: the Editor's tools. Select, Arrow, Rectangle and Oval draw, pick, move and resize
-# Annotations with synthetic pointer input on the canvas; ⌘Z, ⇧⌘Z and ⌫ work from the keyboard;
-# every check reads the Export's pixels (Copy puts the flattened Capture on the private
-# pasteboard) with the independent decoder in png-inspect. The fixture at scale 2 is a
-# 301 x 187 point Capture of 602 x 374 pixels in Display P3, so an Annotation in image points
-# lands on twice the pixels, and a flipped or shifted transform shows up as pixels changed in the
-# wrong place. Sourced by scripts/check-run.sh, after flow 35.
+# Annotations with synthetic mouse events delivered through the window; ⌘Z, ⇧⌘Z and ⌫ work from
+# the keyboard; every check reads what a user could see: the Export's pixels (Copy puts the
+# flattened Capture on the private pasteboard, read back with the independent decoder in
+# png-inspect), the canvas's own rendering, and which toolbar items are enabled. The fixture at
+# scale 2 is a 301 x 187 point Capture of 602 x 374 pixels in Display P3, so an Annotation in
+# image points lands on twice the pixels, and a flipped or shifted transform shows up as pixels
+# changed in the wrong place. Sourced by scripts/check-run.sh, after flow 35.
 # shellcheck shell=bash
 # shellcheck source=../editor-tools.sh
 source "$ROOT_DIR/scripts/run/editor-tools.sh"
@@ -37,24 +38,18 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_contains "the Edit menu shows ⇧⌘Z for Redo" "Redo key=7a modifiers=1179648" "$MENU_KEYS"
   expect_contains "the Edit menu shows ⌫ for Delete Annotation" "Delete Annotation key=8 modifiers=0" "$MENU_KEYS"
 
-  # Every control accepts the first click on a background Editor, except Delete Capture's host.
-  FIRST_CLICK="$(send "$EDITOR_SOCK" "editor-first-click $EDITOR_N")"
-  expect_equal "exactly one control host refuses the first click" "1" "$(printf '%s\n' "$FIRST_CLICK" | grep -c ' no$')"
-  expect_contains "the host that refuses it is Delete Capture's" "NoFirstMouseHost" "$(printf '%s\n' "$FIRST_CLICK" | grep ' no$')"
-  if (($(printf '%s\n' "$FIRST_CLICK" | grep -c ' yes$') >= 4)); then pass "the canvas, the tool rail and the toolbar pills accept the first click"; else fail "too few controls accept the first click: $FIRST_CLICK"; fi
-
   # Nothing to undo, redo or delete in a fresh Editor.
-  expect_contains "Undo is disabled with nothing to undo" "error toolbar item is disabled" "$(send "$EDITOR_SOCK" "editor-press $EDITOR_N undo")"
-  expect_contains "Delete Annotation is disabled with no selection" "error toolbar item is disabled" "$(send "$EDITOR_SOCK" "editor-press $EDITOR_N delete-annotation")"
+  expect_disabled "Undo is disabled with nothing to undo" undo
+  expect_disabled "Redo is disabled with nothing to redo" redo
+  expect_disabled "Delete Annotation is disabled with nothing selected" delete-annotation
+  expect_contains "pressing a disabled item does nothing" "error toolbar item is disabled" "$(send "$EDITOR_SOCK" "editor-press $EDITOR_N undo")"
 
   # 1. A solid Rectangle, dragged from (40,30) to (120,90) points: pixels (80,60) to (240,180).
   keystroke r >/dev/null
-  expect_equal "the R key picks Rectangle" "rectangle" "$(document_field tool)"
   style fill solid >/dev/null
   expect_equal "the Rectangle drag replies ok" "ok" "$(drag 40 30 120 90)"
-  expect_equal "one Rectangle was made" "1" "$(annotation_count)"
-  expect_selected "the new Annotation is selected"
-  expect_equal "one drag is one Undo step" "1" "$(document_field undo-steps)"
+  expect_selected "the new Annotation is selected: Delete Annotation is enabled"
+  expect_enabled "Undo is enabled after a drag" undo
   EXPORT="$(export_png rect)"
   RECT_DIFF="$(fixture_diff "$EXPORT" $W $H 80 60 240 180)"
   expect_equal "the solid Rectangle covers exactly its pixels" "bbox=80,60,240,180" "$(printf '%s\n' "$RECT_DIFF" | grep '^bbox=')"
@@ -66,28 +61,31 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "the annotated Export is the Capture's pixel size" "602" "$(png_field "$EXPORT_INFO" width)"
   expect_contains "the Capture's own mapping stays read-only" "capture-mapping=read-only" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
 
-  # 2. Undo and Redo.
+  # 2. Undo and Redo: one drag is one step.
   expect_equal "⌘Z replies ok" "ok" "$(keystroke undo)"
-  expect_equal "Undo removes the Rectangle" "0" "$(annotation_count)"
-  expect_equal "after Undo the Export is the untouched Capture" "mismatches=0" "$("$INSPECT" verify-fixture "$(export_png undone)" $W $H | grep '^mismatches=')"
+  expect_equal "one ⌘Z takes the whole Rectangle back: the Export is the untouched Capture" "mismatches=0" "$("$INSPECT" verify-fixture "$(export_png undone)" $W $H | grep '^mismatches=')"
+  expect_disabled "Undo is disabled again" undo
+  expect_enabled "Redo is enabled" redo
   expect_equal "⇧⌘Z replies ok" "ok" "$(keystroke redo)"
-  expect_equal "Redo brings the Rectangle back" "1" "$(annotation_count)"
   expect_equal "after Redo the Export has the Rectangle again" "bbox=80,60,240,180" "$(fixture_diff "$(export_png redone)" $W $H | grep '^bbox=')"
+  expect_disabled "Redo is disabled again" redo
 
   # 3. Select: move, resize, fill and delete, each one Undo step.
   keystroke v >/dev/null
-  expect_equal "the V key picks Select" "select" "$(document_field tool)"
   drag 80 60 130 100 >/dev/null  # from inside the Rectangle: moves it by (+50, +40) points
-  expect_equal "moving is one more Undo step" "2" "$(document_field undo-steps)"
   expect_equal "the moved Rectangle is at its new pixels" "bbox=180,140,340,260" "$(fixture_diff "$(export_png moved)" $W $H | grep '^bbox=')"
   keystroke undo >/dev/null
-  expect_equal "Undo puts the Rectangle back where it was" "bbox=80,60,240,180" "$(fixture_diff "$(export_png unmoved)" $W $H | grep '^bbox=')"
+  expect_equal "one Undo puts the Rectangle back where it was" "bbox=80,60,240,180" "$(fixture_diff "$(export_png unmoved)" $W $H | grep '^bbox=')"
   keystroke redo >/dev/null
   drag 170 130 200 150 >/dev/null  # the bottom right handle of the moved box (90,70)-(170,130)
-  expect_equal "resizing is an Undo step too" "3" "$(document_field undo-steps)"
   expect_equal "the resized Rectangle spans its new corner" "bbox=180,140,400,300" "$(fixture_diff "$(export_png resized)" $W $H | grep '^bbox=')"
   keystroke undo >/dev/null
-  expect_equal "Undo puts the old size back" "bbox=180,140,340,260" "$(fixture_diff "$(export_png unresized)" $W $H | grep '^bbox=')"
+  expect_equal "one Undo puts the old size back" "bbox=180,140,340,260" "$(fixture_diff "$(export_png unresized)" $W $H | grep '^bbox=')"
+  keystroke redo >/dev/null
+
+  drag 200 150 200 150 >/dev/null  # a press and release on the handle, not moved
+  keystroke undo >/dev/null
+  expect_equal "a click that moves nothing records no Undo step (Undo took back the resize)" "bbox=180,140,340,260" "$(fixture_diff "$(export_png noclickstep)" $W $H | grep '^bbox=')"
   keystroke redo >/dev/null
 
   send "$EDITOR_SOCK" "editor-press $EDITOR_N annotation-fill" >/dev/null  # solid to outline: one Undo step
@@ -96,18 +94,25 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "an outline Rectangle is 5 points of stroke around its edge" "bbox=175,135,405,305" "$(printf '%s\n' "$OUTLINE_DIFF" | grep '^bbox=')"
   expect_equal "the inside of an outline Rectangle is still the Capture" "inside=0" "$(printf '%s\n' "$OUTLINE_DIFF" | grep '^inside=')"
   keystroke undo >/dev/null
-  expect_equal "Undo turns the fill back to solid" "changed=35200" "$(fixture_diff "$(export_png solid-again)" $W $H | grep '^changed=')"
-  expect_equal "the fill change was one Undo step, taken back" "3" "$(document_field undo-steps)"
+  expect_equal "one Undo turns the fill back to solid" "changed=35200" "$(fixture_diff "$(export_png solid-again)" $W $H | grep '^changed=')"
 
   expect_equal "⌫ replies ok" "ok" "$(keystroke delete)"
-  expect_equal "⌫ deletes the selected Annotation" "0" "$(annotation_count)"
-  expect_unchanged "after ⌫ the Export is the untouched Capture" "$(export_png deleted)" $W $H
+  expect_unchanged "⌫ deletes the selected Annotation: the Export is the untouched Capture" "$(export_png deleted)" $W $H
+  expect_nothing_selected "nothing is selected after the delete"
   keystroke undo >/dev/null
-  expect_equal "Undo takes the deletion back" "1" "$(annotation_count)"
-  expect_equal "the restored Annotation is drawn again" "bbox=180,140,400,300" "$(fixture_diff "$(export_png undeleted)" $W $H | grep '^bbox=')"
+  expect_equal "Undo takes the deletion back" "bbox=180,140,400,300" "$(fixture_diff "$(export_png undeleted)" $W $H | grep '^bbox=')"
   click 140 110 >/dev/null  # Undo does not bring the selection back: pick it again
   keystroke delete >/dev/null
-  expect_equal "the restored Annotation can be deleted again" "0" "$(annotation_count)"
+  expect_unchanged "the restored Annotation can be deleted again" "$(export_png redeleted)" $W $H
+
+  # A drag that leaves nothing to see or click draws nothing, and a resize that collapses an
+  # Annotation is undone.
+  keystroke r >/dev/null
+  drag 100 100 101 101 >/dev/null
+  expect_unchanged "a tiny drag draws nothing" "$(export_png tiny)" $W $H
+  keystroke a >/dev/null
+  drag 100 100 100 100 >/dev/null
+  expect_unchanged "a drag that ends where it started draws no Arrow" "$(export_png no-arrow)" $W $H
 
   # 4. Oval: a filled Oval is hit inside the ellipse only, not in the corners of its box.
   style fill solid >/dev/null
@@ -129,8 +134,7 @@ if capture_into_editor "menu-click capture.screen"; then
   click 200 60 >/dev/null
   expect_selected "a click inside the Oval selects it"
   keystroke delete >/dev/null
-  expect_equal "⌫ deletes it" "0" "$(annotation_count)"
-  expect_unchanged "the Export is the Capture again" "$(export_png oval-gone)" $W $H
+  expect_unchanged "⌫ deletes it: the Export is the Capture again" "$(export_png oval-gone)" $W $H
 
   # An outline Oval is hit on its line only.
   style fill outline >/dev/null
@@ -145,7 +149,7 @@ if capture_into_editor "menu-click capture.screen"; then
   click 150 60 >/dev/null  # the leftmost point of its line
   expect_selected "a click on its line selects it"
   keystroke delete >/dev/null
-  expect_equal "⌫ deletes the outline Oval" "0" "$(annotation_count)"
+  expect_unchanged "⌫ deletes the outline Oval" "$(export_png outline-oval-gone)" $W $H
 
   # 5. Arrow: from (30,150) to (120,170) points, pixels (60,300) to (240,340).
   keystroke a >/dev/null
@@ -161,29 +165,27 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_nothing_selected "a click beside the Arrow's line selects nothing"
   click 75 160 >/dev/null
   expect_selected "a click on the Arrow's line selects it"
-  STEPS_BEFORE="$(document_field undo-steps)"
-  drag 30 150 20 140 >/dev/null  # the tail handle
-  expect_equal "dragging the Arrow's tail handle is one Undo step" "$((STEPS_BEFORE + 1))" "$(document_field undo-steps)"
-  expect_contains "the tail moved" "annotation 4 arrow 20.0 140.0 120.0 170.0" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N")"
+  drag 30 150 20 140 >/dev/null  # the tail handle: the tail goes to pixel (40,280)
+  expect_red "dragging the tail handle moves the tail" "$(pixel "$(export_png tail-moved)" 44 282)"
   keystroke undo >/dev/null
+  expect_equal "one Undo puts the tail back" "$(fixture_pixel 44 282 $W $H)" "$(pixel "$(export_png tail-back)" 44 282)"
   keystroke delete >/dev/null
-  expect_equal "⌫ deletes the Arrow" "0" "$(annotation_count)"
+  expect_unchanged "⌫ deletes the Arrow" "$(export_png arrow-gone)" $W $H
 
   # Keys work with Caps Lock on, and ⌫ works when it reaches the window as a plain key press
   # (the window is not offered it as a key equivalent first).
   keystroke caps-r >/dev/null
-  expect_equal "the R key picks Rectangle with Caps Lock on" "rectangle" "$(document_field tool)"
   drag 40 30 120 90 >/dev/null
-  expect_equal "the Rectangle is drawn" "1" "$(annotation_count)"
+  if (($(changed_pixels "$(export_png caps)" $W $H) > 0)); then pass "the R key picks Rectangle with Caps Lock on"; else fail "no Rectangle was drawn after Caps Lock R"; fi
   keystroke caps-undo >/dev/null
-  expect_equal "⌘Z undoes with Caps Lock on" "0" "$(annotation_count)"
+  expect_unchanged "⌘Z undoes with Caps Lock on" "$(export_png caps-undone)" $W $H
   keystroke caps-redo >/dev/null
-  expect_equal "⇧⌘Z redoes with Caps Lock on" "1" "$(annotation_count)"
+  if (($(changed_pixels "$(export_png caps-redone)" $W $H) > 0)); then pass "⇧⌘Z redoes with Caps Lock on"; else fail "Redo did nothing with Caps Lock on"; fi
   keystroke v >/dev/null
   click 40 60 >/dev/null  # an outline Rectangle is picked on its line
   expect_selected "the Rectangle is selected"
   keystroke plain-delete >/dev/null
-  expect_equal "⌫ as a plain key press deletes the selected Annotation" "0" "$(annotation_count)"
+  expect_unchanged "⌫ as a plain key press deletes the selected Annotation" "$(export_png plain-delete)" $W $H
 
   # 6. The color, width and fill used last are remembered across launches.
   style fill solid >/dev/null
@@ -199,9 +201,10 @@ fi
 if capture_into_editor "menu-click capture.screen"; then
   keystroke r >/dev/null
   drag 40 30 120 90 >/dev/null
-  expect_contains "a new Rectangle in the next Editor starts solid, blue and 8 points wide" "annotation 1 rectangle 40.0 30.0 120.0 90.0 0a84ff 8.0 solid" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N")"
-  BLUE="$(pixel "$(export_png remembered)" 160 120)"
-  if (($(channel "$BLUE" 2) >= 200 && $(channel "$BLUE" 0) <= 100)); then pass "and its pixels are blue"; else fail "the remembered color is not blue in the Export: $BLUE"; fi
+  expect_blue "a new Editor starts with the remembered solid blue Rectangle" "$(pixel "$(export_png remembered)" 160 120)"
+  keystroke a >/dev/null
+  drag 30 150 120 170 >/dev/null  # the shaft crosses pixel x=120 at y=313.3
+  expect_blue "the remembered width is 8 points: the Arrow is blue 7 pixels from its centre line" "$(pixel "$(export_png remembered-width)" 120 307)"
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
@@ -209,7 +212,72 @@ send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
 send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
 send "$APP_SOCK" "defaults-set annotationWidth 5" >/dev/null
 
-# 7. A 1x Capture is sRGB and its pixels are its points: the color can be checked exactly.
+# 7. The canvas shows what Export draws, and kinds Export draws first lie beneath the others.
+if capture_into_editor "menu-click capture.screen"; then
+  style fill solid >/dev/null
+  keystroke r >/dev/null; drag 40 30 120 90 >/dev/null
+  keystroke o >/dev/null  # a drawing tool starts with nothing selected, so the style is for the next Annotation only
+  style fill outline >/dev/null
+  drag 150 20 250 100 >/dev/null
+  keystroke a >/dev/null; drag 30 150 120 170 >/dev/null
+  PARITY="$("$INSPECT" compare "$(export_png parity)" "$(preview_png)")"
+  expect_equal "the canvas's own rendering (the preview) is the Export, to within anti-aliasing" "over_8=0" "$(printf '%s\n' "$PARITY" | grep '^over_8=')"
+
+  # A kind Export draws before the Annotations (as Redaction will be) is added after the
+  # Rectangle, overlapping it: it still lies beneath it, and Select picks the Rectangle first.
+  send "$EDITOR_SOCK" "editor-inject-effect $EDITOR_N 80 60 160 120" >/dev/null
+  PREVIEW="$(preview_png)"
+  expect_red "where the Rectangle and the later kind overlap, the preview shows the Rectangle" "$(pixel "$PREVIEW" 200 150)"
+  expect_green "where only the later kind is, the preview shows it" "$(pixel "$PREVIEW" 280 220)"
+  EXPORT="$(export_png effect)"
+  expect_red "the Export draws the Rectangle there too" "$(pixel "$EXPORT" 200 150)"
+  expect_equal "the Annotations stage does not draw a kind another stage owns" "$(fixture_pixel 280 220 $W $H)" "$(pixel "$EXPORT" 280 220)"
+  keystroke v >/dev/null
+  click 100 75 >/dev/null
+  keystroke delete >/dev/null
+  expect_green "Select picked the Rectangle (the topmost), not the later kind: deleting it shows the kind beneath" "$(pixel "$(preview_png)" 200 150)"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+
+# 8. The first click on a background Editor: with two Editors open the first is in the
+#    background. Synthetic mouse events go through its window like a real click, onto the canvas,
+#    a tool in the rail and a toolbar item, and each does its job on that very first click. A
+#    click on Delete Capture only brings the Editor forward.
+if capture_into_editor "menu-click capture.screen"; then
+  FIRST_N="$EDITOR_N"
+  if capture_into_editor "menu-click capture.screen"; then
+    SECOND_N="$EDITOR_N"
+    EDITOR_N="$FIRST_N"
+    CONTROLS="$(send "$EDITOR_SOCK" "editor-controls $FIRST_N")"
+    expect_contains "the toolbars' controls are found by their tooltips" "control Rectangle (R)" "$CONTROLS"
+    expect_contains "Undo is among them" "control Undo (⌘Z)" "$CONTROLS"
+    expect_contains "Delete Capture is among them" "control Delete Capture" "$CONTROLS"
+    expect_contains "the Editor is in the background" "key=no" "$(send "$EDITOR_SOCK" "editor-background $FIRST_N")"
+    expect_contains "a click on a tool in the rail of a background Editor is not lost" "ok" "$(click_on "$FIRST_N" tool rectangle)"
+    background_editor "$FIRST_N"
+    expect_equal "a drag on the canvas of a background Editor draws, from its very first press" "ok" "$(drag 40 30 120 90)"
+    EXPORT="$(export_png first-click-canvas)"
+    expect_equal "the Rectangle tool picked by that first click drew an outline Rectangle (pixels in place)" "bbox=75,55,245,185" "$(fixture_diff "$EXPORT" $W $H | grep '^bbox=')"
+    background_editor "$FIRST_N"
+    expect_contains "a click on Undo in a background Editor is not lost" "ok" "$(click_on "$FIRST_N" item undo)"
+    expect_unchanged "and it undid the Rectangle" "$(export_png first-click-undo)" $W $H
+
+    # The control: Delete Capture refuses the first click.
+    EDITOR_N="$SECOND_N"
+    CAPTURE_FILE="$RUN_ROOT/captures/capture-$SECOND_N.pixels"
+    expect_contains "the second Editor is in the background" "key=no" "$(send "$EDITOR_SOCK" "editor-background $SECOND_N")"
+    click_on "$SECOND_N" item delete-capture >/dev/null
+    sleep 1  # a Delete Capture that did run would have closed the Editor and removed the file by now
+    if [[ -f "$CAPTURE_FILE" ]]; then pass "the first click on Delete Capture in a background Editor leaves the Capture in place"; else fail "Delete Capture deleted the Capture on a background Editor's first click"; fi
+    expect_equal "and leaves both Editors open" "$(printf '%s\n%s' "$FIRST_N" "$SECOND_N")" "$(open_editors)"
+    send "$EDITOR_SOCK" "editor-key $SECOND_N escape" >/dev/null
+    send "$EDITOR_SOCK" "editor-key $FIRST_N escape" >/dev/null
+    wait_until 10 gone "$HELPER_PID"
+  fi
+fi
+
+# 9. A 1x Capture is sRGB and its pixels are its points: the color can be checked exactly.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 if capture_into_editor "menu-click capture.screen"; then
   keystroke r >/dev/null
@@ -226,7 +294,9 @@ if capture_into_editor "menu-click capture.screen"; then
 fi
 send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
 
-# 8. A Capture bigger than the window is shown scaled down; the pointer still lands on the right pixels.
+# 10. A Capture bigger than the window is shown scaled down. The mouse events are placed by asking
+#     the canvas's layers where the Capture is on screen, so a wrong zoom or offset in the pointer
+#     mapping shows as pixels in the wrong place.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 if capture_into_editor "menu-click capture.screen"; then
   ZOOM="$(document_field zoom)"
@@ -247,7 +317,7 @@ if capture_into_editor "menu-click capture.screen"; then
 fi
 send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
 
-# 9. Memory: Capture, draw, Copy, close. The menu bar app stays flat and no helper is left behind.
+# 11. Memory: Capture, draw, Copy, close. The menu bar app stays flat and no helper is left behind.
 send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null
 TOOLS_BASELINE="$(footprint_mb "$APP_PID")"
 for _ in 1 2 3; do

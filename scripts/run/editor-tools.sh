@@ -16,9 +16,9 @@ click() {
 keystroke() { send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N $1"; }
 # style <fill|width|color> <value>
 style() { send "$EDITOR_SOCK" "editor-style $EDITOR_N $1 $2"; }
-# document_field <key>: one line of `editor-document` (`selected=`, `undo-steps=`, ...).
+
+# document_field <key>: one line of `editor-document` (`zoom=`, `revision=`, ...).
 document_field() { send "$EDITOR_SOCK" "editor-document $EDITOR_N" | sed -n "s/^$1=//p"; }
-annotation_count() { send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep -c '^annotation '; }
 
 # export_png <name>: Copy in the open Editor and write the PNG on the pasteboard to
 # $RUN_ROOT/tools/<name>.png; prints the path. (Close after Copy must be off.)
@@ -32,6 +32,8 @@ export_png() {
 
 # fixture_diff <png> <pixel width> <pixel height> [<x0> <y0> <x1> <y1>]: `png-inspect diff-fixture`.
 fixture_diff() { "$INSPECT" diff-fixture "$@"; }
+# changed_pixels <png> <pixel width> <pixel height>: how many pixels differ from the fixture.
+changed_pixels() { "$INSPECT" diff-fixture "$1" "$2" "$3" | sed -n 's/^changed=//p'; }
 # pixel <png> <x> <y>: "r,g,b".
 pixel() { "$INSPECT" pixel "$@"; }
 # channel <"r,g,b"> <0|1|2>
@@ -43,6 +45,13 @@ expect_red() {
   local r g b
   r="$(channel "$2" 0)"; g="$(channel "$2" 1)"; b="$(channel "$2" 2)"
   if ((r >= 200 && g <= 110 && b <= 110)); then pass "$1"; else fail "$1 (got $2)"; fi
+}
+# expect_blue <description> <"r,g,b">, expect_green <description> <"r,g,b">
+expect_blue() {
+  if (($(channel "$2" 2) >= 200 && $(channel "$2" 0) <= 100)); then pass "$1"; else fail "$1 (got $2)"; fi
+}
+expect_green() {
+  if (($(channel "$2" 1) >= 230 && $(channel "$2" 0) <= 150 && $(channel "$2" 2) <= 150)); then pass "$1"; else fail "$1 (got $2)"; fi
 }
 # fixture_pixel <x> <y> <pixel width> <pixel height>: "r,g,b" the fixture has there, from the formula in docs/testing.md.
 fixture_pixel() {
@@ -59,8 +68,18 @@ expect_near() {
   done
   pass "$1"
 }
-# expect_selected <description>, expect_nothing_selected <description>
-expect_selected() {
-  if [[ "$(document_field selected)" != "none" ]]; then pass "$1"; else fail "$1 (nothing is selected)"; fi
-}
-expect_nothing_selected() { expect_equal "$1" "none" "$(document_field selected)"; }
+
+# item_enabled <item id>: whether a toolbar item is enabled in the open Editor.
+item_enabled() { [[ "$(send "$EDITOR_SOCK" "editor-enabled $EDITOR_N $1")" == "yes" ]]; }
+expect_enabled() { if item_enabled "$2"; then pass "$1"; else fail "$1 ('$2' is disabled)"; fi; }
+expect_disabled() { if item_enabled "$2"; then fail "$1 ('$2' is enabled)"; else pass "$1"; fi; }
+# What Select picked is what Delete Annotation would delete: it is enabled with a selection.
+expect_selected() { expect_enabled "$1" delete-annotation; }
+expect_nothing_selected() { expect_disabled "$1" delete-annotation; }
+
+# preview_png: the canvas's own layers rendered at the Capture's pixel size; prints the PNG's path.
+preview_png() { send "$EDITOR_SOCK" "editor-preview $EDITOR_N" | sed -n 's/^ok //p'; }
+# background_editor <N>: makes another Editor's window key, so Editor N is a background Editor.
+background_editor() { send "$EDITOR_SOCK" "editor-background $1" >/dev/null; }
+# click_on <N> tool|item <id> | canvas <x> <y>: a click (through the window's sendEvent) in Editor N.
+click_on() { local n="$1"; shift; send "$EDITOR_SOCK" "editor-click $n $*"; }

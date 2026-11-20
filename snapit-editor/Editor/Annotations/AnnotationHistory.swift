@@ -14,10 +14,22 @@ nonisolated struct DocumentState: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case annotations, crop }
 
+    /// An Annotation that cannot be read (a field of a newer or damaged document) is left out;
+    /// the rest of the document still opens.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        annotations = try container.decodeIfPresent([Annotation].self, forKey: .annotations) ?? []
+        annotations = (try container.decodeIfPresent([Lossy<Annotation>].self, forKey: .annotations) ?? [])
+            .compactMap(\.value)
         crop = try container.decodeIfPresent(CGRect.self, forKey: .crop)
+    }
+}
+
+/// Decodes to nil instead of failing, so one bad element does not lose the array around it.
+private nonisolated struct Lossy<Element: Decodable>: Decodable {
+    let value: Element?
+
+    init(from decoder: Decoder) throws {
+        value = try? Element(from: decoder)
     }
 }
 
@@ -48,13 +60,25 @@ nonisolated struct AnnotationHistory: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case state, undoSteps, redoSteps, revision, nextID }
 
+    /// A gesture in progress is stored as it was before it began: what a Last Capture keeps is
+    /// a state the user had finished with, never a half-dragged one.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pending ?? state, forKey: .state)
+        try container.encode(undoSteps, forKey: .undoSteps)
+        try container.encode(redoSteps, forKey: .redoSteps)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(nextID, forKey: .nextID)
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         state = try container.decodeIfPresent(DocumentState.self, forKey: .state) ?? DocumentState()
         undoSteps = Array((try container.decodeIfPresent([DocumentState].self, forKey: .undoSteps) ?? []).suffix(Self.maxSteps))
         redoSteps = Array((try container.decodeIfPresent([DocumentState].self, forKey: .redoSteps) ?? []).suffix(Self.maxSteps))
         revision = try container.decodeIfPresent(Int.self, forKey: .revision) ?? 0
-        let highest = state.annotations.map(\.id).max() ?? 0
+        // A number is never reused, even one that only an Undo step still has.
+        let highest = ([state] + undoSteps + redoSteps).flatMap(\.annotations).map(\.id).max() ?? 0
         nextID = max(try container.decodeIfPresent(Int.self, forKey: .nextID) ?? 1, highest + 1)
     }
 
@@ -78,8 +102,9 @@ nonisolated struct AnnotationHistory: Codable, Equatable, Sendable {
         if pending == nil { pending = state }
     }
 
-    /// Changes the state inside a gesture (or alone, until the next `end`).
+    /// Changes the state inside a gesture (after `begin`, before `end`).
     mutating func mutate(_ change: (inout DocumentState) -> Void) {
+        assert(pending != nil, "AnnotationHistory.mutate outside a gesture would change the state with no Undo step")
         change(&state)
     }
 
