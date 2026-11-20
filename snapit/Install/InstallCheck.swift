@@ -33,6 +33,15 @@ enum InstallCheck {
     /// Runs the check. Called once per launch by `AppDelegate`.
     @discardableResult
     static func runAtLaunch(environment: any InstallEnvironment = InstallEdge.current) async -> Outcome {
+        let outcome = await evaluate(environment: environment)
+        let location = location(environment: environment)
+        NSLog(
+            "snapit: launch check: %@ (bundle %@, origin %@, translocated %@, on disk image %@)", outcome.rawValue,
+            location.bundlePath, location.originPath, String(location.translocated), String(location.onDiskImage))
+        return outcome
+    }
+
+    private static func evaluate(environment: any InstallEnvironment) async -> Outcome {
         switch plan(environment: environment) {
         case .stay:
             return .none
@@ -44,12 +53,14 @@ enum InstallCheck {
                 try await MoveToApplications.fixInPlace(copy: copy, environment: environment)
                 return .fixedInPlace
             } catch {
-                NSLog("snapit: \(error)")
+                NSLog("snapit: could not fix the copy in place: \(error)")
                 return .none
             }
         case .move(let source):
-            guard Quarantine.isApproved(at: source.path) else { return .notApproved }
-            let reason = location(environment: environment).onDiskImage ? "disk-image" : "temporary"
+            // Running from read-only media is itself the approval; a writable origin must carry it.
+            let onDiskImage = location(environment: environment).onDiskImage
+            guard onDiskImage || Quarantine.isApproved(at: source.path) else { return .notApproved }
+            let reason = onDiskImage ? "disk-image" : "temporary"
             let destination = environment.applicationsFolder.appendingPathComponent(source.lastPathComponent)
             let replaces = FileManager.default.fileExists(atPath: destination.path) ? "replace" : "new"
             do {

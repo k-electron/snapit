@@ -51,9 +51,9 @@ final class MoveToApplicationsModel {
     var message: String {
         switch reason {
         case .diskImage:
-            "snapit is running from a disk image. Move it to Applications so launch at login and updates keep working. snapit relaunches from there and ejects the disk image."
+            "snapit is running from a disk image. Move it to Applications so Open at Login and updates keep working. snapit relaunches from there and ejects the disk image."
         case .temporary:
-            "macOS is running snapit from a temporary location. Move it to Applications so launch at login and updates keep working. snapit relaunches from there."
+            "macOS is running snapit from a temporary location. Move it to Applications so Open at Login and updates keep working. snapit relaunches from there."
         }
     }
 

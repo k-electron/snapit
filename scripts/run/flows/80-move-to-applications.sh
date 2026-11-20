@@ -82,6 +82,18 @@ else
 fi
 assert_idle_cpu "menu bar app after the Move screen" "$APP_PID" 3
 
+# 2b. A disk image is read-only and can never gain the approved flag, and the app on a
+#     double-clicked image may report 0083: running from the image is the approval. The source
+#     keeps 0083 for the move in step 4.
+unapprove_quarantine "$VOLAPP"
+fake_disk_image
+expect_equal "a disk image whose app is flagged 0083 still shows the Move screen" "move-screen-shown" "$(send "$APP_SOCK" install-check)"
+HELPER_PID="$(helper_pid)"
+send "$EDITOR_SOCK" "move-screen-press later" >/dev/null
+if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits when that Move screen closes"; else fail "the helper is still running after Not Now"; fi
+
+expect_contains "the launch check logs its outcome with the paths" "launch check: move-screen-shown (bundle $VOLAPP" "$(cat "$RUN_ROOT/app.log")"
+
 # 3. Translocated with its original in Applications, but not approved with Open Anyway yet:
 #    nothing is stripped and nothing relaunches.
 mkdir -p "$DEST"
@@ -92,6 +104,7 @@ expect_equal "translocated from Applications is reported translocated" "true" "$
 expect_equal "the original path is the translocated copy's origin" "$DEST" "$(location_field origin)"
 expect_equal "translocated with its original in Applications the decision is to fix in place" "fix-in-place" "$(location_field decision)"
 expect_equal "an app that is not approved yet is left alone" "not-approved" "$(send "$APP_SOCK" install-check)"
+expect_contains "the launch check logs that the app is not approved" "launch check: not-approved" "$(cat "$RUN_ROOT/app.log")"
 expect_equal "quarantine stays on an app that is not approved yet" "2" "$(quarantine_count "$DEST")"
 sleep 1
 if [[ -z "$(pid_of "$DEST/Contents/MacOS/snapit")" ]] && answers "$APP_SOCK" && kill -0 "$APP_PID" 2>/dev/null; then pass "nothing relaunches for an app that is not approved yet"; else fail "snapit relaunched or stopped without approval"; fi
@@ -168,7 +181,7 @@ else
   fail "snapit did not relaunch in place"
 fi
 expect_equal "the copy that was translocated has no quarantine left" "0" "$(quarantine_count "$DEST")"
-expect_equal "the in-place fix shows no Move screen and starts no helper" "" "$(helper_pid)"
+expect_equal "the in-place fix shows no Move screen and starts no helper" "" "$(pid_of "$DEST/Contents/Helpers/")"
 expect_equal "the in-place fix ejects nothing" "$EJECT_LINES" "$(cat "$EJECTED" 2>/dev/null | wc -l | tr -d ' ')"
 expect_equal "the relaunched snapit runs from the same place" "$DEST" "$(location_field bundle)"
 expect_equal "the relaunched snapit is not translocated after the fix" "false" "$(location_field translocated)"

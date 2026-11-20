@@ -102,7 +102,9 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
 into the Editor and Copy, `30-` the Editor, `80-` Move to Applications and the translocation
-check, `90-` Editor helper and Quit, which must stay last).
+check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
+menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
+is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
