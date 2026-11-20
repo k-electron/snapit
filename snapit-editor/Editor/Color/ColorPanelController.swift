@@ -2,9 +2,11 @@ import AppKit
 
 /// Connects the color panel to the Editor whose color wheel button opened it. The panel is
 /// continuous: it reports every step of a drag, so a drag is one Undo step. The first change of a
-/// drag opens an Undo bracket on the document; the mouse button coming up closes it (an event
-/// monitor that exists only while a drag is open, so nothing runs at rest). A change with the
-/// button up (a typed value) is a step of its own.
+/// drag opens an Undo bracket on the document; the mouse button coming up closes it. A control
+/// tracks the drag in its own loop and may never hand the mouse-up to the app, so two things close
+/// it: an event monitor, and a run loop block that runs once the tracking loop has returned (both
+/// exist only while a drag is open, so nothing runs at rest). A change with the button up (a typed
+/// value) is a step of its own.
 @MainActor
 final class ColorPanelController: NSObject {
     static let shared = ColorPanelController()
@@ -41,6 +43,14 @@ final class ColorPanelController: NSObject {
                 mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
                     self?.endGesture()
                     return event
+                }
+            }
+            // Runs only in the default mode: after a tracking loop (the panel's wheel or slider) has
+            // returned, which is when the button has come up.
+            RunLoop.main.perform(inModes: [.default]) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.panel.isDragging else { return }
+                    self.endGesture()
                 }
             }
         } else {

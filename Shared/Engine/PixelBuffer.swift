@@ -160,21 +160,8 @@ nonisolated final class PixelBuffer: @unchecked Sendable {
     /// Encodes the pixels as a PNG that carries the physical size (`dpi`) and this buffer's
     /// color profile. The returned bytes are freed back to the engine when released.
     func encodePNG(level: PNGLevel, dpi: Int) throws -> Data {
-        let profile = iccProfile ?? (colorSpace.copyICCData() as Data?) ?? Data()
-        var bytes = SnapitBytes(data: nil, len: 0, capacity: 0)
-        let status = profile.withUnsafeBytes { profileBytes in
-            snapit_png_encode(
-                raw.data, UInt32(width), UInt32(height), stride, level.rawValue, UInt32(dpi),
-                profile.isEmpty ? nil : profileBytes.bindMemory(to: UInt8.self).baseAddress,
-                profile.count, &bytes)
-        }
-        try Engine.check(status)
-        let owned = bytes
-        return Data(
-            bytesNoCopy: UnsafeMutableRawPointer(owned.data), count: owned.len,
-            deallocator: .custom { _, _ in
-                var copy = owned
-                _ = snapit_bytes_free(&copy)
-            })
+        try encodePNG(
+            level: level,
+            plan: PNGOutputPlan(pixelWidth: width, pixelHeight: height, scale: 1, dpi: dpi, standardResolution: false))
     }
 }

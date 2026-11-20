@@ -52,6 +52,21 @@ if capture_into_editor "menu-click capture.screen"; then
   BLUE_Y="$(printf '%s\n' "$CONTROLS" | grep '^control Blue ' | awk '{ print $NF }')"
   expect_equal "the swatches sit in one row" "$SWATCH_Y" "$BLUE_Y"
 
+  LAYOUT="$(send "$EDITOR_SOCK" "editor-layout $EDITOR_N")"
+  CONTENT_WIDTH="$(printf '%s\n' "$LAYOUT" | sed -n 's/^content-width=//p')"
+  RIGHTMOST="$(printf '%s\n' "$LAYOUT" | sed -n 's/^rightmost-control=//p')"
+  if ((RIGHTMOST + 20 <= CONTENT_WIDTH)); then pass "every control is inside the window (rightmost centre $RIGHTMOST of $CONTENT_WIDTH points)"; else fail "a control is outside the window: $LAYOUT"; fi
+  echo "# toolbar layout: $(printf '%s' "$LAYOUT" | tr '\n' ' ')"
+
+  # The eyedropper cursor's hot spot is at its glyph's tip, at 1x and at 2x.
+  CURSOR="$(send "$EDITOR_SOCK" editor-eyedropper-cursor)"
+  for scale in 1 2; do
+    LINE="$(printf '%s\n' "$CURSOR" | grep "^scale=$scale ")"
+    TIP="$(printf '%s' "$LINE" | sed -n 's/.* tip=\([^ ]*\) .*/\1/p')"
+    HOT="$(printf '%s' "$LINE" | sed -n 's/.* hotspot=\(.*\)/\1/p')"
+    if awk -v t="$TIP" -v h="$HOT" 'BEGIN { split(t, a, ","); split(h, b, ","); dx = a[1] - b[1]; dy = a[2] - b[2]; exit !(t != "none" && dx * dx + dy * dy <= 4) }'; then pass "the eyedropper's hot spot ($HOT) is at its glyph's tip ($TIP) at ${scale}x"; else fail "the eyedropper's hot spot is $HOT, its glyph's tip is $TIP at ${scale}x"; fi
+  done
+
   # Swatches: one click sets the color for the next Annotation and for the selected one.
   expect_contains "a click on the Blue swatch is delivered" "ok" "$(control Blue)"
   expect_equal "the swatch's color is remembered" "0a84ff" "$(default_of annotationColor)"
@@ -142,6 +157,13 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "the next Undo takes back the typed color" "$BEFORE" "$(annotation_field "$RECT" 8)"
   keystroke redo >/dev/null
   keystroke redo >/dev/null
+  # A drag that ends with a real mouse-up event is one step too.
+  STEPS="$(undo_steps)"
+  send "$EDITOR_SOCK" "editor-color-panel $EDITOR_N drag-event aabbcc 221100" >/dev/null
+  expect_equal "a drag ended by a mouse-up event leaves its last color" "221100" "$(annotation_field "$RECT" 8)"
+  expect_equal "as one Undo step" "$((STEPS + 1))" "$(undo_steps)"
+  keystroke undo >/dev/null
+  expect_equal "and one Undo takes it back" "778899" "$(annotation_field "$RECT" 8)"
   # No Undo bracket is left open: the next drawing is a step of its own.
   STEPS="$(undo_steps)"
   keystroke r >/dev/null
@@ -232,3 +254,5 @@ send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
 send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
 send "$APP_SOCK" "defaults-set annotationWidth 5" >/dev/null
 send "$APP_SOCK" "defaults-set annotationTextSize 20" >/dev/null
+send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null
+expect_equal "no Editor is left open by this flow" "" "$(open_editors)"

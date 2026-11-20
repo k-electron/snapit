@@ -22,7 +22,7 @@ struct EyedropperToolbarItem: EditorToolbarItem {
             } label: {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .medium))
-                    .frame(minWidth: 32, minHeight: 34)
+                    .frame(minWidth: 28, minHeight: 34)
             }
             .buttonStyle(ChromeButtonStyle(look: session.isPickingColor ? .selected : .plain))
             .disabled(!isEnabled(in: session))

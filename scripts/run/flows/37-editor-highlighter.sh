@@ -71,3 +71,5 @@ if capture_into_editor "menu-click capture.screen"; then
 fi
 send "$APP_SOCK" "defaults-set annotationWidth 5" >/dev/null
 send "$APP_SOCK" "defaults-set highlighterWidth 22" >/dev/null
+send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null
+expect_equal "no Editor is left open by this flow" "" "$(open_editors)"

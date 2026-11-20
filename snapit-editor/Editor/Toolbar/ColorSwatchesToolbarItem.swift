@@ -50,13 +50,13 @@ private struct SwatchButton: View {
             ZStack {
                 Circle()
                     .fill(Color(red: color.red, green: color.green, blue: color.blue))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 14, height: 14)
                     .overlay(Circle().strokeBorder(.primary.opacity(0.25), lineWidth: 1))
                 if chosen {
-                    Circle().strokeBorder(Color.accentColor, lineWidth: 2).frame(width: 24, height: 24)
+                    Circle().strokeBorder(Color.accentColor, lineWidth: 2).frame(width: 22, height: 22)
                 }
             }
-            .frame(width: 28, height: 34)
+            .frame(width: 24, height: 34)
         }
         .buttonStyle(ChromeButtonStyle())
         .help(name)
