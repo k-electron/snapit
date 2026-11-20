@@ -28,6 +28,7 @@ the real system is replaced:
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
 | defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
+| color panel (the Editor's color wheel button) | `NSColorPanel.shared`, which keeps its mode and swatches in the helper's own preferences | a fixture with no window and no preferences (`editor-color-panel`) | `snapit-editor/Editor/Color/ColorPanelEdge.swift`, `FixtureColorPanel.swift` |
 | install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
 Product code always asks the edge (`AppPasteboard.current`, `SaveLocation.folder`,
@@ -208,10 +209,11 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `44-` the Color picker, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` the Color picker, `44-` Window Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
+Flow 44 uses the helpers of flow 40: `SNAPIT_FLOWS="40 44" scripts/check-run.sh <app>` runs the two.
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
@@ -223,7 +225,7 @@ compares a PNG with the fixture: `png-inspect diff-fixture <file> <w> <h> [<x0> 
 many pixels changed, their bounding box and how many lie inside and outside a rectangle, and compares two
 PNGs: `png-inspect compare <a> <b>`, and for a Redaction `png-inspect verify-redaction ...`, which recomputes every block mean from the fixture formula, and for a crop `png-inspect diff-crop ...`, `diff-fixture` for the pixels of the fixture that start at an origin; `scripts/run/png-inspect.swift` has the arguments). A flow that draws in
 the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`, `preview_png`,
-`click_on`, `expect_enabled`, `fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
+`click_on`, `expect_enabled`, `expect_within`, `blend`, `fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model). `SNAPIT_FLOWS=<regex>` runs only the flows whose file name matches, while you write one.
 
 The Area flows (`40-area-capture.sh`, `42-action-bar.sh`; the second uses the first's helpers) show how to drive an overlay. "After selecting an Area" is the default (Show Action bar) unless a flow writes `defaults-set afterSelectingArea captureOnRelease`, as flow 40 does at its top, so a flow that drives the overlay sets the one it needs. In a flow: `press-shortcut capture-area`
 shows it, `overlay-mouse` and `overlay-key` are the user's hand, `overlay-wait` returns when the
@@ -319,11 +321,39 @@ uppercase hex through `AppPasteboard.current` and `ColorToast` shows "Copied #RR
 non-activating panel of its own (the overlay has closed): its fade and its removal are one-shot delays,
 and a new toast replaces the old one.
 
-`44-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
+`43-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
 frame's corners, on a second display at negative coordinates (left and above), with a BGRX frame,
 under either "After selecting an Area" setting, reads the outlined cell and the swatch back from
 `overlay-snapshot`, and holds memory, CPU, the toast's lifetime and the missing warm-up to the budget.
-`SNAPIT_FLOWS="10 20 40 42 44"` runs just those flows (each builds on the helpers of the ones before it).
+`SNAPIT_FLOWS="10 20 40 42 43"` runs just those flows (each builds on the helpers of the ones before it).
+
+## The Window Capture
+
+The Window Capture (`snapit/Window/`) is the Area overlay in `.window` mode (`AreaCaptureFlow.start(mode:)`,
+`WindowCaptureFlow.start()`): the same panels, frozen frames, layers and window list (`OnScreenWindow`, now with
+the `CGWindowID`), but the pointer only picks. Hover highlights the front-most window under the pointer from the
+list read when the Shortcut fired (no window-server call per move, no polling); a click captures that window and
+nothing else (`AreaOverlayOutcome.window`); a drag selects nothing; there is no Action bar whatever "After
+selecting an Area" says. The capture itself is a second seam, `WindowCaptureSources.current`: the real one
+(`ScreenCaptureKitWindowSource`) fetches `SCShareableContent` once the overlay shows, matches the window id and
+captures through `SCContentFilter(desktopIndependentWindow:)` at `contentRect * pointPixelScale`, SDR, in the
+display's color space; the fixture one (`FixtureWindowCaptureSource`) returns an image of the window's size with
+transparent rounded corners (the formula is in its header and in `scripts/run/png-inspect.swift`).
+`fixture-window-fail on|off` makes the capture fail, as if the window had closed.
+
+**Shadow.** The spec leaves the window shadow open. Window Captures do not include it
+(`WindowCapture.includesShadow` is false, passed to ScreenCaptureKit as `ignoreShadows`), and the Capture is exactly
+the window's frame with transparent rounded corners. Flipping the constant is a one-line change; the steps to check
+it are in `docs/manual-checks.md`.
+
+**Alpha.** Pixels are premultiplied BGRA in memory, in the Capture file and through the Export stages (crop copies
+bytes; Annotations are drawn by Core Graphics into a premultiplied context, so they composite over the corners).
+The engine's PNG encoder looks at the pixels: when every alpha is 255 (a Screen or Area Capture) the PNG is RGB
+(colour type 2), otherwise RGBA (colour type 6) with the colours un-premultiplied, and the 1x average and the
+thumbnail average all four premultiplied channels. The scripted run asserts both: window Captures give RGBA PNGs
+through Copy and Save (and the 1x averaged ones), a Screen Capture and an Area Capture still give RGB ones
+(`png-inspect info` prints `color_type`; `rgba-pixel` and `verify-window` decode the PNG with a decoder of their
+own, so a premultiplied or dropped alpha shows).
 
 ## Adding to the Area overlay
 
@@ -429,6 +459,14 @@ feature filters `job.annotations` by `kind` (Redaction's `RedactionStage` takes 
 sets `drawnByAnnotationStage` false). Tools are shared by every open Editor, so their state (`EditorSession+Annotations.swift`) never lives in a tool. The Annotation color, width and fill used last are remembered in
 `AnnotationSettings` (`annotationColor` as `RRGGBB`, `annotationWidth`, `annotationFilled`).
 
+### Text, Highlighter, color and width
+
+`TextAnnotationKind` overrides what a path-painted kind gets for free: `TextLayout` sets the lines (the one place that knows font, line height and baselines) and Core Text draws them in the Export and in the canvas's `TextAnnotationLayer`, a `CALayer` whose `draw(in:)` calls the kind's own `draw`, so the preview is the Export (same glyph settings in every context, whole-point layer frames so nothing is resampled). While a text is typed, `TextEditingController` holds an `NSTextView` in a host view beside the canvas (the canvas is layer-hosting, so it cannot have subviews). A press on the canvas first asks `EditorSession.consumesPointerDown` (`EditorSession+Text.swift`): a click while typing only commits, and the canvas refuses first responder while a text is typed so AppKit does not move the keyboard on that same press. Commit also happens on Esc, another tool, Copy and closing; a plain key (a tool's letter, ⌫) is a character while typing, and ⌘Z undoes the typing (the text view's own `UndoManager`) before it undoes Annotations.
+
+The Highlighter paints translucent at paint time (stored colors stay opaque) and has its own width presets (`WidthChoice`) and remembered key (`highlighterWidth`). The color controls and the size control (three tiles: text sizes for a Text, widths for the rest, since the two never apply together) are always in the options pill (a toolbar never changes size) and are disabled when they do not apply (`EditorSession+Color.swift`). Narrower than the pills need on one row, the options pill takes a second row under the title bar row (`EditorChrome`), so the window can be about half a 1440 pt display wide. A color is kept in extended sRGB (`AnnotationColor`), so a Display P3 pixel sRGB cannot show survives the eyedropper. The text view's ⌘X, ⌘C, ⌘V and ⌘A are routed in `EditorWindow` and go through `AppPasteboard.current` (`TextEditingView`). The eyedropper is not a tool on the rail but a mode (`isEyedropperActive`, `EyedropperTool`), reading the Capture's read-only pixels. The color panel is an edge (`ColorPanelEdge`); `ColorPanelController` turns a drag in it into one Undo bracket that the mouse coming up closes, with no timer.
+
+Test-mode commands for these: `editor-type` (key events, `%0A` is Return), `editor-text` (the editing state, whether the eyedropper is on, each Text's box), `editor-double-click`, `editor-color-panel` (`state`, `choose`, `drag`), `editor-window-image` (draws the window's content to a PNG, for looking at the layout), `editor-key-command` (⌘ and a key), `editor-pasteboard-string`, `editor-control-enabled <N> <tooltip>` (whether a control is greyed out as the window shows it), `editor-layout` (minimum width, overlapping controls, which row the options pill is on), `editor-eyedropper-cursor` (the cursor glyph's tip against its hot spot at 1x and 2x), `editor-become-key` (an inactive app has no key window, so this sends the delegate what AppKit would), and `editor-click <N> control <tooltip>` for one control of an item that has several (a swatch, a width tile).
+
 ### Redaction and Crop
 
 A Redaction (`Annotations/RedactionAnnotationKind.swift`, `drawnByAnnotationStage` false) pixelates in
@@ -472,7 +510,8 @@ own independent block-mean reference, non-tight strides, edge blocks, windows, i
 builder (any stride, padding filled with garbage that must never reach the output) and a PNG chunk
 reader that does not use the encoder under test. A new engine function gets a test file with:
 a round trip, a non-tight stride, invalid arguments (null pointers, zero sizes, overflow) and its
-metadata. After changing the C interface run `scripts/generate-header.sh` and commit the header.
+metadata. `engine/tests/png_alpha.rs` is the model for transparent pixels (premultiplied input, straight RGBA out,
+the opaque case staying RGB, averaging, the thumbnail). After changing the C interface run `scripts/generate-header.sh` and commit the header.
 
 ## Never in a test
 

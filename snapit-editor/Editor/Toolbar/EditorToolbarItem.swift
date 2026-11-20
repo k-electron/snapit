@@ -91,6 +91,9 @@ protocol EditorToolbarItem {
     /// The item's name in the menu.
     var menuTitle: String { get }
     func isEnabled(in session: EditorSession) -> Bool
+    /// Whether the item is in the toolbar now. Most always are; the Crop tool's Apply and Cancel
+    /// take the place of the color and size controls while the Crop tool is active.
+    func isVisible(in session: EditorSession) -> Bool
     func perform(in session: EditorSession)
     func makeView(session: EditorSession) -> AnyView
 }
@@ -102,6 +105,7 @@ extension EditorToolbarItem {
     var menu: EditorMenu? { nil }
     var menuTitle: String { title ?? tooltip }
     func isEnabled(in session: EditorSession) -> Bool { true }
+    func isVisible(in session: EditorSession) -> Bool { true }
     func makeView(session: EditorSession) -> AnyView {
         AnyView(ToolbarButton(item: self, session: session))
     }
@@ -124,8 +128,8 @@ struct ToolbarButton: View {
             .frame(minWidth: 34, minHeight: 34)
         }
         .buttonStyle(ChromeButtonStyle(look: item.look))
-        .disabled(!item.isEnabled(in: session))
         .help(item.tooltip)
         .controlMarker(item.tooltip)
+        .disabled(!item.isEnabled(in: session))
     }
 }

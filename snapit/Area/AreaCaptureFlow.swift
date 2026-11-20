@@ -45,18 +45,20 @@ enum AreaCaptureFlow {
     /// Milliseconds from the start of the last `start()` until its overlay was on screen.
     private(set) static var lastShownMilliseconds: Double?
 
+    /// Shows the overlay for an Area Capture, or (`.window`) for a Window Capture: the same
+    /// overlay, but it picks the window under the pointer and a click captures that window alone.
     @discardableResult
-    static func start() async -> StartOutcome {
-        await begin(picking: false)
+    static func start(mode: AreaOverlayMode = .area) async -> StartOutcome {
+        await begin(mode: mode, picking: false)
     }
 
     /// The menu's Pick Color and its Shortcut: the overlay opens in the Color picker.
     @discardableResult
     static func startPickingColor() async -> StartOutcome {
-        await begin(picking: true)
+        await begin(mode: .area, picking: true)
     }
 
-    private static func begin(picking: Bool) async -> StartOutcome {
+    private static func begin(mode: AreaOverlayMode, picking: Bool) async -> StartOutcome {
         guard CaptureGate.enter() else { return .busy }
         let began = ContinuousClock.now
         result = nil
@@ -76,14 +78,16 @@ enum AreaCaptureFlow {
             let displays = try await source.freezeDisplays()
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
 
-            let controller = AreaOverlayController(displays: displays, windows: windows, pointer: source.pointerLocation)
+            let controller = AreaOverlayController(
+                displays: displays, windows: windows, pointer: source.pointerLocation, mode: mode)
             controller.onFinish = { outcome in finish(outcome) }
             overlay = controller
             controller.show(takesFocus: !TestMode.isActive, startsPicking: picking)
+            if mode == .window { WindowCaptureSources.current.prepare() }
             lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
-            NSLog("snapit: Area Capture failed: \(error)")
+            NSLog("snapit: \(mode == .window ? "Window" : "Area") Capture failed: \(error)")
             conclude(.failed("\(error)"))
             return .failed("\(error)")
         }
@@ -109,6 +113,11 @@ enum AreaCaptureFlow {
             controller.teardown()
             Task {
                 conclude(await capture(frozen, area: selection.pixels))
+            }
+        case .window(let window):
+            controller.teardown()
+            Task {
+                conclude(await WindowCaptureFlow.capture(window))
             }
         case .cancel:
             controller.teardown()
@@ -148,6 +157,10 @@ enum AreaCaptureFlow {
     /// the outcome, and when no Editor opened the app the user was in gets focus back.
     private static func conclude(_ outcome: Result) {
         result = outcome
+
+        // Window Capture: lets go of the shareable-window list fetched while the overlay showed.
+        WindowCaptureSources.current.release()
+
         let previous = previousApp
         previousApp = nil
         if case .opened = outcome {} else {
