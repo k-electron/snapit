@@ -7,12 +7,10 @@ enum TimedCaptureSettings {
     static let range = 1...10
     static let defaultSeconds = 3
 
-    /// The stored seconds, kept within 1-10; 3 when nothing usable is stored. A string such as "7"
-    /// counts too, which is how the scripted run writes defaults.
+    /// The stored seconds, kept within 1-10; 3 when nothing usable is stored.
     static var seconds: Int {
         get {
-            let value = AppDefaults.store.object(forKey: secondsKey)
-            let stored = (value as? Int) ?? (value as? String).flatMap { Int($0) }
+            let stored = AppDefaults.store.object(forKey: secondsKey) as? Int
             return stored.map { min(range.upperBound, max(range.lowerBound, $0)) } ?? defaultSeconds
         }
         set {

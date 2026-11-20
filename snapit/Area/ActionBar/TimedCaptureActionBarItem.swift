@@ -10,17 +10,6 @@ struct TimedCaptureActionBarItem: ActionBarItem {
 
     static func title(_ seconds: Int) -> String { "Capture in \(seconds) s" }
 
-    /// A stopwatch: a dial, its button and one hand.
-    var glyph: CGPath? {
-        let path = CGMutablePath()
-        path.addEllipse(in: CGRect(x: 1.5, y: 0.8, width: 11, height: 11))
-        path.move(to: CGPoint(x: 5.5, y: 13.2))
-        path.addLine(to: CGPoint(x: 8.5, y: 13.2))
-        path.move(to: CGPoint(x: 7, y: 6.3))
-        path.addLine(to: CGPoint(x: 9.2, y: 8.6))
-        return path
-    }
-
     func perform(on host: any ActionBarHost) {
         guard let area = host.selectedArea else { return }
         host.finish(with: .timed(area, seconds: TimedCaptureSettings.seconds))

@@ -54,7 +54,7 @@ class ActionBarControl {
 
 /// The standard tile: a rounded rectangle with an optional glyph and a title. Pressing and
 /// releasing on it runs the item.
-class ActionBarButtonControl: ActionBarControl {
+final class ActionBarButtonControl: ActionBarControl {
     enum Look { case plain, prominent }
 
     static let height: CGFloat = 34

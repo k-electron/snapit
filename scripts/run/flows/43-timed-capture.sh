@@ -85,21 +85,21 @@ if in_display "$BAR0" 600 400; then pass "the bar with the timer is on screen at
 
 # 2. The slider: a press sets the whole second under the pointer, a drag follows it past the ends of
 #    the tile, and the value is stored when it changes (the button's words follow). Nothing is captured.
-slider_to 96
+slider_to 72
 expect_equal "a press at the slider's right end is 10 s" "Capture in 10 s" "$(timer_title)"
 expect_equal "and the timer's value is stored" "10" "$(send "$APP_SOCK" "defaults-get timedCaptureSeconds")"
 slider_to 16
 expect_equal "a press at the slider's left end is 1 s" "Capture in 1 s" "$(timer_title)"
-slider_press 60
-expect_equal "a press at 60 points is 6 s" "Capture in 6 s" "$(timer_title)"
-slider_drag 36
+slider_press 47
+expect_equal "a press at 47 points is 6 s" "Capture in 6 s" "$(timer_title)"
+slider_drag 28
 expect_equal "dragging left follows the pointer to 3 s" "Capture in 3 s" "$(timer_title)"
-slider_drag 108
-slider_drag 140
+slider_drag 84
+slider_drag 130
 expect_equal "dragging past the right end stays at 10 s" "Capture in 10 s" "$(timer_title)"
 slider_drag -30
 expect_equal "dragging past the left end stays at 1 s" "Capture in 1 s" "$(timer_title)"
-slider_drag 60
+slider_drag 47
 mouse drag 0 "$SX" 380 >/dev/null
 mouse up 0 "$SX" 380 >/dev/null
 expect_equal "letting go away from the tile keeps the value (6 s)" "Capture in 6 s" "$(timer_title)"
@@ -113,9 +113,18 @@ mouse down 0 "$TX" "$TY" >/dev/null
 mouse up 0 100 380 >/dev/null
 expect_equal "a press on Capture in N s let go elsewhere starts no countdown" "none" "$(timed state)"
 expect_equal "and the overlay is still up" "adjusting" "$(fact state)"
-slider_to 34
-expect_equal "a press at 34 points is 3 s" "Capture in 3 s" "$(timer_title)"
+slider_to 28
+expect_equal "a press at 28 points is 3 s" "Capture in 3 s" "$(timer_title)"
 area_cancel
+
+# 2b. A bar wider than the display is centred on it: it overflows both sides equally.
+send "$APP_SOCK" "fixture-display 1 300 400" >/dev/null
+area_start "press-shortcut capture-area" >/dev/null
+area_drag 0 20 100 120 200
+NARROW_BAR="$(bar_frame)"
+expect_equal "a bar wider than a 300 point display is centred on it" "150" "$(printf '%s\n' "$NARROW_BAR" | awk '{ split($1, p, ","); split($2, s, "x"); printf "%.0f", p[1] + s[1] / 2 }')"
+area_cancel
+send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 
 # 3. A countdown of 3 s: the overlay goes, a click-through border and a badge stay, the ticks run
 #    3, 2, 1, and nothing is captured until zero. The Capture at zero is fresh and opens in the
@@ -133,6 +142,7 @@ expect_equal "the border sits just outside the Area (2 points)" "198,98 204x204"
 expect_equal "the Area is the selection" "200,100 200x200" "$(timed area)"
 expect_equal "the border is four panels" "4" "$(timed border-panels)"
 expect_equal "every border panel lets clicks through" "yes" "$(timed border-click-through)"
+expect_equal "the badge takes clicks (its ✕ is the one clickable thing)" "no" "$(timed badge-click-through)"
 PANELS="$(overlay_panels)"
 expect_equal "the window server shows two panels of 204 x 2 points" "2" "$(printf '%s\n' "$PANELS" | grep -c '^204x2 ')"
 expect_equal "and two of 2 x 200 points" "2" "$(printf '%s\n' "$PANELS" | grep -c '^2x200 ')"
@@ -249,11 +259,14 @@ expect_equal "and the warm-up is over" "idle" "$(send "$APP_SOCK" "editor-warm-u
 sleep 3.5
 expect_equal "no Capture is taken after a cancel" "$FRESH1" "$(timed fresh-captures)"
 
-# 8. The Area Shortcut cancels the countdown too; the Screen Shortcut does not start anything. The
-#    Shortcut works again at once.
+# 8. The Area Shortcut cancels the countdown too; the Screen and Window Shortcuts do not start
+#    anything (they meet the busy Capture). The Shortcut works again at once.
 timed_start 200 100 400 300
 expect_equal "the Screen Shortcut during a countdown does nothing" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-screen")"
 expect_equal "the countdown is still running" "counting" "$(timed state)"
+expect_equal "the Window Shortcut during a countdown does nothing" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-window")"
+expect_equal "the countdown is still running after the Window Shortcut" "counting" "$(timed state)"
+expect_equal "and no window overlay opened" "none" "$(send "$APP_SOCK" overlay-facts)"
 expect_equal "the Area Shortcut during the countdown replies" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-area")"
 expect_equal "and cancels it" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
 expect_equal "no countdown, tick or panel is left" "none,no,1" "$(timed state),$(timed ticking),$(no_countdown_windows && echo 1 || echo 0)"
@@ -347,7 +360,7 @@ else
 fi
 area_result && copy_closes_editor
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
-send "$APP_SOCK" "defaults-set timedCaptureSeconds 1" >/dev/null
+send "$APP_SOCK" "timed-seconds-store 1" >/dev/null
 wait_until 10 no_helper_running
 sleep 1
 TIMED_BASELINE="$(precise_mb "$APP_PID")"
@@ -373,7 +386,7 @@ expect_equal "no tick is scheduled at rest" "no" "$(timed ticking)"
 # 14. The slider's value is remembered across launches: the Action bar shows it after snapit quits
 #     and starts again. A stored value out of range is kept within 1-10 and one that is not a number is 3.
 for ENTRY in "99:Capture in 10 s" "0:Capture in 1 s" "nonsense:Capture in 3 s" "4:Capture in 4 s"; do
-  send "$APP_SOCK" "defaults-set timedCaptureSeconds ${ENTRY%%:*}" >/dev/null
+  send "$APP_SOCK" "timed-seconds-store ${ENTRY%%:*}" >/dev/null
   area_start "press-shortcut capture-area" >/dev/null
   area_drag 0 200 100 400 300
   expect_equal "a stored '${ENTRY%%:*}' shows as '${ENTRY#*:}'" "${ENTRY#*:}" "$(timer_title)"
@@ -381,7 +394,7 @@ for ENTRY in "99:Capture in 10 s" "0:Capture in 1 s" "nonsense:Capture in 3 s" "
 done
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 200 100 400 300
-slider_to 76
+slider_to 60
 expect_equal "the slider moved to 8 s" "Capture in 8 s" "$(timer_title)"
 area_cancel
 send "$APP_SOCK" quit >/dev/null
@@ -401,3 +414,6 @@ send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 no_helper_running
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
+# The relaunch started a new process: the flows after this one measure against what it uses at rest.
+sleep 1
+AT_REST="$(footprint_mb "$APP_PID")"

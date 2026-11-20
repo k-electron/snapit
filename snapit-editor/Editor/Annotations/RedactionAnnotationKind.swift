@@ -15,6 +15,8 @@ nonisolated extension AnnotationKindID {
 nonisolated struct RedactionAnnotationKind: AnnotationKind {
     let id = AnnotationKindID.redaction
     let drawnByAnnotationStage = false
+    let widthChoice = WidthChoice.none
+    let usesColor = false
 
     /// The box. It has a (clear) fill so a click anywhere inside picks it.
     func paint(for annotation: Annotation) -> AnnotationPaint {

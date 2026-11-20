@@ -32,6 +32,8 @@ final class TimedCountdown {
     var onCancel: (() -> Void)?
     /// The seconds ran out. The tick is already gone; the windows stay until `close()`.
     var onZero: (() -> Void)?
+    /// One second is left (at the start, for a countdown of one second).
+    var onLastSecond: (() -> Void)?
 
     /// The Area in display points (top-left origin), where its device pixels are.
     let area: CGRect
@@ -43,6 +45,7 @@ final class TimedCountdown {
     private var timer: DispatchSourceTimer?
     private var timerBase = DispatchTime.now()
     private var screenObserver: NSObjectProtocol?
+    private var workspaceObservers: [NSObjectProtocol] = []
 
     init(target: Target, seconds: Int) {
         self.target = target
@@ -69,12 +72,14 @@ final class TimedCountdown {
 
     /// The panels on screen now, for the Capture's content filter and for the scripted run.
     var ownWindows: [OwnWindow] {
-        var windows = strips.map { OwnWindow(number: $0.windowNumber, frame: $0.frame, kind: .border) }
-        if let badge { windows.append(OwnWindow(number: badge.windowNumber, frame: badge.frame, kind: .badge)) }
-        if let panel = tooltip.panel {
-            windows.append(OwnWindow(number: panel.windowNumber, frame: panel.frame, kind: .tooltip))
-        }
+        var windows = strips.map { own($0, .border) }
+        if let badge { windows.append(own(badge, .badge)) }
+        if let panel = tooltip.panel { windows.append(own(panel, .tooltip)) }
         return windows
+    }
+
+    private func own(_ panel: TimedPanel, _ kind: OwnWindow.Kind) -> OwnWindow {
+        OwnWindow(number: panel.windowNumber, frame: panel.frame, layer: panel.level.rawValue, kind: kind)
     }
 
     var tooltipText: String? { tooltip.text }
@@ -97,7 +102,9 @@ final class TimedCountdown {
             CGRect(x: outer.minX, y: outer.minY + width, width: width, height: outer.height - 2 * width),
             CGRect(x: outer.maxX - width, y: outer.minY + width, width: width, height: outer.height - 2 * width),
         ]
-        for rect in rects {
+        // Only what lies on the Area's display (an Area at the display's edge has a border partly off it).
+        let displayBounds = CGRect(origin: .zero, size: target.frame.size)
+        for rect in rects.map({ $0.intersection(displayBounds) }) where !rect.isNull && !rect.isEmpty {
             let strip = TimedPanel(frame: global(rect), takesClicks: false)
             let layer = CALayer()
             layer.backgroundColor = color
@@ -122,8 +129,18 @@ final class TimedCountdown {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.onCancel?() }
         }
+        // The screen going to sleep or the session being locked ends it too: the tick stops
+        // while the Mac sleeps, and a Capture at wake would be of the lock screen.
+        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            workspaceObservers.append(
+                NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) {
+                    [weak self] _ in
+                    MainActor.assumeIsolated { self?.onCancel?() }
+                })
+        }
 
         startedAt = .now
+        if remaining == 1 { onLastSecond?() }
         timerBase = .now()
         scheduleTick(after: 1)
         CATransaction.flush()
@@ -151,10 +168,17 @@ final class TimedCountdown {
             remaining = 0
             stopTicking()
             badgeView?.show(seconds: 0)
+            // Nothing of snapit's may appear from here on: no tooltip made while the Capture is
+            // being taken (it would not be in the list the filter was built from).
+            tooltipTimer?.cancel()
+            tooltipTimer = nil
+            tooltip.close()
+            badgeView?.onCrossHover = nil
             onZero?()
         } else {
             badgeView?.show(seconds: remaining)
             scheduleTick(after: seconds - remaining + 1)
+            if remaining == 1 { onLastSecond?() }
         }
     }
 
@@ -200,8 +224,11 @@ final class TimedCountdown {
         tooltip.close()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
+        for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        workspaceObservers.removeAll()
         onCancel = nil
         onZero = nil
+        onLastSecond = nil
         badgeView?.onCancel = nil
         badgeView?.onCrossHover = nil
         for panel in strips + (badge.map { [$0] } ?? []) {
