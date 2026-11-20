@@ -220,8 +220,15 @@ extension EditorSession {
 
     var canDeleteAnnotation: Bool { toolbarState.canDelete }
     /// While a text is being typed, Undo takes back its typing first.
-    var canUndo: Bool { toolbarState.canUndo || textEditingCanUndo }
-    var canRedo: Bool { toolbarState.canRedo || textEditingCanRedo }
+    var canUndo: Bool {
+        _ = textEditRevision
+        return toolbarState.canUndo || textEditingCanUndo
+    }
+
+    var canRedo: Bool {
+        _ = textEditRevision
+        return toolbarState.canRedo || textEditingCanRedo
+    }
 
     /// Delete Annotation (⌫): removes the selected Annotation.
     func deleteSelectedAnnotation() {

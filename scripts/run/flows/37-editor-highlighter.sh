@@ -18,10 +18,10 @@ if capture_into_editor "menu-click capture.screen"; then
   H=187
   keystroke h >/dev/null
   expect_equal "the H key picks the Highlighter" "highlighter" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N" | sed -n 's/^tool=//p')"
-  drag 40 30 120 30 >/dev/null  # 22 points thick, square ends: pixels x 40..120, y 19..41
+  drag 40 30 120 30 >/dev/null  # 22 points thick, flat ends: pixels x 40..120, y 19..41
   EXPORT="$(export_png highlight)"
   DIFF="$(fixture_diff "$EXPORT" $W $H 40 19 120 41)"
-  expect_equal "the stroke covers its length and thickness, with square ends" "bbox=40,19,120,41" "$(printf '%s\n' "$DIFF" | grep '^bbox=')"
+  expect_equal "the stroke covers its length and thickness, with flat ends" "bbox=40,19,120,41" "$(printf '%s\n' "$DIFF" | grep '^bbox=')"
   expect_equal "nothing outside it changed" "outside=0" "$(printf '%s\n' "$DIFF" | grep '^outside=')"
   for point in "80 30" "45 20" "115 40"; do
     read -r X Y <<<"$point"
@@ -69,6 +69,28 @@ if capture_into_editor "menu-click capture.screen"; then
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
+
+# 2x, Display P3: a black Highlighter is the same black in P3 and sRGB, so the blend is computed from
+# the fixture's P3 values directly: 60% of the Capture's pixel.
+send "$APP_SOCK" "defaults-set highlighterWidth 22" >/dev/null
+send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  W=602
+  H=374
+  send "$EDITOR_SOCK" "editor-click $EDITOR_N control Black" >/dev/null
+  keystroke h >/dev/null
+  drag 40 30 120 30 >/dev/null  # pixels x 80..240, y 38..82
+  EXPORT="$(export_png highlight-2x)"
+  for point in "160 60" "90 40" "230 80"; do
+    read -r X Y <<<"$point"
+    expect_within "at 2x the pixel at $X,$Y is 60% of the Capture's Display P3 pixel" 2 \
+      "$(blend "$(fixture_pixel "$X" "$Y" $W $H)" "0,0,0" 40)" "$(pixel "$EXPORT" "$X" "$Y")"
+  done
+  expect_equal "at 2x the stroke covers exactly its pixels" "bbox=80,38,240,82" "$(fixture_diff "$EXPORT" $W $H | grep '^bbox=')"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
 send "$APP_SOCK" "defaults-set annotationWidth 5" >/dev/null
 send "$APP_SOCK" "defaults-set highlighterWidth 22" >/dev/null
 send "$APP_SOCK" "defaults-set closeEditorAfterCopy true" >/dev/null

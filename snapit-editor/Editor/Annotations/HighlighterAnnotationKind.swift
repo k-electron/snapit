@@ -5,7 +5,7 @@ nonisolated extension AnnotationKindID {
 }
 
 /// Highlighter: a translucent marker stroke from `start` to `end`, as thick as its width, with
-/// square ends. The stored color is opaque; the translucency is applied where it is painted, so
+/// flat (butt) ends that stop exactly at its end points. The stored color is opaque; the translucency is applied where it is painted, so
 /// the canvas and the Export blend it the same way (plain alpha over the Capture).
 nonisolated struct HighlighterAnnotationKind: AnnotationKind {
     let id = AnnotationKindID.highlighter

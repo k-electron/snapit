@@ -19,14 +19,21 @@ nonisolated struct AnnotationKindID: RawRepresentable, Codable, Hashable, Sendab
     }
 }
 
-/// An Annotation color, in sRGB.
+/// An Annotation color, in extended sRGB: a channel may lie outside 0...1, which is how a color of a
+/// wide-gamut Capture (the eyedropper takes one from Display P3 pixels) that sRGB cannot show is kept
+/// instead of being clamped. A color the user chooses has every channel inside 0...1.
 nonisolated struct AnnotationColor: Codable, Equatable, Sendable {
     var red: Double
     var green: Double
     var blue: Double
     var alpha: Double = 1
 
-    var cgColor: CGColor { CGColor(srgbRed: red, green: green, blue: blue, alpha: alpha) }
+    private static let space = CGColorSpace(name: CGColorSpace.extendedSRGB) ?? CGColorSpaceCreateDeviceRGB()
+
+    var cgColor: CGColor {
+        CGColor(colorSpace: Self.space, components: [CGFloat(red), CGFloat(green), CGFloat(blue), CGFloat(alpha)])
+            ?? CGColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
+    }
 
     /// The default Annotation color.
     static let red = AnnotationColor(red: 1.0, green: 0.23, blue: 0.19)

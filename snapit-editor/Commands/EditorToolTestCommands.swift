@@ -297,7 +297,11 @@ extension SocketCommandRegistry {
         try target.withCGContext { context in
             context.scaleBy(x: capture.info.scale, y: capture.info.scale)
             canvas.selectionLayer.isHidden = true
+            // Text layers draw at the Capture's scale for this image, as the Export does.
+            let texts = (canvas.annotationLayer.sublayers ?? []).compactMap { $0 as? TextAnnotationLayer }
+            let saved = texts.map { $0.beginPreview(scale: capture.info.scale) }
             canvas.contentLayer.render(in: context)
+            for (layer, scale) in zip(texts, saved) { layer.endPreview(scale) }
             canvas.selectionLayer.isHidden = false
         }
         return try target.encodePNG(level: .fast, dpi: capture.info.dpi)

@@ -5,7 +5,7 @@ nonisolated extension SocketCommand {
     /// plain key events for the first responder (the text view, or the window when none takes them).
     /// `%0A` is Return. Test mode only.
     static let editorType = SocketCommand("editor-type")
-    /// `editor-text <N>`: `editing=yes|no`, `picking=yes|no` and one line per Text,
+    /// `editor-text <N>`: `editing=yes|no`, `eyedropper=yes|no` and one line per Text,
     /// `text <id> <size> <x> <y> <width> <height> <text>` (the box in image points, the text with
     /// `%0A` for a new line). Test mode only.
     static let editorText = SocketCommand("editor-text")
@@ -15,6 +15,9 @@ nonisolated extension SocketCommand {
     /// `editor-window-image <N> <name>`: Editor N's window content drawn into `<run>/probe/<name>.png`
     /// (for looking at the layout; replies `ok <path>`). Test mode only.
     static let editorWindowImage = SocketCommand("editor-window-image")
+    /// `editor-pasteboard-string`: the text on the private pasteboard, percent-encoded, followed by
+    /// ` types=<type identifiers>`. Test mode only.
+    static let editorPasteboardString = SocketCommand("editor-pasteboard-string")
 }
 
 extension SocketCommandRegistry {
@@ -38,6 +41,12 @@ extension SocketCommandRegistry {
                 window.sendEvent(event)
             }
             return "ok"
+        }
+        register(.editorPasteboardString) { _ in
+            let pasteboard = AppPasteboard.current
+            let text = (pasteboard.string(forType: .string) ?? "").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+            let types = (pasteboard.types ?? []).map(\.rawValue).joined(separator: ",")
+            return "\(text) types=\(types)"
         }
         register(.editorWindowImage) { request in
             guard let session = Self.session(request.arguments), let view = session.window?.contentView,
@@ -71,7 +80,8 @@ extension SocketCommandRegistry {
             else { return "error no Editor \(request.arguments.first ?? "")" }
             var lines = [
                 "editing=\(session.isEditingText ? "yes" : "no")",
-                "picking=\(session.isPickingColor ? "yes" : "no")",
+                "eyedropper=\(session.isEyedropperActive ? "yes" : "no")",
+                "typing-undo=\(session.textEditingCanUndo ? "yes" : "no") typing-redo=\(session.textEditingCanRedo ? "yes" : "no")",
             ]
             for annotation in document.annotations where annotation.kind == .text {
                 let box = TextAnnotationKind().bounds(of: annotation)

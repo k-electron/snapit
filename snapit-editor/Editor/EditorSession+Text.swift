@@ -29,7 +29,9 @@ extension EditorSession {
         if isNew { selectAnnotation(nil) }
         let editor = TextEditingController(draft: draft, isNew: isNew, canvas: canvas, host: host)
         editor.onEnd = { [weak self] in self?.commitTextEditing(refocus: false) }
+        editor.onChange = { [weak self] in self?.textEditRevision &+= 1 }
         canvas.textEditing = editor
+        textEditRevision &+= 1
     }
 
     /// The canvas's first look at a press. A click while a text is typed commits it and goes no
@@ -40,7 +42,7 @@ extension EditorSession {
             commitTextEditing()
             return true
         }
-        if clickCount >= 2, !isPickingColor, annotationGesture == nil, let hit = annotation(at: point), hit.kind == .text {
+        if clickCount >= 2, !isEyedropperActive, annotationGesture == nil, let hit = annotation(at: point), hit.kind == .text {
             editText(hit)
             return true
         }
@@ -57,6 +59,7 @@ extension EditorSession {
         let wasNew = editor.isNew
         canvas.textEditing = nil
         editor.tearDown()
+        textEditRevision &+= 1
         canvas.annotationLayers.setHidden(false, id: annotation.id)
         if refocus { canvas.window?.makeFirstResponder(canvas) }
         guard let document else { return true }
@@ -92,6 +95,7 @@ extension EditorSession {
         guard let editor = canvas?.textEditing else { return false }
         if editor.canUndo {
             editor.undo()
+            textEditRevision &+= 1
             return true
         }
         commitTextEditing()
@@ -102,8 +106,12 @@ extension EditorSession {
         guard let editor = canvas?.textEditing else { return false }
         if editor.canRedo {
             editor.redo()
+            textEditRevision &+= 1
             return true
         }
+        // Nothing typed to put back: the text is committed and Redo goes on to the Annotations,
+        // as Undo does.
+        commitTextEditing()
         return false
     }
 

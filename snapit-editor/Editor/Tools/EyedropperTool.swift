@@ -11,7 +11,7 @@ struct EyedropperTool: EditorTool {
     var cursor: NSCursor { EyedropperCursor.shared }
 
     func pointerDown(at point: CGPoint, in session: EditorSession) {
-        session.pickColor(at: point)
+        session.takeColor(at: point)
     }
 }
 

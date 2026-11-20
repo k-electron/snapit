@@ -1,5 +1,29 @@
 import AppKit
 
+/// The text view of a Text being typed. Its Cut, Copy and Paste go through `AppPasteboard.current`,
+/// never `NSPasteboard.general`, so a scripted run keeps to its private pasteboard.
+final class TextEditingView: NSTextView {
+    override func copy(_ sender: Any?) {
+        guard selectedRange().length > 0 else { return }
+        let pasteboard = AppPasteboard.current
+        pasteboard.clearContents()
+        pasteboard.setString((string as NSString).substring(with: selectedRange()), forType: .string)
+    }
+
+    override func cut(_ sender: Any?) {
+        guard selectedRange().length > 0 else { return }
+        copy(sender)
+        deleteBackward(sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        guard let text = AppPasteboard.current.string(forType: .string) else { return }
+        insertText(text, replacementRange: selectedRange())
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) { paste(sender) }
+}
+
 /// A Text being typed: an `NSTextView` over the canvas, at the text's place and size, until the
 /// text is committed (a click away, Esc, another tool, Copy). The committed text is the
 /// Annotation's own layer; the text view lives only while it is being edited, so nothing blinks
@@ -17,8 +41,11 @@ final class TextEditingController: NSObject, NSTextViewDelegate {
     let isNew: Bool
     /// Asks the session to commit (the text view lost the keyboard focus).
     var onEnd: (() -> Void)?
+    /// Tells the session the typed text (and so its Undo state) changed.
+    var onChange: (() -> Void)?
 
-    private let textView = NSTextView(frame: .zero)
+    // TextKit 1: the text view is made with it, so it never converts from TextKit 2 on first use.
+    private let textView = TextEditingView(usingTextLayoutManager: false)
     private let undoer = UndoManager()
     private weak var canvas: CanvasView?
     private weak var host: NSView?
@@ -79,13 +106,21 @@ final class TextEditingController: NSObject, NSTextViewDelegate {
     }
 
     private func applyStyle() {
-        let zoom = canvas?.zoom ?? 1
         let color = NSColor(cgColor: draft.style.color.cgColor) ?? .black
-        let font = NSFont.systemFont(ofSize: draft.style.textSize * zoom, weight: .semibold)
+        // The font is the Annotation's own size and the lines are as far apart as `TextLayout` sets
+        // them; the view's bounds are scaled by the zoom, so what is typed lies where the committed
+        // text will.
+        let font = NSFont.systemFont(ofSize: draft.style.textSize, weight: .semibold)
+        let lines = NSMutableParagraphStyle()
+        lines.minimumLineHeight = TextLayout(text: "", fontSize: draft.style.textSize).lineHeight
+        lines.maximumLineHeight = lines.minimumLineHeight
+        textView.defaultParagraphStyle = lines
         textView.font = font
         textView.textColor = color
         textView.insertionPointColor = color
-        textView.typingAttributes = [.font: font, .foregroundColor: color]
+        textView.typingAttributes = [.font: font, .foregroundColor: color, .paragraphStyle: lines]
+        textView.textStorage?.addAttribute(
+            .paragraphStyle, value: lines, range: NSRange(location: 0, length: textView.textStorage?.length ?? 0))
     }
 
     /// Puts the text view where the text is on the canvas (the window or the zoom changed).
@@ -99,22 +134,31 @@ final class TextEditingController: NSObject, NSTextViewDelegate {
         manager.ensureLayout(for: container)
         let used = manager.usedRect(for: container)
         let zoom = canvas.zoom
-        let width = max(used.width + 6, 40 * zoom)
-        let height = max(used.height, draft.style.textSize * zoom * 1.25)
+        let width = max(used.width + 6, 40)
+        let height = max(used.height, draft.style.textSize * 1.25)
         let top = canvas.convert(canvas.viewPoint(fromImagePoint: draft.start), to: host)
-        textView.frame = NSRect(x: top.x, y: host.isFlipped ? top.y : top.y - height, width: width, height: height)
+        textView.frame = NSRect(
+            x: top.x, y: host.isFlipped ? top.y : top.y - height * zoom, width: width * zoom, height: height * zoom)
+        textView.setBoundsSize(NSSize(width: width, height: height))
     }
 
-    /// Removes the text view and lets go of everything it held.
+    /// Lets go of the text: the view is hidden at once and removed one run-loop turn later, because
+    /// the commit may come from inside the text view's own key handling (Esc).
     func tearDown() {
         textView.delegate = nil
-        textView.removeFromSuperview()
         onEnd = nil
+        onChange = nil
+        textView.isHidden = true
+        let view = textView
+        DispatchQueue.main.async { view.removeFromSuperview() }
     }
 
     // MARK: NSTextViewDelegate
 
-    func textDidChange(_ notification: Notification) { fit() }
+    func textDidChange(_ notification: Notification) {
+        fit()
+        onChange?()
+    }
 
     func textDidEndEditing(_ notification: Notification) { onEnd?() }
 

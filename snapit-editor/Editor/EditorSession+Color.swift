@@ -40,47 +40,50 @@ extension EditorSession {
         return activeWidthChoice == .highlighter ? highlighterWidth : annotationStyle.width
     }
 
-    /// The text size control applies to a Text (selected or about to be drawn), or with nothing
-    /// selected and no drawing tool, to the next Text.
-    var textSizeApplies: Bool {
+    /// The size control has three tiles that are text sizes for a Text (selected, being typed or
+    /// about to be drawn) and widths for everything else: the two never apply together.
+    var sizeControlIsTextSize: Bool {
         if let uses = toolbarState.selectionUsesTextSize { return uses }
         if let kind = currentTool.annotationKind.flatMap(AnnotationKinds.kind) { return kind.usesTextSize }
-        return true
+        return false
     }
+
+    /// Whether the size control does anything now (a kind with no width, Redaction, has none).
+    var sizeControlApplies: Bool { sizeControlIsTextSize || widthApplies }
 
     var shownTextSize: CGFloat { toolbarState.selectionTextSize ?? annotationStyle.textSize }
 
     // MARK: Eyedropper
 
-    /// The eyedropper button: starts picking, or stops it.
-    func togglePickingColor() {
-        if isPickingColor {
-            cancelPickingColor()
+    /// The eyedropper button: turns it on, or off.
+    func toggleEyedropper() {
+        if isEyedropperActive {
+            cancelEyedropper()
         } else {
             commitTextEditing()
-            isPickingColor = true
+            isEyedropperActive = true
             refreshCursor()
         }
     }
 
     @discardableResult
-    func cancelPickingColor() -> Bool {
-        guard isPickingColor else { return false }
-        isPickingColor = false
+    func cancelEyedropper() -> Bool {
+        guard isEyedropperActive else { return false }
+        isEyedropperActive = false
         refreshCursor()
         return true
     }
 
     /// The eyedropper's click: the Capture's pixel under `point` becomes the Annotation color.
     /// A click outside the Capture does nothing.
-    func pickColor(at point: CGPoint) {
-        guard isPickingColor, let document else { return }
+    func takeColor(at point: CGPoint) {
+        guard isEyedropperActive, let document else { return }
         let capture = document.capture
         let pixels = capture.pixels
         guard let pixel = CapturePixelSampler.pixel(containing: point, scale: capture.info.scale, in: pixels),
             let color = CapturePixelSampler.color(atX: pixel.x, y: pixel.y, in: pixels)
         else { return }
-        isPickingColor = false
+        isEyedropperActive = false
         refreshCursor()
         setAnnotationColor(color)
     }

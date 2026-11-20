@@ -139,6 +139,28 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "Copy commits the text being typed" "no" "$(editing)"
   if (($(png_field "$(fixture_diff "$EXPORT" $W $H 198 148 260 200)" inside) > 20)); then pass "and the Export has that text"; else fail "the Export has no text where it was typed"; fi
 
+  # ⌘A, ⌘X, ⌘C and ⌘V are the text's own while typing: ⌘C must not Export the Capture.
+  send "$APP_SOCK" pasteboard-clear >/dev/null
+  click 20 60 >/dev/null
+  type_text Hi >/dev/null
+  send "$EDITOR_SOCK" "editor-key-command $EDITOR_N a" >/dev/null
+  send "$EDITOR_SOCK" "editor-key-command $EDITOR_N c" >/dev/null
+  expect_equal "⌘C while typing leaves the text open" "yes" "$(editing)"
+  expect_contains "and the Editor open" "$EDITOR_N" "$(open_editors)"
+  expect_equal "the private pasteboard holds the selected text" "Hi" "$(send "$EDITOR_SOCK" editor-pasteboard-string | cut -d' ' -f1)"
+  expect_equal "and no Export of the Capture" "no" "$(send "$EDITOR_SOCK" editor-pasteboard-string | grep -q 'public.png' && echo yes || echo no)"
+  type_text x >/dev/null  # replaces the selection
+  send "$EDITOR_SOCK" "editor-key-command $EDITOR_N v" >/dev/null
+  click 280 170 >/dev/null
+  LAST_ID="$(send "$EDITOR_SOCK" "editor-text $EDITOR_N" | grep '^text ' | tail -1 | cut -d' ' -f2)"
+  expect_equal "⌘V pastes the copied text after the typed one" "xHi" "$(text_line "$LAST_ID" | cut -d' ' -f8)"
+  click 20 60 >/dev/null  # Text tool: edits that Text
+  send "$EDITOR_SOCK" "editor-key-command $EDITOR_N a" >/dev/null
+  send "$EDITOR_SOCK" "editor-key-command $EDITOR_N x" >/dev/null
+  expect_equal "⌘X cuts the selected text to the pasteboard" "xHi" "$(send "$EDITOR_SOCK" editor-pasteboard-string | cut -d' ' -f1)"
+  click 280 170 >/dev/null
+  expect_equal "and the Text, cut down to nothing, is gone" "$((COUNT_BEFORE + 2))" "$(text_count)"
+
   # A color and a size chosen while typing apply to that text.
   click 20 100 >/dev/null
   type_text S >/dev/null
@@ -158,6 +180,92 @@ if capture_into_editor "menu-click capture.screen"; then
 fi
 send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
 send "$APP_SOCK" "defaults-set annotationTextSize 32" >/dev/null
+
+# The toolbar's Undo and Redo buttons follow the typing: in an Editor with no Annotation yet they are
+# greyed out until something is typed (read from the window's controls, as a user sees them).
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  control_enabled() { send "$EDITOR_SOCK" "editor-control-enabled $EDITOR_N ${1// /%20}"; }
+  undo_is() { [[ "$(control_enabled 'Undo (⌘Z)')" == "$1" ]]; }
+  redo_is() { [[ "$(control_enabled 'Redo (⇧⌘Z)')" == "$1" ]]; }
+  keystroke t >/dev/null
+  click 30 40 >/dev/null
+  expect_equal "Undo is greyed out with nothing typed and nothing drawn" "no" "$(control_enabled 'Undo (⌘Z)')"
+  type_text a >/dev/null
+  if wait_until 3 undo_is yes; then pass "Undo lights up as soon as something is typed"; else fail "the Undo button did not follow the typing"; fi
+  keystroke undo >/dev/null
+  if wait_until 3 undo_is no; then pass "Undo goes grey when the typing is taken back"; else fail "the Undo button stayed enabled after the typing was undone"; fi
+  if wait_until 3 redo_is yes; then pass "and Redo lights up"; else fail "the Redo button did not follow the typing"; fi
+  keystroke redo >/dev/null
+  type_text b >/dev/null
+  click 280 170 >/dev/null
+  expect_equal "the typing put back and extended is the text" "ab" "$(text_line 1 | cut -d' ' -f8)"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+
+# A Capture bigger than the window is shown scaled down: the text lies where it was typed, and the
+# canvas's rendering is still the Export.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  W=5120
+  H=2880
+  ZOOM="$(document_field zoom)"
+  if awk -v z="$ZOOM" 'BEGIN { exit !(z > 0 && z < 1) }'; then pass "the 2560 x 1440 point Capture is scaled to fit for the text check (zoom $ZOOM)"; else fail "the Capture is not scaled down (zoom $ZOOM)"; fi
+  LAYOUT="$(send "$EDITOR_SOCK" "editor-layout $EDITOR_N")"
+  expect_equal "no two controls overlap in a wide window" "overlapping-controls=0" "$(printf '%s\n' "$LAYOUT" | grep '^overlapping-controls=')"
+  keystroke t >/dev/null
+  click 200 100 >/dev/null
+  type_text T >/dev/null
+  click 800 600 >/dev/null
+  read -r _ _ _ BX BY BW BH _ <<<"$(text_line 1)"
+  EXPORT="$(export_png text-zoomed)"
+  X0="$(awk -v x="$BX" 'BEGIN { printf "%d", x * 2 - 2 }')"
+  Y0="$(awk -v y="$BY" 'BEGIN { printf "%d", y * 2 - 2 }')"
+  X1="$(awk -v x="$BX" -v w="$BW" 'BEGIN { printf "%d", (x + w) * 2 + 2 }')"
+  Y1="$(awk -v y="$BY" -v h="$BH" 'BEGIN { printf "%d", (y + h) * 2 + 2 }')"
+  TEXT_DIFF="$(fixture_diff "$EXPORT" $W $H "$X0" "$Y0" "$X1" "$Y1")"
+  expect_equal "on a scaled-down Capture the text is where it was clicked: nothing changed outside its box" "outside=0" "$(printf '%s\n' "$TEXT_DIFF" | grep '^outside=')"
+  IFS=, read -r GX0 GY0 GX1 GY1 <<<"$(png_field "$TEXT_DIFF" bbox)"
+  if awk -v gx="$GX0" -v bx="$BX" -v gy="$GY0" -v by="$BY" 'BEGIN { exit !(gx >= bx * 2 - 2 && gx <= bx * 2 + 16 && gy >= by * 2 - 2 && gy <= by * 2 + 24) }'; then pass "the glyph starts at the text's top left, in pixels ($GX0,$GY0 for a box at $BX,$BY points)"; else fail "the glyph starts at $GX0,$GY0, the box at $BX,$BY points"; fi
+  PARITY="$("$INSPECT" compare "$EXPORT" "$(preview_png)")"
+  expect_equal "on a scaled-down Capture the canvas's own rendering of the text is the Export" "over_8=0" "$(printf '%s\n' "$PARITY" | grep '^over_8=')"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+
+# The helper's memory stays flat over many commits and edits of Texts in one open Editor.
+send "$APP_SOCK" "fixture-display 1 1200 700" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  for _ in 1 2 3; do  # warm up: layers, fonts and the text system settle
+    keystroke t >/dev/null
+    click 100 100 >/dev/null; type_text Warm >/dev/null; click 800 500 >/dev/null
+    keystroke undo >/dev/null
+  done
+  sleep 1
+  HELPER_BASELINE="$(footprint_mb "$HELPER_PID")"
+  for _ in $(seq 1 20); do
+    keystroke t >/dev/null
+    click 100 100 >/dev/null
+    type_text Hello%0Aworld >/dev/null
+    click 800 500 >/dev/null  # commit
+    keystroke v >/dev/null
+    send "$EDITOR_SOCK" "editor-double-click $EDITOR_N 110 110" >/dev/null  # edit it
+    type_text x >/dev/null
+    click 800 500 >/dev/null
+    keystroke undo >/dev/null
+    keystroke undo >/dev/null
+  done
+  sleep 1
+  HELPER_AFTER="$(footprint_mb "$HELPER_PID")"
+  if awk -v a="$HELPER_AFTER" -v b="$HELPER_BASELINE" 'BEGIN { exit !(a > 0 && a - b <= 6) }'; then
+    pass "the Editor helper's memory is flat over 20 Text commit and edit cycles (${HELPER_BASELINE} MB before, ${HELPER_AFTER} MB after)"
+  else
+    fail "the Editor helper went from ${HELPER_BASELINE} MB to ${HELPER_AFTER} MB over Text cycles (limit +6 MB)"
+  fi
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
 
 # 2x: a Display P3 Capture with twice as many pixels as points.
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
