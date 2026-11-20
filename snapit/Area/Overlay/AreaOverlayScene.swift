@@ -24,6 +24,18 @@ struct AreaSceneState: Equatable {
     /// The Action bar's frame on this display, when it shows. The size label keeps clear of it.
     var actionBar: CGRect?
     var tooltip: AreaTooltip?
+    /// The Color picker is up on this display: its loupe shows, and the dim, selection, crosshair
+    /// and the overlay's own loupe do not.
+    var picker: PickerSceneState?
+}
+
+/// What the Color picker's loupe shows on one display.
+struct PickerSceneState: Equatable {
+    /// The sampled device pixel and its color.
+    var pixel: PixelPoint
+    var color: PixelColor
+    /// The pointer, display-local points: the loupe sits beside it.
+    var cursor: CGPoint
 }
 
 /// Every layer of the overlay on one display. They are created once; a pointer move changes some
@@ -52,6 +64,8 @@ final class AreaOverlayScene {
     private let sizeLabel: OverlayLabel
     private let tooltipLabel: OverlayLabel
     private let loupe: OverlayLoupe
+    /// The Color picker's loupe, made the first time a picker is shown.
+    private var pickLoupe: PickLoupe?
 
     private var dimmedCutout: CGRect?
     private var hasDimPath = false
@@ -66,6 +80,16 @@ final class AreaOverlayScene {
 
     /// The loupe is showing.
     var isLoupeShown: Bool { !loupe.layer.isHidden }
+
+    /// The Color picker's loupe is showing.
+    var isPickLoupeShown: Bool { pickLoupe?.isShown == true }
+
+    /// The Color picker's loupe frame in display points, top-left origin, when it shows.
+    var pickLoupeFrame: CGRect? {
+        guard let pickLoupe, pickLoupe.isShown else { return nil }
+        let frame = pickLoupe.layer.frame
+        return CGRect(x: frame.minX, y: size.height - frame.maxY, width: frame.width, height: frame.height)
+    }
 
     /// How many handles are showing.
     var visibleHandles: Int { handles.filter { !$0.isHidden }.count }
@@ -157,6 +181,8 @@ final class AreaOverlayScene {
         let selection = pixels.map { AreaGeometry.points(of: $0, scale: display.scale) }
         let hover = selection == nil ? state.hoveredWindow : nil
         setDim(cutout: selection ?? hover)
+        // Aiming at a color shows the frame as it is: no dim over what is being read.
+        dim.isHidden = state.picker != nil
         // A path is rebuilt only when its rectangle changes.
         hoverOuter.isHidden = hover == nil
         hoverInner.isHidden = hover == nil
@@ -191,6 +217,7 @@ final class AreaOverlayScene {
 
         placeTooltip(state.tooltip, bar: state.actionBar)
 
+        placePicker(state.picker)
         guard state.hasPointer else {
             for line in [verticalShadow, horizontalShadow, verticalLine, horizontalLine] { line.isHidden = true }
             loupe.hide()
@@ -202,6 +229,27 @@ final class AreaOverlayScene {
                 frame: frameImage, scale: display.scale, cursor: state.cursor, at: loupeOrigin(for: state.cursor),
                 sceneHeight: size.height)
         }
+    }
+
+    /// The Color picker's loupe beside the pointer, or gone.
+    private func placePicker(_ picker: PickerSceneState?) {
+        guard let picker, let frameImage else {
+            pickLoupe?.hide()
+            return
+        }
+        let loupe = pickLoupe ?? PickLoupe(scale: CGFloat(display.scale))
+        if pickLoupe == nil {
+            pickLoupe = loupe
+            root.addSublayer(loupe.layer)
+            // Above the tooltip's layer too: nothing else shows while a color is picked.
+        }
+        var origin = CGPoint(x: picker.cursor.x + 24, y: picker.cursor.y + 24)
+        let loupeSize = PickLoupe.size
+        if origin.x + loupeSize.width > size.width - 4 { origin.x = picker.cursor.x - 24 - loupeSize.width }
+        if origin.y + loupeSize.height > size.height - 4 { origin.y = picker.cursor.y - 24 - loupeSize.height }
+        loupe.update(
+            frame: frameImage, pixel: picker.pixel, color: picker.color,
+            at: CGPoint(x: max(4, origin.x), y: max(4, origin.y)), sceneHeight: size.height)
     }
 
     /// The tooltip goes below the Action bar, or above it when there is no room below.
@@ -260,6 +308,7 @@ final class AreaOverlayScene {
         CATransaction.setDisableActions(true)
         imageLayer.contents = nil
         loupe.releaseFrame()
+        pickLoupe?.releaseFrame()
         frameImage = nil
         CATransaction.commit()
     }

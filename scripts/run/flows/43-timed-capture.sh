@@ -259,14 +259,17 @@ expect_equal "and the warm-up is over" "idle" "$(send "$APP_SOCK" "editor-warm-u
 sleep 3.5
 expect_equal "no Capture is taken after a cancel" "$FRESH1" "$(timed fresh-captures)"
 
-# 8. The Area Shortcut cancels the countdown too; the Screen and Window Shortcuts do not start
-#    anything (they meet the busy Capture). The Shortcut works again at once.
+# 8. The Area Shortcut cancels the countdown too; the Screen, Window and Pick Color Shortcuts do not
+#    start anything (they meet the busy Capture). The Shortcut works again at once.
 timed_start 200 100 400 300
 expect_equal "the Screen Shortcut during a countdown does nothing" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-screen")"
 expect_equal "the countdown is still running" "counting" "$(timed state)"
 expect_equal "the Window Shortcut during a countdown does nothing" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-window")"
 expect_equal "the countdown is still running after the Window Shortcut" "counting" "$(timed state)"
 expect_equal "and no window overlay opened" "none" "$(send "$APP_SOCK" overlay-facts)"
+expect_equal "the Pick Color Shortcut during a countdown does nothing" "ok" "$(send_slow "$APP_SOCK" "press-shortcut pick-color")"
+expect_equal "the countdown is still running after the Pick Color Shortcut" "counting" "$(timed state)"
+expect_equal "and no Color picker overlay opened" "none" "$(send "$APP_SOCK" overlay-facts)"
 expect_equal "the Area Shortcut during the countdown replies" "ok" "$(send_slow "$APP_SOCK" "press-shortcut capture-area")"
 expect_equal "and cancels it" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
 expect_equal "no countdown, tick or panel is left" "none,no,1" "$(timed state),$(timed ticking),$(no_countdown_windows && echo 1 || echo 0)"

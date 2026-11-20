@@ -58,8 +58,8 @@ send "$APP_SOCK" install-reset >/dev/null
 rm -rf "$SETTINGS_APPS"
 
 # 1. The menu bar menu has Settings… (⌘,) between the Captures and Quit. No helper at rest.
-expect_in_order "the menu offers Capture Area, Capture Window, Capture Screen, Settings… and Quit snapit, in that order" \
-  "$(send "$APP_SOCK" menu-titles)" "Capture Area" "Capture Window" "Capture Screen" "Settings…" "Quit snapit"
+expect_in_order "the menu offers Capture Area, Capture Window, Capture Screen, Pick Color, Settings… and Quit snapit, in that order" \
+  "$(send "$APP_SOCK" menu-titles)" "Capture Area" "Capture Window" "Capture Screen" "Pick Color" "Settings…" "Quit snapit"
 expect_equal "Settings… is ⌘," "," "$(send "$APP_SOCK" "menu-shortcut settings" | awk '{ print $1 }')"
 expect_contains "Settings… uses the command key" "command" "$(send "$APP_SOCK" "menu-shortcut settings")"
 wait_until 10 no_helper_process
