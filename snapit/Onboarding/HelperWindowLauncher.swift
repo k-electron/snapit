@@ -26,14 +26,13 @@ enum HelperWindowLauncher {
         return false
     }
 
-    /// A helper on the socket that another copy of snapit started (the old copy, quitting after a
-    /// relaunch or a Move to Applications) goes away with that copy: it is told to quit and waited
-    /// for, and a helper of this copy starts in its place. Without this the window would be shown by
-    /// a helper that is about to quit.
+    /// A helper on the socket that another copy of snapit started and that copy is still running (the old
+    /// copy, quitting after a relaunch or a Move to Applications) goes away with that copy: it is told to
+    /// quit and waited for, and a helper of this copy starts in its place. A helper whose copy is gone
+    /// (it crashed or was killed) is used as it is: its Editors are the user's, and this copy now owns it.
     private static func retireHelperOfAnotherCopy() async {
         let path = AppIdentity.editorSocketPath
-        guard let owner = try? await CommandSocketClient.send(.helperOwner, to: path), let pid = Int32(owner),
-            pid != getpid()
+        guard let owner = try? await CommandSocketClient.send(.helperOwner, to: path), !HelperOwnership.isOurs(owner)
         else { return }
         await quitRunningHelper()
     }

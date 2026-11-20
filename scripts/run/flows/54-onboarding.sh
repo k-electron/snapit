@@ -130,16 +130,16 @@ expect_equal "Continue goes to Shortcuts" "shortcuts" "$(onb step)"
 shortcut_line() { onb_facts | grep "^shortcut $1|" | head -1; }
 shortcut_loaded() { [[ "$(shortcut_line capture-area)" != "shortcut capture-area|unknown|"* ]]; }
 wait_until 10 shortcut_loaded
-expect_equal "Area is ⌃⌥⌘4 by default" "shortcut capture-area|21 control,option,command|⌃⌥⌘4|" "$(shortcut_line capture-area)"
-expect_equal "Window is ⌃⌥⌘5 by default" "shortcut capture-window|23 control,option,command|⌃⌥⌘5|" "$(shortcut_line capture-window)"
-expect_equal "Screen is ⌃⌥⌘3 by default" "shortcut capture-screen|20 control,option,command|⌃⌥⌘3|" "$(shortcut_line capture-screen)"
-expect_equal "Pick Color is unassigned by default" "shortcut pick-color|none||" "$(shortcut_line pick-color)"
+expect_contains "Area is ⌃⌥⌘4 by default" "shortcut capture-area|21 control,option,command|⌃⌥⌘4|" "$(shortcut_line capture-area)"
+expect_contains "Window is ⌃⌥⌘5 by default" "shortcut capture-window|23 control,option,command|⌃⌥⌘5|" "$(shortcut_line capture-window)"
+expect_contains "Screen is ⌃⌥⌘3 by default" "shortcut capture-screen|20 control,option,command|⌃⌥⌘3|" "$(shortcut_line capture-screen)"
+expect_contains "Pick Color is unassigned by default" "shortcut pick-color|none|" "$(shortcut_line pick-color)"
 expect_equal "no default Shortcut is flagged while macOS uses none of them" "0" "$(onb_facts | grep '^shortcut ' | awk -F'|' '$4 != "" { n++ } END { print n + 0 }')"
 send "$EDITOR_SOCK" "system-shortcut-fixture add 21 control,option,command" >/dev/null
 onb_press back >/dev/null
 onb_press next >/dev/null
 wait_until 10 shortcut_loaded
-expect_equal "a default Shortcut that macOS also uses is flagged" "shortcut capture-area|21 control,option,command|⌃⌥⌘4|macOS also uses this key combination." "$(shortcut_line capture-area)"
+expect_contains "a default Shortcut that macOS also uses is flagged" "shortcut capture-area|21 control,option,command|⌃⌥⌘4|macOS also uses this key combination." "$(shortcut_line capture-area)"
 expect_equal "only the clashing default is flagged" "1" "$(onb_facts | grep '^shortcut ' | awk -F'|' '$4 != "" { n++ } END { print n + 0 }')"
 send "$EDITOR_SOCK" "system-shortcut-fixture reset" >/dev/null
 onb_press shortcut.capture-area >/dev/null
@@ -147,7 +147,7 @@ expect_equal "pressing a recorder starts recording" "recording" "$(onb_facts | g
 expect_equal "the recorder refuses ⌘3 alone" "ok" "$(send "$EDITOR_SOCK" "onboarding-key 20 command")"
 expect_equal "a refused key leaves the recorder waiting" "recording" "$(onb_facts | grep '^shortcut capture-area|' | cut -d'|' -f2)"
 expect_equal "⌘⇧3 is recorded" "ok" "$(send "$EDITOR_SOCK" "onboarding-key 20 shift,command")"
-expect_equal "the recorded Shortcut is flagged (macOS uses ⌘⇧3)" "shortcut capture-area|20 shift,command|⇧⌘3|macOS also uses this key combination." "$(shortcut_line capture-area)"
+expect_contains "the recorded Shortcut is flagged (macOS uses ⌘⇧3)" "shortcut capture-area|20 shift,command|⇧⌘3|macOS also uses this key combination." "$(shortcut_line capture-area)"
 expect_equal "the menu bar app applied the recorded Shortcut" "20 shift,command" "$(send "$APP_SOCK" "shortcut-combo capture-area")"
 onb_press shortcut-clear.capture-window >/dev/null
 expect_equal "clearing a Shortcut unassigns it in the menu bar app" "none" "$(send "$APP_SOCK" "shortcut-combo capture-window")"
@@ -231,14 +231,14 @@ expect_equal "it plays a few loops of a few seconds" "3 3" "$(onb guide-loops) $
 : >"$RUN_ROOT/system-settings-links"
 onb_press open-system-settings >/dev/null
 expect_equal "Open System Settings opens the Screen Recording page" "$ONB_URL" "$(links_log | tail -1)"
-# "Don't Allow": macOS will not ask again, so the next time the window is active the guide switches.
+# "Don't Allow": once macOS's message is over, the next time the window is active the guide switches.
 CHECKS_BEFORE="$(onb guide-checks)"
 send "$EDITOR_SOCK" onboarding-activate >/dev/null
 expect_equal "the window becoming active looks at Screen Recording again" "$((CHECKS_BEFORE + 1))" "$(onb guide-checks)"
 expect_equal "after Don't Allow the guide shows the System Settings version" "systemSettings" "$(onb guide-variant)"
-expect_contains "the System Settings version says macOS will not ask again" "will not ask again" "$(onb guide-message)"
+expect_contains "the System Settings version says to turn snapit on in the list" "turn snapit on in the Screen Recording list" "$(onb guide-message)"
 expect_equal "snapit did not ask macOS again" "1" "$(sr_fact requests)"
-expect_equal "Relaunch snapit is there for the user who chose Later" "button relaunch|Relaunch snapit|Relaunch snapit, if you turned Screen Recording on and chose Later" "$(onb_button relaunch)"
+expect_equal "Relaunch snapit is there for the user who chose Later" "button relaunch|Relaunch snapit|Relaunch snapit, so it can use Screen Recording once you turned it on" "$(onb_button relaunch)"
 if onb_tooltips; then pass "every button of the guide has a tooltip"; else fail "a button of the guide has no tooltip"; fi
 
 # 12. The grant is looked at when the window becomes active, never on a timer.
@@ -301,9 +301,17 @@ expect_contains "the update guide offers Relaunch snapit" "button relaunch|Relau
 send "$EDITOR_SOCK" "guide-press open-system-settings" >/dev/null
 expect_equal "the update guide's button opens the Screen Recording page" "$ONB_URL" "$(links_log | tail -1)"
 
-# 15. The reset can fail (tccutil missing, or an error): reported, nothing asked, tried again next launch.
+# The relaunched copy (Relaunch snapit, or Quit & Reopen) reads denied, not stale: it resets nothing.
 send "$EDITOR_SOCK" guide-close >/dev/null 2>&1
 wait_until 10 onb_no_helper
+restart_app "after the update guide"
+expect_equal "the relaunched copy reads denied, not stale" "denied" "$(sr_fact state)"
+expect_equal "the relaunched copy shows no guide of its own" "none" "$(send_slow "$APP_SOCK" onboarding-launch-check)"
+expect_equal "and resets nothing again" "$((RESETS_BEFORE + 1))" "$(sr_fact resets)"
+
+# 15. The reset can fail (tccutil missing, or an error): reported, tried again at the next launch. snapit asks
+#     macOS anyway: that does nothing while the old entry exists and prompts once the user removed it, so
+#     the relaunch the guide asks for ends in a grant.
 send "$APP_SOCK" "screen-recording-simulate grantedStale" >/dev/null
 send "$APP_SOCK" "tcc-reset-fail on" >/dev/null
 RESETS_BEFORE="$(sr_fact resets)"
@@ -314,13 +322,29 @@ wait_until 15 guide_is guide-state grantedStale
 expect_equal "a failed reset leaves Screen Recording stale" "grantedStale" "$(sr_fact state)"
 expect_contains "the guide reports why the reset failed" "fixture reset fails" "$(gf guide-reset-failure)"
 expect_equal "a failed reset resets nothing" "$RESETS_BEFORE" "$(sr_fact resets)"
-expect_equal "and asks macOS for nothing" "$REQUESTS_BEFORE" "$(sr_fact requests)"
-expect_contains "the guide tells the user to remove the old entry and relaunch" "press − to remove it" "$(gf guide-message)"
+expect_equal "and still asks macOS, so a removed entry prompts" "$((REQUESTS_BEFORE + 1))" "$(sr_fact requests)"
+expect_contains "the guide tells the user to remove the old entry and relaunch" "press − to remove it, then choose Relaunch snapit and allow Screen Recording when macOS asks" "$(gf guide-message)"
 expect_contains "the guide offers Relaunch snapit" "button relaunch|Relaunch snapit|" "$(gfacts)"
+# The relaunched copy is still stale, tries the reset again and, with the entry gone, it works.
+send "$EDITOR_SOCK" guide-close >/dev/null 2>&1
+wait_until 10 onb_no_helper
+restart_app "after a failed reset"
+wait_until 15 guide_visible
+wait_until 15 guide_is guide-state grantedStale
+expect_equal "a copy that relaunches after a failed reset is stale again" "grantedStale" "$(sr_fact state)"
 send "$APP_SOCK" "tcc-reset-fail off" >/dev/null
 send "$EDITOR_SOCK" guide-close >/dev/null 2>&1
 wait_until 10 onb_no_helper
+RESETS_BEFORE="$(sr_fact resets)"
+restart_app "after the entry was removed"
+wait_until 15 guide_visible
+wait_until 15 guide_is guide-state denied
+expect_equal "once the reset works the guide has cleared the entry" "$((RESETS_BEFORE + 1))" "$(sr_fact resets)"
+expect_equal "and the guide is the update's" "yes" "$(gf guide-update)"
+send "$EDITOR_SOCK" guide-close >/dev/null 2>&1
+wait_until 10 onb_no_helper
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
+restart_app "with Screen Recording granted at launch"
 expect_equal "the permission is back to the fake macOS's default" "granted" "$(sr_fact state)"
 
 # 16. The animation plays only while visible, stops after a few loops and costs nothing at rest.
@@ -348,6 +372,89 @@ PLAYS_BEFORE="$(onb guide-plays)"
 onb_press next >/dev/null
 onb_press back >/dev/null
 expect_equal "leaving the step stopped the animation, and coming back plays it again" "$((PLAYS_BEFORE + 1))" "$(onb guide-plays)"
+
+# 16b. Turning Screen Recording off on purpose is not an update: the same build that was granted is
+#      denied, with the System Settings wording and no reset. Another build is stale.
+send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
+expect_equal "the fake macOS grants this build" "granted" "$(sr_fact state)"
+send "$APP_SOCK" "screen-recording-simulate revoked" >/dev/null
+expect_equal "a grant switched off for the same build reads denied" "denied" "$(sr_fact state)"
+send "$APP_SOCK" "screen-recording-build build-2" >/dev/null
+expect_equal "a grant lost to another build (an update) reads stale" "grantedStale" "$(sr_fact state)"
+send "$APP_SOCK" "screen-recording-build build-1" >/dev/null
+RESETS_BEFORE="$(sr_fact resets)"
+REQUESTS_BEFORE="$(sr_fact requests)"
+send "$APP_SOCK" "screen-recording-simulate turnedOff" >/dev/null
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+expect_equal "a copy launched with its switch turned off shows no guide of its own" "none" "$(send_slow "$APP_SOCK" onboarding-launch-check)"
+onb_open_at screenRecording
+wait_until 10 onb_is guide-state denied
+expect_equal "the guide knows the switch was turned off" "yes" "$(onb guide-turned-off)"
+expect_equal "it shows the System Settings version" "systemSettings" "$(onb guide-variant)"
+expect_equal "and says what to do" "Screen Recording is off for snapit. Turn snapit on in System Settings, then choose Quit & Reopen." "$(onb guide-message)"
+expect_equal "it is not the update's" "no" "$(onb guide-update)"
+expect_equal "snapit resets nothing for a switch the user turned off" "$RESETS_BEFORE" "$(sr_fact resets)"
+expect_equal "and asks macOS for nothing" "$REQUESTS_BEFORE" "$(sr_fact requests)"
+onb_close_all
+
+# 16c. Granted now, but not when snapit started: macOS lets a process capture only from its next launch
+#      on, so the guide keeps Relaunch snapit and a Shortcut does not pretend to work.
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+send "$APP_SOCK" "screen-recording-simulate denied" >/dev/null
+restart_app "launched without Screen Recording"
+onb_open_at screenRecording
+wait_until 10 onb_is guide-state denied
+send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
+expect_equal "granted after launch is a state of its own" "grantedNeedsRelaunch" "$(sr_fact state)"
+expect_contains "the permission edge reports it as not usable yet" "permission=denied" "$(send "$APP_SOCK" test-seams)"
+send "$EDITOR_SOCK" onboarding-activate >/dev/null
+expect_equal "the guide says to relaunch" "grantedNeedsRelaunch" "$(onb guide-state)"
+expect_equal "with a headline that says so" "Relaunch snapit to start using Screen Recording" "$(onb guide-headline)"
+expect_equal "Relaunch snapit stays" "button relaunch|Relaunch snapit|Relaunch snapit, so it can use Screen Recording once you turned it on" "$(onb_button relaunch)"
+expect_equal "Open System Settings is not offered any more" "" "$(onb_button open-system-settings)"
+expect_equal "nothing animates" "idle" "$(onb guide-animation)"
+CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
+onb_close_all
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
+expect_equal "a Capture Shortcut does not capture while snapit has to relaunch" "$CAPTURE_BEFORE" "$(send "$APP_SOCK" last-capture)"
+onb_open_at screenRecording
+wait_until 10 onb_is guide-state grantedNeedsRelaunch
+OLD_APP_PID="$APP_PID"
+onb_press relaunch >/dev/null
+if wait_until 30 new_app_pid "$OLD_APP_PID"; then pass "Relaunch snapit relaunches a copy that was granted after it started"; else fail "snapit did not relaunch"; fi
+APP_PID="$(pid_of "$APP_EXE")"
+expect_equal "the relaunched copy can use Screen Recording" "granted" "$(sr_fact state)"
+onb_close_all
+
+# 16d. A helper whose copy was killed stays with the user's Editors; the next copy uses it, does not
+#      retire it (a raw quit would close the Editors), and quits it when it quits.
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+send_slow "$APP_SOCK" "menu-click capture.screen" >/dev/null
+editors_open() { [[ -n "$(send "$EDITOR_SOCK" editors)" ]]; }
+if wait_until 15 editors_open; then pass "a Capture is open in an Editor"; else fail "no Editor opened"; fi
+KEPT_EDITORS="$(send "$EDITOR_SOCK" editors)"
+KEPT_HELPER="$(helper_pid)"
+send "$APP_SOCK" "defaults-set onboardingStep welcome" >/dev/null
+kill -9 "$APP_PID" 2>/dev/null
+wait_until 10 gone "$APP_PID"
+if kill -0 "$KEPT_HELPER" 2>/dev/null; then pass "the helper stays when its copy is killed"; else fail "the helper went with the killed copy"; fi
+(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
+if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again after being killed"; else abort "snapit did not start after being killed"; fi
+APP_PID="$(pid_of "$APP_EXE")"
+if wait_until 20 onb_visible; then pass "the new copy shows Onboarding in the helper that was left"; else fail "Onboarding did not show"; fi
+expect_equal "it is the same helper" "$KEPT_HELPER" "$(helper_pid)"
+expect_equal "the user's Editor is still open" "$KEPT_EDITORS" "$(send "$EDITOR_SOCK" editors)"
+send "$EDITOR_SOCK" onboarding-close >/dev/null 2>&1
+sleep 1
+expect_equal "closing Onboarding leaves the helper while an Editor is open" "$KEPT_EDITORS" "$(send "$EDITOR_SOCK" editors)"
+send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
+send "$APP_SOCK" quit >/dev/null
+if wait_until 30 gone "$APP_PID"; then pass "the new copy quits"; else fail "the new copy did not quit"; fi
+if wait_until 10 gone "$KEPT_HELPER"; then pass "the helper it adopted quits with it"; else fail "the adopted helper outlived the copy that used it"; kill "$KEPT_HELPER" 2>/dev/null; fi
+(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
+if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else abort "snapit did not start again"; fi
+APP_PID="$(pid_of "$APP_EXE")"
 
 # 17. Memory and the process list return to rest after Onboarding closes.
 onb_close_all
