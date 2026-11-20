@@ -16,18 +16,26 @@ nonisolated enum EngineStatus: Int32, Sendable {
 nonisolated struct EngineError: Error, CustomStringConvertible {
     let status: EngineStatus?
     let rawValue: Int32
+    /// The `errno` of the system call that failed, when the failure came from one (the engine's `os_error`, or
+    /// `open`, `close`, `rename` called here). Never an engine status: `rawValue` is that.
+    var errno: Int32?
+
+    /// A failed system call (`open`, `close`, `rename`): the engine's I/O status with the call's `errno`.
+    static func system(errno: Int32) -> EngineError {
+        EngineError(status: .ioFailed, rawValue: EngineStatus.ioFailed.rawValue, errno: errno)
+    }
 
     var description: String {
-        "engine returned status \(status.map { "\($0)" } ?? "unknown") (\(rawValue))"
+        "engine returned status \(status.map { "\($0)" } ?? "unknown") (\(rawValue))" + (errno.map { ", errno \($0)" } ?? "")
     }
 }
 
 /// Thin Swift wrapper over the Rust engine's C ABI, linked statically into both executables.
 /// Each feature that needs the engine adds its own `extension Engine` in its own file.
 nonisolated enum Engine {
-    static func check(_ rawStatus: Int32) throws {
+    static func check(_ rawStatus: Int32, osError: Int32 = 0) throws {
         guard rawStatus != 0 else { return }
-        throw EngineError(status: EngineStatus(rawValue: rawStatus), rawValue: rawStatus)
+        throw EngineError(status: EngineStatus(rawValue: rawStatus), rawValue: rawStatus, errno: osError == 0 ? nil : osError)
     }
 
     /// The engine's version, read through the C ABI.

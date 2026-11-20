@@ -18,7 +18,7 @@ enum FolderCause: Equatable {
     case readOnly
     /// `ENOSPC`: a full disk, after the Save was handed over.
     case diskFull
-    /// Anything else, with its `errno` when there is one.
+    /// Anything else, worded with the system's own text for its `errno` (a quota, an I/O error), or none.
     case other
 
     init(code: Int32?) {
@@ -27,7 +27,7 @@ enum FolderCause: Equatable {
         case EACCES?: self = .notPermitted
         case ENOENT?, ENOTDIR?: self = .missing
         case EROFS?: self = .readOnly
-        case ENOSPC?, EDQUOT?: self = .diskFull
+        case ENOSPC?: self = .diskFull
         default: self = .other
         }
     }
@@ -39,8 +39,9 @@ enum FolderCause: Equatable {
 /// gone) there is nothing to save again, so it says the Capture was not saved and offers only
 /// "Choose another folder", for the next Save.
 ///
-/// Only the macOS privacy denial has a drawing that plays (System Settings › Files & Folders, with
-/// snapit's folder switch turned on) and an "Open System Settings" button; every cause offers
+/// Only a macOS privacy denial of a folder that has a Files & Folders switch (`FolderCategory`) has a
+/// drawing that plays (System Settings › Files & Folders, with that switch turned on) and an "Open
+/// System Settings" button; every cause offers
 /// "Choose another folder". The animation is finite and plays only while the window is visible, as
 /// the Screen Recording guide's does. Nothing is looked at on a timer or when the window becomes
 /// active: the user presses "Try again" when the folder is open.
@@ -53,6 +54,8 @@ final class FolderGuideModel: GuideContent {
     private(set) var folder: String
     private(set) var code: Int32?
     private(set) var cause: FolderCause
+    /// The Files & Folders switch macOS keeps for the folder; nil when it has none (see `FolderCategory`).
+    private(set) var category: FolderCategory?
     private(set) var isRetrying = false
     /// The Editor whose Save failed; nil after the hand-over.
     @ObservationIgnored private weak var session: EditorSession?
@@ -67,6 +70,7 @@ final class FolderGuideModel: GuideContent {
         self.folder = folder
         self.code = code
         cause = FolderCause(code: code)
+        category = FolderCategory.of(path: folder)
         attach(session)
     }
 
@@ -79,11 +83,17 @@ final class FolderGuideModel: GuideContent {
         self.folder = folder
         self.code = code
         cause = FolderCause(code: code)
+        category = FolderCategory.of(path: folder)
         attach(session)
         failures += 1
         animation.stop()
         updateAnimation()
     }
+
+    /// A macOS privacy denial of a folder that has a switch to turn on: the drawing and Open System Settings
+    /// are for this one. An `EPERM` for a folder with none (locked, system-protected, outside the
+    /// categories) says macOS is refusing, and offers another folder.
+    var showsSettingsSwitch: Bool { cause == .privacy && category != nil }
 
     var isResolved: Bool { false }
     var windowTitle: String { "Save location" }
@@ -118,10 +128,10 @@ final class FolderGuideModel: GuideContent {
 
     var buttons: [HelperButton] {
         var list: [HelperButton] = []
-        if cause == .privacy { list.append(openSystemSettingsButton) }
+        if showsSettingsSwitch { list.append(openSystemSettingsButton) }
         list.append(chooseFolderButton)
         if canRetry { list.append(retryButton) }
-        if cause == .privacy, animation.state == .stopped { list.append(replayButton) }
+        if showsSettingsSwitch, animation.state == .stopped { list.append(replayButton) }
         return list
     }
 
@@ -138,9 +148,9 @@ final class FolderGuideModel: GuideContent {
 
     /// Shows the folder chooser (a sheet of the guide's window).
     func chooseFolder() {
-        let start = URL(fileURLWithPath: folder, isDirectory: true).deletingLastPathComponent()
-        let existing = FileManager.default.fileExists(atPath: start.path) ? start : SaveLocation.defaultFolder
-        SaveLocationChooser.choose(startingAt: existing, from: NSApp.keyWindow) { [weak self] url in
+        // The panel picks where to start: looking at the folder that was refused from here could be a
+        // second access to it, and a prompt of the helper's own.
+        SaveLocationChooser.choose(startingAt: nil, from: NSApp.keyWindow) { [weak self] url in
             Task { await self?.useFolder(url) }
         }
     }
@@ -185,9 +195,13 @@ final class FolderGuideModel: GuideContent {
         let situation: String
         switch cause {
         case .privacy:
-            situation =
-                "macOS is not letting snapit write into \(shortPath). Open System Settings and turn snapit on for this folder under Files & Folders"
-                + (canRetry ? ", then choose Try again. Or choose another folder." : ", or choose another folder for the next Save.")
+            if let category {
+                situation =
+                    "macOS is not letting snapit write into \(shortPath). Open System Settings and turn snapit on for “\(category.title)” under Files & Folders"
+                    + (canRetry ? ", then choose Try again. Or choose another folder." : ", or choose another folder for the next Save.")
+            } else {
+                situation = "macOS is not letting snapit write into \(shortPath). Choose another folder."
+            }
         case .notPermitted:
             situation = "\(shortPath) can't be written to: you don't have permission to add files there."
         case .missing:
@@ -197,10 +211,17 @@ final class FolderGuideModel: GuideContent {
         case .diskFull:
             situation = "\(shortPath) can't be written to: there is no space left on its disk."
         case .other:
-            situation = "\(shortPath) can't be written to" + (code.map { " (error \($0))." } ?? ".")
+            situation = "\(shortPath) can't be written to" + (reason.map { ": \($0)." } ?? ".")
         }
         if canRetry { return situation + " Your Capture is still open in the Editor, so nothing is lost." }
         return situation + " Your Capture was not saved. If its Editor is still open, Save from it again."
+    }
+
+    /// The system's own words for the `errno`, as a lowercase phrase ("input/output error"); nil without one.
+    private var reason: String? {
+        guard let code, let text = strerror(code) else { return nil }
+        let phrase = String(cString: text)
+        return phrase.prefix(1).lowercased() + phrase.dropFirst()
     }
 
     // MARK: Test mode
@@ -210,6 +231,7 @@ final class FolderGuideModel: GuideContent {
             "guide-folder=\(folder)",
             "guide-code=\(code.map(String.init) ?? "none")",
             "guide-cause=\(cause)",
+            "guide-category=\(category?.title ?? "none")",
             "guide-failures=\(failures)",
             "guide-retry=\(canRetry ? "available" : "unavailable")",
             "guide-retrying=\(isRetrying ? "yes" : "no")",
@@ -228,7 +250,7 @@ final class FolderGuideModel: GuideContent {
 
     /// Plays while the guide is on screen and the cause is a macOS denial; cancelled the moment it is not.
     private func updateAnimation() {
-        if isShown && isVisible && cause == .privacy {
+        if isShown && isVisible && showsSettingsSwitch {
             if animation.state == .idle { animation.play() }
         } else {
             animation.stop()

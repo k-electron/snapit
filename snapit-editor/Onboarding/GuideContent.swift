@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What a Permission guide's window shows: the Screen Recording guide (`PermissionGuideModel`) and
-/// the folder guide (`FolderGuideModel`). `PermissionGuideWindow` hosts any of them, one window per
+/// the folder Permission guide (`FolderGuideModel`). `PermissionGuideWindow` hosts any of them, one window per
 /// kind, and the scripted run's `guide-…` commands read and press whichever it names.
 @MainActor
 protocol GuideContent: AnyObject {

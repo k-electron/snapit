@@ -15,7 +15,6 @@ MP_SAVE="$RUN_ROOT/save"
 MP_ELSEWHERE="$RUN_ROOT/save-elsewhere"
 MP_GONE="$RUN_ROOT/save-gone"
 MP_SAVE_BEFORE="$(send "$APP_SOCK" test-seams | sed -n 's/^save=//p')"
-MP_FOOT_BEFORE="$(footprint_mb "$APP_PID")"
 mkdir -p "$MP_SAVE" "$MP_ELSEWHERE"
 
 mp_gf() { send "$EDITOR_SOCK" "guide-facts $1" | sed -n "s/^$2=//p" | head -1; }
@@ -153,21 +152,24 @@ APP_PID="$(pid_of "$APP_EXE")"
 expect_equal "the relaunched snapit has Screen Recording" "granted" "$(mp_sr state)"
 mp_close_windows
 mp_restart_app "its log is the run's again"
+# The baseline for step 8 is this process: the steps above restarted the menu bar app three times.
+sleep 2
+MP_FOOT_BEFORE="$(footprint_mb "$APP_PID")"
 if capture_into_editor "press-shortcut capture-screen"; then pass "a Capture works after the guide, the grant and the relaunch"; else fail "no Capture after granting"; fi
 mp_close_windows_editor() { send_slow "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null 2>&1; wait_until 10 mp_no_helper; }
 mp_close_windows_editor
 
-# 6. Folder access, from an Editor. The Save is refused, the Editor stays open and the folder guide
+# 6. Folder access, from an Editor. The Save is refused, the Editor stays open and the folder Permission guide
 #    says why, worded for the cause. Only a macOS privacy denial (EPERM) talks about macOS.
 send "$APP_SOCK" "defaults-set closeEditorAfterSave false" >/dev/null
 mp_clear_save
-if ! capture_into_editor "press-shortcut capture-screen"; then abort "no Capture for the folder guide"; fi
+if ! capture_into_editor "press-shortcut capture-screen"; then abort "no Capture for the folder Permission guide"; fi
 MP_EDITOR="$EDITOR_N"
 MP_HELPER="$HELPER_PID"
 mp_save() { send_slow "$EDITOR_SOCK" "editor-press $MP_EDITOR save" >/dev/null; }
 mp_fail_cause() { # label, cause, errno, words that must be in the message, words that must not
   local label="$1"
-  if wait_until 15 mp_guide_visible folder; then pass "$label: the folder guide shows"; else fail "$label: no folder guide"; return; fi
+  if wait_until 15 mp_guide_visible folder; then pass "$label: the folder Permission guide shows"; else fail "$label: no folder Permission guide"; return; fi
   expect_equal "$label: cause" "$2" "$(mp_gf folder guide-cause)"
   expect_equal "$label: errno" "$3" "$(mp_gf folder guide-code)"
   expect_contains "$label: the message says what is wrong" "$4" "$(mp_gf folder guide-message)"
@@ -219,11 +221,18 @@ expect_equal "the folder that was refused got nothing" "0" "$(mp_saved_pngs "$MP
 send "$APP_SOCK" "defaults-set saveLocation $MP_SAVE" >/dev/null
 chmod 700 "$MP_SAVE"
 
-# 6c. EPERM, macOS privacy (a test seam gives the errno a denied Documents or Desktop prompt gives).
-mp_clear_save
+# 6c. EPERM, macOS privacy (a test seam gives the errno a denied Documents or Desktop prompt gives). The
+#     run's root stands in for the home folder, so <root>/Documents is the Documents folder, whose switch
+#     in Files & Folders is "Documents Folder": the drawing's row and the words name that, not the folder.
+MP_DOCS="$RUN_ROOT/Documents"
+mkdir -p "$MP_DOCS"
+find "$MP_DOCS" -mindepth 1 -delete
+send "$APP_SOCK" "defaults-set saveLocation $MP_DOCS" >/dev/null
 send "$APP_SOCK" "save-fail-check 1" >/dev/null
 mp_save
 mp_fail_cause "a folder macOS denied" privacy 1 "macOS is not letting snapit write" "zzz"
+expect_equal "its switch is the Documents Folder one" "Documents Folder" "$(mp_gf folder guide-category)"
+expect_contains "the words name that switch" "“Documents Folder”" "$(mp_gf folder guide-message)"
 expect_contains "it points at Files & Folders" "Files & Folders" "$(mp_gf folder guide-message)"
 expect_contains "and offers Open System Settings" "button open-system-settings|Open System Settings|" "$(mp_facts folder)"
 : >"$RUN_ROOT/system-settings-links"
@@ -242,13 +251,39 @@ MP_LOOP_SECONDS=$(($(mp_gf folder guide-loops) * $(mp_gf folder guide-loop-secon
 if wait_until $((MP_LOOP_SECONDS + 6)) mp_guide_is folder guide-animation stopped; then pass "the animation is finite: it stops after $(mp_gf folder guide-loops) loops"; else fail "the animation never stopped"; fi
 expect_contains "when it stops Replay is offered" "button replay|Replay|" "$(mp_facts folder)"
 send "$EDITOR_SOCK" "guide-snapshot folder $RUN_ROOT/folder-guide.png" >/dev/null
-[[ -s "$RUN_ROOT/folder-guide.png" ]] && pass "the folder guide renders" || fail "the folder guide did not render"
-assert_idle_cpu "the helper with the folder guide, the animation stopped," "$(helper_pid)" "$IDLE_SECONDS"
+[[ -s "$RUN_ROOT/folder-guide.png" ]] && pass "the folder Permission guide renders" || fail "the folder Permission guide did not render"
+assert_idle_cpu "the helper with the folder Permission guide, the animation stopped," "$(helper_pid)" "$IDLE_SECONDS"
 send "$APP_SOCK" "save-fail-check off" >/dev/null
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
 wait_until 15 mp_save_idle
-expect_equal "once macOS lets snapit in, Try again saves" "1" "$(mp_saved_pngs "$MP_SAVE")"
+expect_equal "once macOS lets snapit in, Try again saves" "1" "$(mp_saved_pngs "$MP_DOCS")"
+
+# 6c2. An EPERM with no Files & Folders switch behind it: a locked folder (a real `chflags uchg`, which
+#      refuses the write with EPERM for real) in Documents, and a folder outside every category (the seam).
+#      The guide says macOS is refusing and offers another folder: no drawing, no Open System Settings.
+chflags uchg "$MP_DOCS"
+mp_save
+mp_fail_cause "a locked folder" privacy 1 "macOS is not letting snapit write" "Files & Folders"
+expect_equal "a locked folder has no switch to turn on" "none" "$(mp_gf folder guide-category)"
+expect_equal "so no Open System Settings" "" "$(mp_facts folder | grep '^button open-system-settings|')"
+expect_equal "and no animation" "idle" "$(mp_gf folder guide-animation)"
+chflags nouchg "$MP_DOCS"
+send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
+wait_until 15 mp_guide_gone folder
+wait_until 15 mp_save_idle
+expect_equal "unlocked, Try again saves" "2" "$(mp_saved_pngs "$MP_DOCS")"
+send "$APP_SOCK" "defaults-set saveLocation $MP_SAVE" >/dev/null
+send "$APP_SOCK" "save-fail-check 1" >/dev/null
+mp_save
+mp_fail_cause "a folder outside every category" privacy 1 "macOS is not letting snapit write" "Files & Folders"
+expect_equal "it has no category" "none" "$(mp_gf folder guide-category)"
+expect_equal "and no Open System Settings" "" "$(mp_facts folder | grep '^button open-system-settings|')"
+send "$APP_SOCK" "save-fail-check off" >/dev/null
+send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
+wait_until 15 mp_guide_gone folder
+wait_until 15 mp_save_idle
+rm -rf "$MP_DOCS"
 
 # 6d. ENOENT: the folder is gone (an unplugged drive).
 send "$APP_SOCK" "defaults-set saveLocation $MP_GONE" >/dev/null
@@ -281,7 +316,7 @@ expect_contains "after its Editor closed, the guide offers no Try again" "guide-
 expect_contains "but still Choose another folder" "button choose-folder|" "$(mp_facts folder)"
 expect_equal "the guide alone keeps the helper running" "visible" "$(mp_gf folder window)"
 send "$EDITOR_SOCK" "guide-close folder" >/dev/null
-if wait_until 10 mp_no_helper; then pass "the helper quits after the folder guide closes with no Editor open"; else fail "the helper outlived the folder guide"; fi
+if wait_until 10 mp_no_helper; then pass "the helper quits after the folder Permission guide closes with no Editor open"; else fail "the helper outlived the folder Permission guide"; fi
 chmod 700 "$MP_SAVE"
 mp_clear_save
 
@@ -306,7 +341,6 @@ expect_equal "no Editor is open" "" "$(open_editors)"
 wait_until 15 mp_save_idle
 expect_equal "nothing is pending" "0" "$(send "$APP_SOCK" save-pending)"
 find "$MP_ELSEWHERE" -mindepth 1 -delete
-expect_equal "the chooser is a real panel: a run names the folder with its own command" "error use guide-choose-folder <folder>" "$(send "$EDITOR_SOCK" "guide-press folder choose-folder")"
 send_slow "$EDITOR_SOCK" "guide-choose-folder $MP_ELSEWHERE" >/dev/null
 if wait_until 10 mp_no_helper; then pass "choosing another folder finishes the guide, and the helper quits with its window"; else fail "the guide stayed after a folder was chosen"; fi
 expect_equal "the chosen folder is the Save location for the next Save" "$MP_ELSEWHERE" "$(send "$APP_SOCK" test-seams | sed -n 's/^save=//p')"

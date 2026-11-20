@@ -46,7 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// through `DispatchQueue.main.async` never runs when `terminate` was called from inside a main
     /// queue block (which is how the socket `quit` calls it).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        SaveFailureNotice.isQuitting = true
         let wait = SaveService.shared.waitForSavesBeforeQuit {
             let mainLoop = CFRunLoopGetMain()
             CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
@@ -54,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             CFRunLoopWakeUp(mainLoop)
         }
+        // Quitting for good from here on (the quit has been agreed to): a Save that fails while the last ones finish
+        // opens no window. A quit that is deferred or cancelled later must set this back to false.
+        SaveFailureNotice.isQuitting = true
         return wait ? .terminateLater : .terminateNow
     }
 

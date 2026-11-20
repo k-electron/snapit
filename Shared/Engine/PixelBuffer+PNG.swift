@@ -44,10 +44,16 @@ nonisolated extension PixelBuffer {
     /// Encodes like `encodePNG(level:plan:)` but streams the PNG into the file `descriptor`
     /// through a small buffer, so the PNG is never held in memory. The descriptor stays open.
     func writePNG(level: PNGLevel, plan: PNGOutputPlan, toDescriptor descriptor: Int32) throws {
-        let status = withPNGParameters(level: level, plan: plan) { pixels, parameters in
-            snapit_png_encode_to_fd(pixels, UInt32(width), UInt32(height), stride, parameters, descriptor)
+        var osError: Int32 = 0
+        var status = withPNGParameters(level: level, plan: plan) { pixels, parameters in
+            snapit_png_encode_to_fd(pixels, UInt32(width), UInt32(height), stride, parameters, descriptor, &osError)
         }
-        try Engine.check(status)
+        // Test mode: the engine's answer for a write that failed with this `errno` (see `PNGWriteFault`).
+        if let injected = PNGWriteFault.injectedOSError {
+            status = SNAPIT_STATUS_IO_FAILED
+            osError = injected
+        }
+        try Engine.check(status, osError: osError)
     }
 
     /// Writes the PNG to the file at `url`, streamed. The PNG is encoded into a hidden partial file of
@@ -58,10 +64,10 @@ nonisolated extension PixelBuffer {
         let folder = url.deletingLastPathComponent()
         let partial = folder.appendingPathComponent(".\(url.lastPathComponent)-\(UUID().uuidString).partial")
         let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
-        guard descriptor >= 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
+        guard descriptor >= 0 else { throw EngineError.system(errno: errno) }
         do {
             try writePNG(level: level, plan: plan, toDescriptor: descriptor)
-            guard close(descriptor) == 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
+            guard close(descriptor) == 0 else { throw EngineError.system(errno: errno) }
         } catch {
             close(descriptor)
             unlink(partial.path)
@@ -70,7 +76,7 @@ nonisolated extension PixelBuffer {
         guard rename(partial.path, url.path) == 0 else {
             let code = errno
             unlink(partial.path)
-            throw EngineError(status: .ioFailed, rawValue: code)
+            throw EngineError.system(errno: code)
         }
     }
 

@@ -47,7 +47,7 @@ nonisolated extension SocketCommand {
     static let guideUnhide = SocketCommand("guide-unhide")
     static let guideClose = SocketCommand("guide-close")
     static let guideSnapshot = SocketCommand("guide-snapshot")
-    /// `guide-choose-folder <folder>`: what choosing a folder in the folder guide's chooser does (inside
+    /// `guide-choose-folder <folder>`: what choosing a folder in the folder Permission guide's chooser does (inside
     /// the run's root): it becomes the Save location and the Capture is saved there. Test mode only.
     static let guideChooseFolder = SocketCommand("guide-choose-folder")
 }
@@ -170,8 +170,6 @@ extension SocketCommandRegistry {
         register(.guidePress) { request in
             let (guide, rest) = Self.guideWindow(request)
             guard let guide, let id = rest.first else { return "error no guide window" }
-            // The chooser is a real panel: a scripted run sets the folder with its own command.
-            guard id != FolderGuideModel.chooseFolderID else { return "error use guide-choose-folder <folder>" }
             return await guide.content.press(id) ? "ok" : "error no button \(id)"
         }
         register(.guideActivate) { request in
@@ -190,7 +188,7 @@ extension SocketCommandRegistry {
         register(.guideChooseFolder) { request in
             guard let model = PermissionGuideWindow.current(.folder)?.content as? FolderGuideModel,
                 let path = request.arguments.first
-            else { return "error no folder guide window" }
+            else { return "error no folder Permission guide window" }
             guard WindowTesting.isInsideRoot(path) else { return "error folder must be inside the test root" }
             await model.useFolder(URL(fileURLWithPath: path, isDirectory: true))
             return "ok"
