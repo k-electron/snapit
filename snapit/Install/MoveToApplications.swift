@@ -27,14 +27,36 @@ enum MoveToApplications {
     /// Copies `source` into Applications (replacing a copy that is already there), strips
     /// quarantine from the copy, relaunches from it, schedules the eject of a disk image and quits.
     static func move(source: URL, environment: any InstallEnvironment) async throws {
-        guard Quarantine.isApproved(at: source.path) else { throw InstallError.notApproved(source.path) }
-        let fileManager = FileManager.default
+        // Running from read-only media is itself the approval: a disk image can never gain the
+        // approved flag. Anything writable (a translocated copy elsewhere) must carry it.
+        let mountPoint = diskImageMountPoint(of: source, environment: environment)
+        if mountPoint == nil, !Quarantine.isApproved(at: source.path) { throw InstallError.notApproved(source.path) }
         let applications = environment.applicationsFolder
         let destination = applications.appendingPathComponent(source.lastPathComponent, isDirectory: true)
         let staged = applications.appendingPathComponent(".snapit-move-\(getpid())", isDirectory: true)
 
         // The copy is staged beside its destination, so a failed copy never costs the user the
-        // snapit that is already in Applications.
+        // snapit that is already in Applications. It runs off the main actor: a copy from a
+        // compressed disk image takes a while and the menu bar app keeps answering.
+        try await Task.detached { try stageCopy(of: source, at: staged, in: applications) }.value
+        let fileManager = FileManager.default
+        do {
+            if fileManager.fileExists(atPath: destination.path) {
+                terminateRunningCopies(at: destination)
+                _ = try fileManager.replaceItemAt(destination, withItemAt: staged, options: .usingNewMetadataOnly)
+            } else {
+                try fileManager.moveItem(at: staged, to: destination)
+            }
+        } catch {
+            try? fileManager.removeItem(at: staged)
+            throw InstallError.copyFailed(error.localizedDescription)
+        }
+        try await relaunchAndQuit(appAt: destination, ejecting: mountPoint, environment: environment)
+    }
+
+    /// Copies `source` to `staged` inside `applications` and strips quarantine from the copy.
+    private nonisolated static func stageCopy(of source: URL, at staged: URL, in applications: URL) throws {
+        let fileManager = FileManager.default
         do {
             try fileManager.createDirectory(at: applications, withIntermediateDirectories: true)
             try? fileManager.removeItem(at: staged)
@@ -48,27 +70,16 @@ enum MoveToApplications {
             try? fileManager.removeItem(at: staged)
             throw InstallError.quarantineRemains
         }
-        do {
-            if fileManager.fileExists(atPath: destination.path) {
-                terminateRunningCopies(at: destination)
-                _ = try fileManager.replaceItemAt(destination, withItemAt: staged)
-            } else {
-                try fileManager.moveItem(at: staged, to: destination)
-            }
-        } catch {
-            try? fileManager.removeItem(at: staged)
-            throw InstallError.copyFailed(error.localizedDescription)
-        }
-
-        let mountPoint = diskImageMountPoint(of: source, environment: environment)
-        try await relaunchAndQuit(appAt: destination, ejecting: mountPoint, environment: environment)
     }
 
     /// Strips quarantine from `copy` in place and relaunches it.
     static func fixInPlace(copy: URL, environment: any InstallEnvironment) async throws {
         guard Quarantine.isApproved(at: copy.path) else { throw InstallError.notApproved(copy.path) }
-        Quarantine.strip(under: copy)
-        guard Quarantine.flaggedCount(under: copy) == 0 else { throw InstallError.quarantineRemains }
+        let remaining = await Task.detached { () -> Int in
+            Quarantine.strip(under: copy)
+            return Quarantine.flaggedCount(under: copy)
+        }.value
+        guard remaining == 0 else { throw InstallError.quarantineRemains }
         try await relaunchAndQuit(appAt: copy, ejecting: nil, environment: environment)
     }
 

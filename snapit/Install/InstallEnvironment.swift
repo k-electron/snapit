@@ -44,6 +44,8 @@ enum InstallRelaunch {
     static func start(appAt url: URL) async throws {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
+        // A scripted run must not take focus from what the user is doing.
+        configuration.activates = !TestMode.isActive
         if let root = TestMode.root { configuration.environment = [TestMode.rootVariable: root.path] }
         _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
     }
@@ -62,17 +64,23 @@ final class SystemInstallEnvironment: InstallEnvironment {
     var volumes: any VolumeInspecting { SystemVolumes() }
     var bundlePath: String { Bundle.main.bundlePath }
 
-    /// The volume stays busy while this process runs from it, so a detached shell ejects it
-    /// after this process has quit.
+    /// The volume stays busy while this process or its helper runs from it, so a detached shell
+    /// ejects it after both have quit. Only a mounted disk image is ejected: `hdiutil info` must
+    /// list the mount point.
     func scheduleEject(mountPoint: String) {
         let script = """
-            while kill -0 "$0" 2>/dev/null; do sleep 0.3; done
+            mount="$1"; shift
+            for pid in "$0" "$@"; do while kill -0 "$pid" 2>/dev/null; do sleep 0.3; done; done
+            /usr/bin/hdiutil info 2>/dev/null | /usr/bin/grep -qF "$mount" || exit 0
             sleep 1
-            /usr/sbin/diskutil eject "$1" >/dev/null 2>&1 || { sleep 2; /usr/sbin/diskutil eject "$1" >/dev/null 2>&1; }
+            /usr/sbin/diskutil eject "$mount" >/dev/null 2>&1 || { sleep 2; /usr/sbin/diskutil eject "$mount" >/dev/null 2>&1; }
             """
+        let helpers = NSRunningApplication.runningApplications(withBundleIdentifier: AppIdentity.editorBundleIdentifier)
+            .filter { $0.bundleURL?.path.hasPrefix(Bundle.main.bundlePath + "/") == true }
+            .map { String($0.processIdentifier) }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", script, String(getpid()), mountPoint]
+        process.arguments = ["-c", script, String(getpid()), mountPoint] + helpers
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
