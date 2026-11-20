@@ -49,6 +49,9 @@ final class EditorChrome {
     private let rail: NSView
     private let textHost = TextHostView(frame: .zero)
     private let topLeading: NSView?
+    /// The content width at which the options pill fits in the title bar row beside the others; below
+    /// it, the pill moves to a second row under them.
+    private var singleRowWidth: CGFloat = 0
     private let topTrailing: NSView?
     private let topDestructive: NSView?
 
@@ -75,8 +78,12 @@ final class EditorChrome {
         topDestructive = hostIfAny([.destructive], firstMouse: false)
 
         // The top toolbar's pills side by side, after the traffic lights, must fit.
-        let pillsWidth = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
-        minimumContent.width = max(minimumContent.width, 92 + pillsWidth)
+        // On one row the pills sit side by side after the traffic lights; narrower than that the
+        // options pill takes a second row, right of the tool rail.
+        let rightWidth = [topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
+        let optionsWidth = topLeading?.frame.width ?? 0
+        singleRowWidth = 92 + optionsWidth + rightWidth
+        minimumContent.width = max(minimumContent.width, 92 + rightWidth, rail.frame.maxX + optionsWidth + Self.margin)
 
         window = EditorWindow(
             contentRect: NSRect(origin: .zero, size: minimumContent),
@@ -127,15 +134,14 @@ final class EditorChrome {
         let visible = screen.visibleFrame
         let rail = self.rail.frame.width
         let top = topTrailing?.frame.height ?? topLeading?.frame.height ?? 62
-        let extra = NSSize(
-            width: rail + Self.margin + 2 * Self.canvasPadding, height: top + Self.margin + 2 * Self.canvasPadding)
         let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: minimumContent)).size
         let maxWidth = visible.width * 0.8 - (chrome.width - minimumContent.width)
         let maxHeight = visible.height * 0.8 - (chrome.height - minimumContent.height)
+        let width = max(minimumContent.width, min(capture.width + rail + Self.margin + 2 * Self.canvasPadding, maxWidth))
+        let rows = width < singleRowWidth ? secondRowHeight : 0
+        let extraHeight = top + rows + Self.margin + 2 * Self.canvasPadding
         window.setContentSize(
-            NSSize(
-                width: max(minimumContent.width, min(capture.width + extra.width, maxWidth)),
-                height: max(minimumContent.height, min(capture.height + extra.height, maxHeight))))
+            NSSize(width: width, height: max(minimumContent.height, min(capture.height + extraHeight, maxHeight))))
         let others = NSApp.windows.filter { $0 is EditorWindow && $0.isVisible }.count
         let step = CGFloat(others % 12) * 28
         var origin = NSPoint(
@@ -144,6 +150,9 @@ final class EditorChrome {
         origin.y = max(visible.minY, min(visible.maxY - window.frame.height, origin.y))
         window.setFrameOrigin(origin)
     }
+
+    /// How much taller the content must be when the options pill has a row of its own.
+    private var secondRowHeight: CGFloat { max(0, (topLeading?.frame.height ?? 0) - 16) }
 
     /// Positions the toolbars and the canvas for the current content size.
     private func layoutAll() {
@@ -170,12 +179,20 @@ final class EditorChrome {
             right = right + 10 - trailing.frame.width
             place(trailing, x: right, y: barY)
         }
-        if let leading = topLeading { place(leading, x: leadX - 10, y: barY) }
-
+        var canvasTop = barY - 2
         let railTop = min(bounds.maxY - barHeight + 6, barY + 4)
         place(rail, x: 4, y: railTop - rail.frame.height)
         let canvasX = rail.frame.maxX
-        let canvasTop = barY - 2
+        if let leading = topLeading {
+            if bounds.width >= singleRowWidth {
+                place(leading, x: leadX - 10, y: barY)
+            } else {
+                // A row of its own under the others, level with the canvas's left edge.
+                let rowY = barY + 16 - leading.frame.height
+                place(leading, x: canvasX - 10, y: rowY)
+                canvasTop = rowY + 10 - 2
+            }
+        }
         let frame = NSRect(
             x: canvasX, y: Self.margin, width: max(1, bounds.width - canvasX - Self.margin),
             height: max(1, canvasTop - Self.margin))

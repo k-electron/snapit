@@ -13,8 +13,9 @@ nonisolated enum CapturePixelSampler {
         return (x, y)
     }
 
-    /// The color at pixel (`x`, `y`), in sRGB (an Annotation color is sRGB; a Display P3 Capture's
-    /// pixel is converted, and drawn back into that Capture it comes out the same).
+    /// The color at pixel (`x`, `y`) in extended sRGB. A Display P3 pixel that sRGB cannot show keeps
+    /// its channels beyond 0...1 instead of being clamped, so drawn back into that Capture it comes out
+    /// the same.
     static func color(atX x: Int, y: Int, in buffer: PixelBuffer) -> AnnotationColor? {
         guard x >= 0, y >= 0, x < buffer.width, y < buffer.height else { return nil }
         // Pixels are BGRA, 8 bits each, rows `stride` bytes apart.
@@ -24,11 +25,10 @@ nonisolated enum CapturePixelSampler {
         }
         let components = [CGFloat(bytes.r) / 255, CGFloat(bytes.g) / 255, CGFloat(bytes.b) / 255, 1]
         guard let source = CGColor(colorSpace: buffer.colorSpace, components: components),
-            let srgb = CGColorSpace(name: CGColorSpace.sRGB),
+            let srgb = CGColorSpace(name: CGColorSpace.extendedSRGB),
             let converted = source.converted(to: srgb, intent: .defaultIntent, options: nil),
             let values = converted.components, values.count >= 3
         else { return nil }
-        func clamp(_ value: CGFloat) -> Double { Double(min(max(value, 0), 1)) }
-        return AnnotationColor(red: clamp(values[0]), green: clamp(values[1]), blue: clamp(values[2]))
+        return AnnotationColor(red: Double(values[0]), green: Double(values[1]), blue: Double(values[2]))
     }
 }

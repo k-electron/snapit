@@ -54,5 +54,6 @@ nonisolated struct TextLayout {
             context.textPosition = CGPoint(x: origin.x, y: origin.y + CGFloat(index) * lineHeight + ascent)
             CTLineDraw(line, context)
         }
+        context.textMatrix = .identity
     }
 }

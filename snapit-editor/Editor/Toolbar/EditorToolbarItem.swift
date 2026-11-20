@@ -119,8 +119,8 @@ struct ToolbarButton: View {
             .frame(minWidth: 34, minHeight: 34)
         }
         .buttonStyle(ChromeButtonStyle(look: item.look))
-        .disabled(!item.isEnabled(in: session))
         .help(item.tooltip)
         .controlMarker(item.tooltip)
+        .disabled(!item.isEnabled(in: session))
     }
 }

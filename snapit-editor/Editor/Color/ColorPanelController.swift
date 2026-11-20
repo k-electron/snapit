@@ -14,6 +14,8 @@ final class ColorPanelController: NSObject {
     private weak var session: EditorSession?
     private weak var bracketedDocument: EditorDocument?
     private var mouseUpMonitor: Any?
+    /// True while the panel is on screen for some Editor.
+    private var isPresented = false
 
     private var panel: any ColorPanelEdge { ColorPanelEdges.current }
 
@@ -21,6 +23,7 @@ final class ColorPanelController: NSObject {
     func open(for session: EditorSession) {
         endGesture()
         self.session = session
+        isPresented = true
         panel.present(color: NSColor(cgColor: session.shownColor.cgColor) ?? .red, target: self, action: #selector(panelChanged(_:)))
     }
 
@@ -29,11 +32,19 @@ final class ColorPanelController: NSObject {
         guard session === closing else { return }
         endGesture()
         panel.dismiss()
+        isPresented = false
         session = nil
     }
 
+    /// An Editor came to the front: when the panel is showing, it now serves that Editor, starting at
+    /// that Editor's Annotation color.
+    func retarget(to newSession: EditorSession) {
+        guard isPresented, session !== newSession else { return }
+        open(for: newSession)
+    }
+
     @objc private func panelChanged(_ sender: Any?) {
-        guard let session, let color = panel.color.usingColorSpace(.sRGB) else { return }
+        guard let session, let color = panel.color.usingColorSpace(.extendedSRGB) else { return }
         let chosen = AnnotationColor(
             red: Double(color.redComponent), green: Double(color.greenComponent), blue: Double(color.blueComponent))
         if panel.isDragging {

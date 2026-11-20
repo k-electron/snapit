@@ -18,9 +18,8 @@ enum ToolbarRegistry {
         SaveToolbarItem(),
         RedoToolbarItem(),
         ShapeFillToolbarItem(),
-        TextSizeToolbarItem(),
         UndoToolbarItem(),
-        WidthToolbarItem(),
+        SizeToolbarItem(),
     ]
 
     /// The items of one slot, in order.

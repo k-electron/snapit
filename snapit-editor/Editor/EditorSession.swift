@@ -23,7 +23,11 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The thickness a new Highlighter gets (it is remembered apart from the line width).
     var highlighterWidth = AnnotationSettings.highlighterWidth
     /// True while the eyedropper waits for a click inside the Capture (see `EditorSession+Color`).
-    var isPickingColor = false
+    var isEyedropperActive = false
+    /// Goes up whenever the typed text, or whether one is being typed, changes: the typing's Undo
+    /// state lives in the text view's `UndoManager`, which nothing can observe, so the toolbar reads
+    /// this to know when to look again.
+    var textEditRevision = 0
     /// What the toolbar shows about the Annotations. Changes when a gesture starts or ends, a
     /// selection changes or Undo history changes, never while the pointer moves, so the toolbar
     /// pills are not rebuilt on every mouse move.
@@ -53,15 +57,15 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var window: EditorWindow? { chrome?.window }
     var canvas: CanvasView? { chrome?.canvas }
 
-    /// The tool the pointer drives: the eyedropper while it is picking, else the selected tool.
+    /// The tool the pointer drives: the eyedropper while it is active, else the selected tool.
     var currentTool: any EditorTool {
-        isPickingColor ? EyedropperTool() : (ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial)
+        isEyedropperActive ? EyedropperTool() : (ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial)
     }
 
     func selectTool(id: String) {
         guard ToolRegistry.tool(id: id) != nil else { return }
         commitTextEditing()
-        cancelPickingColor()
+        cancelEyedropper()
         endColorGesture()
         abortAnnotationGesture()
         selectedToolID = id
@@ -114,7 +118,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// Esc: closes the Editor without exporting. A tool with something pending (text being
     /// typed, a crop) finishes that first, before this closes.
     func escape() {
-        if commitTextEditing() || cancelPickingColor() { return }
+        if commitTextEditing() || cancelEyedropper() { return }
         close()
     }
 
@@ -128,6 +132,11 @@ final class EditorSession: NSObject, NSWindowDelegate {
                 .deleteCapture, arguments: [String(number)], to: AppIdentity.appSocketPath)
             close()
         }
+    }
+
+    /// The color panel follows the Editor in front: with two Editors, it recolors the one you are in.
+    func windowDidBecomeKey(_ notification: Notification) {
+        ColorPanelController.shared.retarget(to: self)
     }
 
     func windowWillClose(_ notification: Notification) {

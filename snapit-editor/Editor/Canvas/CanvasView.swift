@@ -115,7 +115,8 @@ final class CanvasView: NSView {
 
     /// What a kind's preview layer is given.
     var renderContext: AnnotationRenderContext {
-        AnnotationRenderContext(capture: capture, scale: captureScale, zoom: zoom)
+        AnnotationRenderContext(
+            capture: capture, scale: captureScale, zoom: zoom, backingScale: window?.backingScaleFactor ?? 2)
     }
 
     /// Shows the Annotations, with `selected` outlined.

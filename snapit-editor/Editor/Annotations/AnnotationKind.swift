@@ -26,6 +26,8 @@ struct AnnotationRenderContext {
     /// Pixels per point.
     let scale: Double
     let zoom: CGFloat
+    /// Backing pixels per view point of the window the canvas is in.
+    var backingScale: CGFloat = 2
 }
 
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in

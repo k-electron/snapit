@@ -55,7 +55,11 @@ nonisolated struct TextAnnotationKind: AnnotationKind {
 /// little larger than the text so no glyph is clipped. It draws once per change (never while
 /// idle), at the Capture's pixel density so it is as sharp as the Capture under it.
 nonisolated final class TextAnnotationLayer: CALayer {
-    private static let padding: CGFloat = 2
+    /// Room kept round the text for glyphs that reach past their advance (an italic, a swash): a
+    /// quarter of the text size.
+    private static func padding(for annotation: Annotation) -> CGFloat {
+        max(2, (annotation.style.textSize * 0.25).rounded(.up))
+    }
     private var annotation: Annotation?
     private var kind = TextAnnotationKind()
     /// Where the layer's top left is on the canvas, in image points (whole points, so the layer's
@@ -74,9 +78,11 @@ nonisolated final class TextAnnotationLayer: CALayer {
     override func action(forKey event: String) -> CAAction? { NSNull() }
 
     @MainActor func show(_ annotation: Annotation, kind: TextAnnotationKind, in context: AnnotationRenderContext) {
-        let box = kind.bounds(of: annotation).insetBy(dx: -Self.padding, dy: -Self.padding).integral
-        // Backing pixels per layer point: the Capture's density, and more when it is shown scaled down.
-        let density = min(8, max(context.scale, 1) / max(context.zoom, 0.05))
+        let padding = Self.padding(for: annotation)
+        let box = kind.bounds(of: annotation).insetBy(dx: -padding, dy: -padding).integral
+        // Backing pixels per layer point (an image point): as sharp as the Capture, or as the screen
+        // shows it, whichever is more. Shown scaled down, fewer pixels per image point are on screen.
+        let density = min(8, max(1, context.zoom * max(CGFloat(context.scale), context.backingScale)))
         if self.annotation != annotation || frame != box || contentsScale != density {
             self.annotation = annotation
             self.kind = kind
@@ -85,6 +91,22 @@ nonisolated final class TextAnnotationLayer: CALayer {
             contentsScale = density
             setNeedsDisplay()
         }
+    }
+
+    /// Draws the text at `scale` backing pixels per point and returns what to give back to
+    /// `endPreview`: the preview image of the canvas is made at the Capture's own scale, so the text
+    /// in it is drawn at that scale too.
+    func beginPreview(scale: CGFloat) -> CGFloat {
+        let saved = contentsScale
+        contentsScale = scale
+        setNeedsDisplay()
+        displayIfNeeded()
+        return saved
+    }
+
+    func endPreview(_ saved: CGFloat) {
+        contentsScale = saved
+        setNeedsDisplay()
     }
 
     override func draw(in context: CGContext) {
