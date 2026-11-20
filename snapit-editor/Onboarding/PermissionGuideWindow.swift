@@ -100,11 +100,9 @@ struct PermissionGuideWindowView: View {
             content.makeView()
             Button(action: close) {
                 Text(content.isResolved ? "Done" : "Close")
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
                     .frame(minWidth: 90)
             }
-            .buttonStyle(ChromeButtonStyle(look: content.isResolved ? .prominent : .plain, radius: 12))
+            .windowButton(prominent: content.isResolved)
             .help(content.closeTooltip)
             .keyboardShortcut(.cancelAction)
         }

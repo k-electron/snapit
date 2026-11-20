@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 
 /// The brief "Copied #RRGGBB" toast after a pick. The overlay has already closed by then, so the
-/// toast is a small panel of its own: one pill layer, no activation, no mouse. It fades out after a
+/// toast is a small panel of its own: a Liquid Glass pill with the text in a layer, no activation, no mouse. It fades out after a
 /// moment and goes away on a one-shot delay (nothing polls); a second toast replaces the first.
 @MainActor
 enum ColorToast {
@@ -12,6 +12,7 @@ enum ColorToast {
 
     private static var panel: NSPanel?
     private static var dismissal: DispatchWorkItem?
+    private static var fadeStart: DispatchWorkItem?
     /// The text showing now; nil when there is no toast.
     private(set) static var text: String?
 
@@ -20,8 +21,7 @@ enum ColorToast {
         dismiss()
         let label = OverlayLabel(scale: CGFloat(scale))
         label.set(
-            text, fontSize: 15, weight: .semibold, color: .white, padX: 18, padY: 9,
-            background: NSColor(white: 0.08, alpha: 0.92))
+            text, fontSize: 15, weight: .semibold, color: .white, padX: 18, padY: 9)
         let size = label.size
         label.place(topLeft: .zero, parentHeight: size.height)
 
@@ -41,23 +41,29 @@ enum ColorToast {
         let content = NSView(frame: CGRect(origin: .zero, size: size))
         content.wantsLayer = true
         content.layer?.addSublayer(label.layer)
-        panel.contentView = content
+        // The pill is Liquid Glass; the text is a layer above it.
+        let glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: size))
+        glass.style = .regular
+        glass.cornerRadius = size.height / 2
+        glass.appearance = NSAppearance(named: .darkAqua)
+        glass.contentView = content
+        panel.contentView = glass
         panel.setFrame(CGRect(origin: origin, size: size), display: false)
         panel.orderFrontRegardless()
 
-        let fading = CABasicAnimation(keyPath: "opacity")
-        fading.fromValue = 1
-        fading.toValue = 0
-        fading.beginTime = CACurrentMediaTime() + hold
-        fading.duration = fade
-        fading.fillMode = .both
-        fading.isRemovedOnCompletion = false
-        label.layer.add(fading, forKey: "fade")
-
         self.panel = panel
         self.text = text
+        // One-shot delays: the fade starts after `hold` and the toast goes away when it is over.
+        let fading = DispatchWorkItem {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = fade
+                panel.animator().alphaValue = 0
+            }
+        }
         let work = DispatchWorkItem { dismiss() }
+        fadeStart = fading
         dismissal = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold, execute: fading)
         DispatchQueue.main.asyncAfter(deadline: .now() + hold + fade + 0.05, execute: work)
     }
 
@@ -65,6 +71,8 @@ enum ColorToast {
     static func dismiss() {
         dismissal?.cancel()
         dismissal = nil
+        fadeStart?.cancel()
+        fadeStart = nil
         text = nil
         guard let panel else { return }
         self.panel = nil
