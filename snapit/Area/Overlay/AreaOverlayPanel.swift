@@ -74,7 +74,7 @@ final class AreaOverlayView: NSView {
         guard controller?.acceptsPointer(on: index) ?? false else { return }
         controller?.mouseMoved(index, point(event))
     }
-    override func mouseDown(with event: NSEvent) { controller?.mouseDown(index, point(event)) }
+    override func mouseDown(with event: NSEvent) { controller?.mouseDown(index, point(event), clickCount: event.clickCount) }
     override func mouseDragged(with event: NSEvent) { controller?.mouseDragged(index, point(event)) }
     override func mouseUp(with event: NSEvent) { controller?.mouseUp(index, point(event)) }
 }
