@@ -5,7 +5,9 @@ nonisolated extension SocketCommand {
     /// What the Action bar shows now: `frame=<x>,<y> <w>x<h>` (display points from the display's
     /// top-left corner, `none` when no bar shows), then one `item <id>|<title>|<tooltip>|<key>|<frame>`
     /// line per item in the order the bar lays them out, `<key>` and `<frame>` being `none` when
-    /// the item has no key or the bar has not laid it out.
+    /// the item has no key or the bar has not laid it out. Then `route <where>|bar|scene` lines: which
+    /// view the window's hit test gives a click 3 pt inside each item's top-left corner (`<id>`), in
+    /// the bar's transparent padding (`padding`) and 3 pt left of the bar (`outside`).
     static let overlayActionBar = SocketCommand("overlay-actionbar")
     /// `overlay-press <item id>`: runs an Action bar item's action, as its button does. Replies
     /// `ok`; an error when no Action bar is showing.
@@ -54,6 +56,26 @@ extension AreaOverlayController {
             let frame = container.itemFrames[item.id].map { describe($0.offsetBy(dx: bar.minX, dy: bar.minY)) }
             lines.append("item \(item.id)|\(item.title)|\(item.tooltip)|\(item.keyEquivalent ?? "none")|\(frame ?? "none")")
         }
+        // Where a click lands: the bar's own views on the bar, the scene view everywhere else.
+        for item in ActionBarRegistry.all {
+            guard let frame = container.itemFrames[item.id] else { continue }
+            let corner = CGPoint(x: bar.minX + frame.minX + 3, y: bar.minY + frame.minY + 3)
+            lines.append("route \(item.id)|\(container.route(at: corner))")
+        }
+        lines.append("route padding|\(container.route(at: CGPoint(x: bar.minX + 4, y: bar.minY + 4)))")
+        lines.append("route outside|\(container.route(at: CGPoint(x: bar.minX - 3, y: bar.midY)))")
         return lines
+    }
+}
+
+extension AreaOverlayContainerView {
+    /// `bar` when the window's hit test gives a click at `point` (display points, top-left origin)
+    /// to the Action bar, `scene` when it gives it to the scene view.
+    func route(at point: CGPoint) -> String {
+        guard let superview else { return "detached" }
+        let hit = hitTest(superview.convert(convert(point, to: nil), from: nil))
+        if let hit, hit === sceneView || hit.isDescendant(of: sceneView) { return "scene" }
+        if let hit, let bar = subviews.first(where: { $0 !== sceneView }), hit.isDescendant(of: bar) { return "bar" }
+        return "other"
     }
 }

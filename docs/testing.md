@@ -215,8 +215,9 @@ The Action bar is real views, which a layer-hosting view cannot hold: each panel
 `AreaOverlayContainerView` with the layer-hosting `AreaOverlayView` (the scene) filling it and, once
 a selection is being adjusted, an `ActionBarHostingView` (SwiftUI, macOS 26 glass) sized exactly to
 the bar beside it. The container draws nothing (`wantsUpdateLayer`), so no full-screen backing store
-exists. The first Action bar loads SwiftUI's glass renderer, which keeps the footprint about 3 MB
-higher from then on; it does not grow with repeated Captures.
+exists. The first Action bar loads macOS's glass renderer, which keeps the footprint about 4 MB
+higher from then on (16 MB at rest, 20 MB after the first bar, flat over repeated Captures); an
+`NSGlassEffectView` with two `NSButton`s leaves the same 4 MB, so it is the glass and not SwiftUI.
 
 ## Adding to the Area overlay
 

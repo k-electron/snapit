@@ -75,6 +75,14 @@ TILES="$(printf '%s\n' "$ITEMS" | awk -F'|' -v bar="$BAR" '
   END { printf "items=%d small=%d outside=%d\n", n, small, outside }')"
 expect_equal "each button is a whole tile of at least 60 x 30 points, inside the bar" "items=2 small=0 outside=0" "$TILES"
 
+# A click reaches the bar's own views on a button's tile (3 pt in from its corner) and on the bar's
+# padding, and the scene view just outside the bar: the window's hit test gives the buttons the click.
+ROUTES="$(printf '%s\n' "$ITEMS" | grep '^route ')"
+expect_contains "a click on the Capture tile goes to the bar" "route capture|bar" "$ROUTES"
+expect_contains "a click on the Cancel tile goes to the bar" "route cancel|bar" "$ROUTES"
+expect_contains "a click on the bar's padding goes to the bar" "route padding|bar" "$ROUTES"
+expect_contains "a click just outside the bar goes to the scene" "route outside|scene" "$ROUTES"
+
 # 3. Keys: a key no item claims is ignored, Return does nothing before a selection exists, and an
 #    item's own key would run it (the Color picker adds P).
 send "$APP_SOCK" "overlay-key p" >/dev/null
