@@ -30,6 +30,9 @@ final class AreaOverlayController: ActionBarHost {
     }
 
     let displays: [FrozenDisplay]
+    /// What the overlay is for. The window overlay (Window Capture) highlights the window under the
+    /// pointer and a click captures it; it has no drag, no selection and no Action bar.
+    let mode: AreaOverlayMode
     private let windows: [OnScreenWindow]
     private let pointer: CGPoint
     private(set) var panels: [AreaOverlayPanel] = []
@@ -50,6 +53,8 @@ final class AreaOverlayController: ActionBarHost {
     private(set) var selection: CGRect?
     private(set) var selectionIndex: Int?
     private(set) var hoveredWindow: CGRect?
+    /// The window under the pointer itself (`hoveredWindow` is its frame cut to the display).
+    private(set) var hoveredOnScreenWindow: OnScreenWindow?
 
     // The gesture in progress.
     private var isPressed = false
@@ -72,8 +77,9 @@ final class AreaOverlayController: ActionBarHost {
     /// A press that moves less than this many points is a click, not a drag.
     static let dragThreshold: CGFloat = 3
 
-    init(displays: [FrozenDisplay], windows: [OnScreenWindow], pointer: CGPoint) {
+    init(displays: [FrozenDisplay], windows: [OnScreenWindow], pointer: CGPoint, mode: AreaOverlayMode = .area) {
         self.displays = displays
+        self.mode = mode
         self.windows = windows
         self.pointer = pointer
     }
@@ -171,6 +177,13 @@ final class AreaOverlayController: ActionBarHost {
         guard !isFinished else { return }
         setCursor(index, point)
         setHoveredTile(nil)
+        if mode == .window {
+            isPressed = true
+            pressedIndex = index
+            refreshHover()
+            refreshScenes()
+            return
+        }
         // A press on the Action bar is the bar's: on a tile it is that tile's, on its padding nothing.
         if let frame = containers[index].actionBarFrame, frame.contains(cursor) {
             isPressed = true
@@ -209,6 +222,12 @@ final class AreaOverlayController: ActionBarHost {
         let bounds = displays[index].bounds
         let clamped = AreaGeometry.clamp(point, to: bounds)
         setCursor(index, clamped)
+        if mode == .window {
+            // A press in the window overlay picks the window under the pointer where it lets go.
+            refreshHover()
+            refreshScenes()
+            return
+        }
         if case .bar = gesture {
             if let pressedTile { pressedTile.pointerDragged(at: tilePoint(clamped, in: pressedTile, on: index)) }
             return
@@ -243,6 +262,17 @@ final class AreaOverlayController: ActionBarHost {
         let ended = gesture
         gesture = .none
         setCursor(index, hasMovedPastThreshold ? AreaGeometry.clamp(point, to: displays[index].bounds) : point)
+        if mode == .window {
+            // A click on a highlighted window captures exactly that window; on empty desktop it
+            // does nothing and the overlay carries on.
+            refreshHover()
+            if let window = hoveredOnScreenWindow {
+                finish(with: .window(window))
+            } else {
+                refreshScenes()
+            }
+            return
+        }
         if case .bar = ended, let tile = pressedTile {
             pressedTile = nil
             tile.isPressed = false
@@ -310,10 +340,12 @@ final class AreaOverlayController: ActionBarHost {
         guard state == .idle || state == .hoverWindow else { return }
         let display = displays[activeIndex]
         hoveredWindow = nil
+        hoveredOnScreenWindow = nil
         for window in windows {
             let local = window.frame.offsetBy(dx: -display.cgOrigin.x, dy: -display.cgOrigin.y)
             if local.contains(cursor) {
                 hoveredWindow = local.intersection(display.bounds)
+                hoveredOnScreenWindow = window
                 break
             }
         }
@@ -324,6 +356,10 @@ final class AreaOverlayController: ActionBarHost {
     /// selection, an arrow over the Action bar.
     func updateCursor() {
         guard !TestMode.isActive else { return }
+        if mode == .window {
+            NSCursor.arrow.set()
+            return
+        }
         if case .bar = gesture {
             NSCursor.arrow.set()
             return
@@ -458,7 +494,7 @@ final class AreaOverlayController: ActionBarHost {
             }
             // An adjusted Area has no crosshair or loupe, except while a handle is dragged (for
             // the exact pixel), so a pointer move changes nothing.
-            let pointing = !adjusting || resizing
+            let pointing = (!adjusting || resizing) && mode == .area
             container.sceneView.scene.update(
                 AreaSceneState(
                     hasPointer: index == activeIndex && pointing, cursor: pointing ? cursor : .zero,

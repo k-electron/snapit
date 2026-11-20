@@ -4,10 +4,12 @@ import ScreenCaptureKit
 enum ScreenCaptureError: Error, CustomStringConvertible {
     case noDisplay
     case noImage
+    case windowGone
 
     var description: String {
         switch self {
         case .noDisplay: "no display under the pointer"
+        case .windowGone: "the window is no longer on screen"
         case .noImage: "ScreenCaptureKit returned no SDR image"
         }
     }
@@ -42,13 +44,15 @@ struct ScreenCaptureKitSource: CaptureSource {
     }
 
     /// One-shot capture of what `filter` selects: native pixels, SDR, in the display's color space.
-    static func capture(filter: SCContentFilter) async throws -> CapturedScreen {
+    /// `ignoresShadows` leaves a window's shadow out (a single-window filter only).
+    static func capture(filter: SCContentFilter, ignoresShadows: Bool = false) async throws -> CapturedScreen {
         let requestedScale = Double(filter.pointPixelScale)
         let configuration = SCScreenshotConfiguration()
         // Native pixels: the content rect is in points.
         configuration.width = Int((filter.contentRect.width * requestedScale).rounded())
         configuration.height = Int((filter.contentRect.height * requestedScale).rounded())
         configuration.showsCursor = false
+        configuration.ignoreShadows = ignoresShadows
         configuration.dynamicRange = .sdr
         configuration.displayIntent = .local
 
