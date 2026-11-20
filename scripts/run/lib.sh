@@ -68,6 +68,14 @@ assert_idle_cpu() {
   fi
 }
 
+# expect_no_internet <label> <pid>: the process has no internet (TCP or UDP) socket open. The fixture
+# endpoint opens none, so neither process may ever have one in a run, whatever API would open it.
+expect_no_internet() {
+  local sockets
+  sockets="$(lsof -nP -a -i -p "$2" 2>/dev/null)"
+  if [[ -z "$sockets" ]]; then pass "$1 has no internet socket open"; else fail "$1 has an internet socket open: ${sockets//$'\n'/ | }"; fi
+}
+
 # png_field <info output> <key>: one value out of `png-inspect info`.
 png_field() { printf '%s\n' "$1" | sed -n "s/^$2=//p" | head -1; }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings…. User Guide and Check for Updates… follow it, each as its own `MenuSection` listed
+/// Settings…. User Guide (`UserGuideMenu`) and Check for Updates… follow it, each as its own `MenuSection` listed
 /// after this one in `MenuModel.sections`.
 struct SettingsMenu: MenuSection {
     var entries: [MenuEntry] {

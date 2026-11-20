@@ -21,13 +21,6 @@ ubuttons() { ufacts | sed -n 's/^button //p' | awk -F'|' '{ print $1 }' | tr '\n
 update_settled() { local state; state="$(uval state)"; [[ -n "$state" && "$state" != checking ]]; }
 update_requests() { send "$APP_SOCK" update-requests; }
 requests_are() { [[ "$(update_requests)" == "$1" ]]; }
-# expect_no_internet <label> <pid>: the process has no internet (TCP or UDP) socket open. The fixture
-# endpoint opens none, so neither process may ever have one in a run, whatever API would open it.
-expect_no_internet() {
-  local sockets
-  sockets="$(lsof -nP -a -i -p "$2" 2>/dev/null)"
-  if [[ -z "$sockets" ]]; then pass "$1 has no internet socket open"; else fail "$1 has an internet socket open: ${sockets//$'\n'/ | }"; fi
-}
 onscreen_is() { [[ "$(onscreen_windows "$1")" == "$2" ]]; }
 u_no_helper() { [[ -z "$(helper_pid)" ]]; }
 # uscript release <tag> <html_url> <notes> [draft|prerelease]: what GitHub answers from now on.
@@ -102,13 +95,11 @@ expect_equal "a blank is not a version" "invalid a" "$(send "$APP_SOCK" "update-
 expect_equal "an invalid version is reported for a" "invalid a" "$(compare 1.2 1.2.3)"
 expect_equal "an invalid version is reported for b" "invalid b" "$(compare 1.2.3 1.2)"
 
-# 2. The menu: Check for Updates… sits after Settings… (and the User Guide, once the menu has one)
-#    and before Quit snapit, with no key.
+# 2. The menu: Check for Updates… sits after Settings… and the User Guide, and before Quit snapit,
+#    with no key.
 MENU_TITLES="$(send "$APP_SOCK" menu-titles)"
-MENU_ORDER=("Settings…")
-[[ "$MENU_TITLES" == *"User Guide"* ]] && MENU_ORDER+=("User Guide")
-expect_in_order "the menu offers Settings…, User Guide (when there is one), Check for Updates… and Quit snapit, in that order" \
-  "$MENU_TITLES" "${MENU_ORDER[@]}" "Check for Updates…" "Quit snapit"
+expect_in_order "the menu offers Settings…, User Guide, Check for Updates… and Quit snapit, in that order" \
+  "$MENU_TITLES" "Settings…" "User Guide" "Check for Updates…" "Quit snapit"
 expect_equal "Check for Updates… has no shortcut" "none" "$(send "$APP_SOCK" "menu-shortcut check-for-updates")"
 wait_until 10 u_no_helper
 expect_equal "no helper runs before the first click" "" "$(helper_pid)"

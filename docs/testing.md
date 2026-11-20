@@ -678,8 +678,8 @@ app makes it; the Editor helper shows the update window and never touches a netw
   has them, or the other ways code gets online (sockets, `AsyncImage`, HTML in an attributed string,
   a shell tool such as curl, an `http(s)://` address outside the two files that name GitHub's, a
   network entitlement or App Transport Security setting); when that file stops matching; when
-  `import WebKit` appears (a web view can load anything: the User Guide's file goes in the script's
-  `WEBKIT_ALLOWED` list once its navigation refuses everything but bundle file URLs); when the engine
+  `import WebKit` appears (a web view can load anything; the User Guide is drawn natively, so the script's
+  `WEBKIT_ALLOWED` list is empty); when the engine
   uses a socket or an HTTP library; and when `Cargo.lock` or `Package.resolved` has a crate or
   package that is not on the script's reviewed lists (a new dependency fails until someone has read it).
   Never write those names, even in a comment, anywhere else. Flow 56 adds the runtime check:
@@ -697,6 +697,34 @@ app makes it; the Editor helper shows the update window and never touches a netw
   (`ReleaseRequest.allowsRedirect`, checked with `update-redirect <url>`).
 - **Real network** (the real endpoint, a private repository answering 404, a proxy, no connection)
   is in `docs/manual-checks.md`.
+
+## The User Guide
+
+The User Guide is a window in the Editor helper (`snapit-editor/UserGuide/`), drawn natively from a bundled
+Markdown file: no web view, no network, no image. The menu bar app only asks for it
+(`UserGuideMenu` → `show-user-guide`, `Shared/Commands/UserGuideCommands.swift`); the helper reads
+`UserGuide.md` from its own bundle (`Contents/Resources`) when the window opens and drops it when it closes.
+`UserGuideWindow` is one window (a second request brings it forward), `UserGuideModel` is what it shows (the section on
+the page, the search, the one `follow(_:)` every link goes through, every tooltip), `UserGuideView` draws it and
+`GuideDocument` parses the Markdown. `UserGuideLink.open` (Onboarding's Done step) is set in
+`registerUserGuideHelperCommands()` when the helper launches, not when the window opens.
+
+The source, `UserGuide.md`, is a small subset: `# Group`, `## Title {#id icon=sf.symbol}` for a section (the id is its anchor),
+`###`, paragraphs (one per line), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline Markdown. A link is `[text](#id)`
+to a section or an `https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other
+link is dropped. Write its words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never from memory.
+
+| To add | Do |
+|---|---|
+| a section | a `## Title {#id}` in `UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-user-guide.sh` |
+| a flow to the checklist | a line in `scripts/user-guide-checklist.txt`: the section id, a bar, then the terms it must hold separated by semicolons. `scripts/check-user-guide.sh` (run by `scripts/test.sh` before the build) checks the source, and flow 58 checks the guide the helper loaded |
+| a block kind | a case in `GuideBlock`, its parsing in `GuideDocument.init(markdown:)` and its view in `UserGuideView.swift` |
+
+`58-user-guide.sh` drives it: the menu order, one window for any number of requests (and a Dock icon), the checklist read back
+through `user-guide-facts` and `user-guide-text <id>`, navigation (`user-guide-select`, `user-guide-link`, `user-guide-press`),
+search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle,
+memory and idle CPU. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
+(`docs/manual-checks.md`).
 
 ## Engine tests
 
