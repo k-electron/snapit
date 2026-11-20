@@ -2,9 +2,15 @@ name: Release
 
 # Pushing a tag like v1.2.3 builds snapit, packages the DMG and publishes a GitHub Release.
 # A tag with a pre-release suffix (v1.2.3-beta.1) publishes as a pre-release.
+# Run by hand (workflow_dispatch), it builds and packages but publishes nothing.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to package (nothing is published)
+        default: v0.0.0-test
 
 concurrency:
   group: release-${{ github.ref }}
@@ -21,15 +27,17 @@ jobs:
   release:
     name: Build, package and publish (macOS 26, arm64)
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
-      contents: write # create the release and attach the DMG
+      contents: write # create the release and attach the DMG (only the publish step gets the token)
+      actions: read # read the CI run for the tagged commit
     env:
-      TAG: ${{ github.ref_name }}
-      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
       SNAPIT_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Xcode 26 toolchain
         run: |
@@ -58,9 +66,17 @@ jobs:
           scripts/package-release.sh "$TAG"
 
       - name: Publish the GitHub Release
-        # Draft first, attach every file, then publish: the release only goes live complete.
+        # Draft first, attach every file, wait for CI on this commit, then publish: the release
+        # only goes live complete and green.
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${TAG#v}"
+          # A re-run replaces a leftover draft, never a published release.
+          if [[ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null)" == true ]]; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
           flags=()
           if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$TAG" \
@@ -69,4 +85,19 @@ jobs:
             --notes-file build/release/release-notes.md --generate-notes \
             ${flags[@]+"${flags[@]}"} \
             "build/release/snapit-$VERSION.dmg" "build/release/snapit-$VERSION.dmg.sha256"
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+          # Publish only when CI passed for the tagged commit (up to 45 minutes of waiting).
+          for _ in $(seq 1 90); do
+            runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow CI --commit "$GITHUB_SHA" --json status,conclusion --limit 20)"
+            if jq -e 'any(.[]; .conclusion == "success")' <<<"$runs" >/dev/null; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+              exit 0
+            fi
+            if ! jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
+              echo "error: CI has not passed for $GITHUB_SHA; the release stays a draft" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "error: timed out waiting for CI on $GITHUB_SHA; the release stays a draft" >&2
+          exit 1
