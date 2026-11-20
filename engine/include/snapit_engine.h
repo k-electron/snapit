@@ -20,6 +20,11 @@
 #define SNAPIT_ROW_ALIGNMENT 64
 
 /*
+ BGRA, 8 bits per channel, alpha in the top byte, premultiplied, top row first.
+ */
+#define SNAPIT_PIXEL_FORMAT_BGRA8_PREMULTIPLIED 1
+
+/*
  Fast: the encoder Copy and drag-out use.
  */
 #define SNAPIT_PNG_FAST 0
@@ -73,6 +78,56 @@ typedef struct SnapitPixelBuffer {
 } SnapitPixelBuffer;
 
 /*
+ The fixed-size start of a Capture file.
+ */
+typedef struct SnapitCaptureHeader {
+  /*
+   Identifies the file; always `SNAPCAP` and a NUL.
+   */
+  uint8_t magic[8];
+  /*
+   Format version; 1.
+   */
+  uint32_t version;
+  /*
+   One of the `SNAPIT_PIXEL_FORMAT_*` values.
+   */
+  uint32_t pixel_format;
+  /*
+   Width in pixels.
+   */
+  uint32_t width;
+  /*
+   Height in pixels.
+   */
+  uint32_t height;
+  /*
+   Bytes between the starts of two rows.
+   */
+  size_t stride;
+  /*
+   Pixels per point: 2 on a Retina display, 1 otherwise.
+   */
+  double scale;
+  /*
+   When the Capture was taken, in seconds since 1970.
+   */
+  int64_t capture_time;
+  /*
+   Where the pixels start in the file: a page boundary.
+   */
+  uint64_t pixel_offset;
+  /*
+   Where the ICC profile starts in the file.
+   */
+  uint64_t icc_offset;
+  /*
+   Length of the ICC profile in bytes; 0 for none.
+   */
+  uint64_t icc_len;
+} SnapitCaptureHeader;
+
+/*
  Bytes the engine allocated and hands to the caller. Free with [`snapit_bytes_free`].
  */
 typedef struct SnapitBytes {
@@ -121,6 +176,16 @@ typedef struct SnapitBytes {
 #define SNAPIT_STATUS_ENCODE_FAILED 5
 
 /*
+ A file operation failed (the disk is full, the file could not be written).
+ */
+#define SNAPIT_STATUS_IO_FAILED 6
+
+/*
+ A Capture file is damaged, truncated or from another version.
+ */
+#define SNAPIT_STATUS_INVALID_FILE 7
+
+/*
  Deliberately panics inside the guard. The scripted run and the Cargo tests use it to
  prove a panic reaches Swift as a status code.
  */
@@ -147,6 +212,77 @@ SnapitStatus snapit_buffer_alloc(uint32_t width, uint32_t height, struct SnapitP
  and nothing may use its pixels afterwards.
  */
 SnapitStatus snapit_buffer_free(struct SnapitPixelBuffer *buffer);
+
+/*
+ Fills `file` with a Capture file for a `width` x `height` image and maps its pixels
+ writable (shared, so the helper sees what is written) into `out_buffer`.
+
+ The file is sized, then given its header and ICC profile; the stride is chosen by the
+ engine and returned in `out_header`. `scale` is pixels per point, `capture_time` seconds
+ since 1970. `icc` and `icc_len` give the display's color profile (null and 0 for none).
+ Free the mapping with [`snapit_buffer_free`](crate::snapit_buffer_free).
+
+ # Safety
+
+ `fd` must be a file open for reading and writing, `icc` valid for `icc_len` bytes (when
+ not null), `out_header` and `out_buffer` valid for writes.
+ */
+SnapitStatus snapit_capture_file_create(int32_t fd,
+                                        uint32_t width,
+                                        uint32_t height,
+                                        double scale,
+                                        int64_t capture_time,
+                                        const uint8_t *icc,
+                                        size_t icc_len,
+                                        struct SnapitCaptureHeader *out_header,
+                                        struct SnapitPixelBuffer *out_buffer);
+
+/*
+ Reads and checks the header of the Capture file `fd` and stores it in `out_header`.
+
+ Refuses (with `SNAPIT_STATUS_INVALID_FILE`) a file that is empty, truncated, has the
+ wrong magic or version, or does not hold all the pixels its header describes, so mapping
+ it can never read past its end.
+
+ # Safety
+
+ `fd` must be a file open for reading and `out_header` valid for a write.
+ */
+SnapitStatus snapit_capture_file_info(int32_t fd, struct SnapitCaptureHeader *out_header);
+
+/*
+ Copies the ICC profile of the Capture file `fd` (`header.icc_len` bytes) into `buffer`,
+ which holds `capacity` bytes. With no profile it copies nothing. When `capacity` is too
+ small nothing is copied and the status is `SNAPIT_STATUS_BUFFER_TOO_SMALL`.
+
+ # Safety
+
+ `fd` must be a file open for reading, `header` the header [`snapit_capture_file_info`]
+ returned for it, `buffer` valid for writes of `capacity` bytes (it may be null when the
+ header has no profile).
+ */
+SnapitStatus snapit_capture_file_icc(int32_t fd,
+                                     const struct SnapitCaptureHeader *header,
+                                     uint8_t *buffer,
+                                     size_t capacity);
+
+/*
+ Maps the pixels of the Capture file `fd`, described by `header`, into `out`. `writable`
+ 0 maps them read-only (the Editor helper), anything else writable (the menu bar app). The
+ mapping is shared: free it with [`snapit_buffer_free`](crate::snapit_buffer_free), which
+ unmaps it and returns the memory to the OS.
+
+ Refuses a `header` the file does not back (`SNAPIT_STATUS_INVALID_FILE`).
+
+ # Safety
+
+ `fd` must be a file open for reading (and writing when `writable` is not 0), `header`
+ valid for a read, `out` valid for a write.
+ */
+SnapitStatus snapit_capture_file_map(int32_t fd,
+                                     const struct SnapitCaptureHeader *header,
+                                     uint32_t writable,
+                                     struct SnapitPixelBuffer *out);
 
 /*
  Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.

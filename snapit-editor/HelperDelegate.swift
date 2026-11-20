@@ -4,6 +4,10 @@ import AppKit
 final class HelperDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        HelperMainMenu.install()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Started by snapit: serve commands. Anything else (for example a Dock pin)
         // launched the helper on its own: start the menu bar app and quit.
@@ -26,10 +30,21 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Stop answering first: a menu bar app that sends a Capture from here on starts a
+        // new helper instead of handing it to this dying one.
+        commandServer?.stop()
+        commandServer = nil
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         commandServer?.stop()
     }
 
-    // The helper quits through its `quit` command or when its last window closes, never before.
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    /// The helper quits when its last window closes. Before any window has shown (a helper
+    /// started with `start-editor`, or warming up) it stays.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        HelperLifecycle.hasShownWindow
+    }
 }

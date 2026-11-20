@@ -22,6 +22,7 @@ extension SocketCommandRegistry {
         registerMenuCommands()
         registerEditorHelperCommands()
         registerCaptureTestCommands()
+        registerCaptureDeleteCommands()
         registerShortcutTestCommands()
     }
 

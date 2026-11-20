@@ -1,6 +1,7 @@
-# Flow: Screen Capture to the clipboard. Drives the menu item and the Shortcut against fixture
-# images at 1x and 2x, then reads the PNG back off the private pasteboard and checks its
-# pixels and metadata with an independent decoder (png-inspect). Sourced by scripts/check-run.sh.
+# Flow: Screen Capture into the Editor, then Copy. Drives the menu item and the Shortcut against
+# fixture images at 1x and 2x: the Capture opens in the Editor helper, ⌘C puts the PNG on the
+# private pasteboard and closes the Editor, and the PNG is read back and checked pixel by pixel
+# and for its metadata with an independent decoder (png-inspect). Sourced by scripts/check-run.sh.
 #
 # To add a flow, copy this file's shape: switch the fixture, drive the app through a command
 # (`menu-click`, `press-shortcut`, or one of your own), then assert on what is observable.
@@ -35,7 +36,8 @@ SRGB_SHA="$("$INSPECT" profile-sha srgb)"
 P3_SHA="$("$INSPECT" profile-sha displayP3)"
 
 # capture_check <label> <trigger command> <scale> <points w> <points h> <profile name> <profile sha> <pHYs>
-# Chooses the fixture display, triggers the Capture, and checks the PNG on the pasteboard.
+# Chooses the fixture display, triggers the Capture, checks it opened in the Editor, copies it
+# with ⌘C and checks the PNG on the pasteboard.
 capture_check() {
   local label="$1" trigger="$2" scale="$3" pw="$4" ph="$5" profile="$6" sha="$7" phys="$8"
   local w=$((pw * scale)) h=$((ph * scale)) info
@@ -44,7 +46,11 @@ capture_check() {
   send "$APP_SOCK" pasteboard-clear >/dev/null
   expect_equal "$label: the pasteboard starts empty" "" "$(send "$APP_SOCK" pasteboard-types)"
 
-  expect_equal "$label: the Capture finishes" "ok" "$(send_slow "$APP_SOCK" "$trigger")"
+  if ! capture_into_editor "$trigger"; then return; fi
+  expect_contains "$label: the Capture opens in the Editor at its native pixel size" "pixels=${w}x${h}" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
+  expect_equal "$label: nothing is on the pasteboard until the user copies" "" "$(send "$APP_SOCK" pasteboard-types)"
+
+  if copy_closes_editor; then pass "$label: ⌘C copies and the Editor closes (the helper quits)"; else fail "$label: the Editor helper is still running after ⌘C"; fi
   # macOS also advertises the TIFF it can convert a PNG to; PNG must come first.
   expect_equal "$label: the pasteboard holds the PNG" "public.png" "$(send "$APP_SOCK" pasteboard-types | head -1)"
 
@@ -73,14 +79,15 @@ expect_equal "an unknown Shortcut is refused" "error no shortcut nope" "$(send "
 expect_equal "an unknown menu item is refused" "error no menu item nope" "$(send "$APP_SOCK" "menu-click nope")"
 
 # 3. Memory returns to baseline after Captures, and the app idles at 0% CPU afterwards.
-#    A 5120 x 2880 pixel display (59 MB of pixels): a leak would be impossible to miss.
+#    A 5120 x 2880 pixel display (59 MB of pixels): a leak would be impossible to miss. Each
+#    Capture opens an Editor in the helper and ⌘C closes it, so the helper quits every time.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
-send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null   # warm up allocator pools
+capture_into_editor "press-shortcut capture-screen" && copy_closes_editor   # warm up allocator pools
 sleep 1
 BASELINE="$(footprint_mb "$APP_PID")"
 for _ in 1 2 3 4 5; do
-  send_slow "$APP_SOCK" "menu-click capture.screen" >/dev/null
-  send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
+  capture_into_editor "menu-click capture.screen" && copy_closes_editor
+  capture_into_editor "press-shortcut capture-screen" && copy_closes_editor
 done
 sleep 1
 AFTER="$(footprint_mb "$APP_PID")"
@@ -98,5 +105,6 @@ send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/big.png" >/dev/null
 BIG_INFO="$("$INSPECT" info "$RUN_ROOT/big.png")"
 expect_equal "the 5K Capture's PNG has the full pixel size" "5120x2880" "$(png_field "$BIG_INFO" width)x$(png_field "$BIG_INFO" height)"
 rm -f "$RUN_ROOT/big.png"
+if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Editors closed"; else fail "an Editor helper is still running"; fi
 assert_idle_cpu "menu bar app after the Captures" "$APP_PID" 5
 send "$APP_SOCK" pasteboard-clear >/dev/null
