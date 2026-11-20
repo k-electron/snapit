@@ -36,13 +36,6 @@ mp_close_windows() {
   wait_until 10 mp_no_helper
 }
 mp_clear_save() { chmod 700 "$MP_SAVE" 2>/dev/null; find "$MP_SAVE" -mindepth 1 -delete 2>/dev/null; }
-mp_restart_app() {
-  send "$APP_SOCK" quit >/dev/null
-  wait_until 30 gone "$APP_PID"
-  (nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-  if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again ($1)"; else abort "snapit did not start again ($1)"; fi
-  APP_PID="$(pid_of "$APP_EXE")"
-}
 mp_new_app() { local now; now="$(pid_of "$APP_EXE")"; [[ -n "$now" && "$now" != "$1" ]] && answers "$APP_SOCK"; }
 mp_links() { cat "$RUN_ROOT/system-settings-links" 2>/dev/null; }
 
@@ -129,7 +122,7 @@ send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 #    and resets snapit's own entry; the user turns it on; macOS lets a process use it from its next
 #    launch on, so the guide offers Relaunch snapit; and after it Captures work.
 send "$APP_SOCK" "screen-recording-simulate grantedStale" >/dev/null
-mp_restart_app "launched without Screen Recording"
+restart_app "launched without Screen Recording"
 RESETS_BEFORE="$(mp_sr resets)"
 CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
 send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
@@ -151,7 +144,7 @@ if wait_until 30 mp_new_app "$OLD_APP_PID"; then pass "Relaunch snapit starts a 
 APP_PID="$(pid_of "$APP_EXE")"
 expect_equal "the relaunched snapit has Screen Recording" "granted" "$(mp_sr state)"
 mp_close_windows
-mp_restart_app "its log is the run's again"
+restart_app "its log is the run's again"
 # The baseline for step 8 is this process: the steps above restarted the menu bar app three times.
 sleep 2
 MP_FOOT_BEFORE="$(footprint_mb "$APP_PID")"

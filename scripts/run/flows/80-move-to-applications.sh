@@ -218,6 +218,4 @@ wait_until 10 gone "$APP_PID"
 unregister_fixture_apps
 chmod -R u+w "$REAL_ROOT/Applications" "$REAL_ROOT/Volumes" 2>/dev/null
 rm -rf "$REAL_ROOT/Applications" "$REAL_ROOT/Volumes" "$REAL_ROOT/AppTranslocation" "$RUN_ROOT/install"
-(nohup "$APP_EXE" >"$RUN_ROOT/app.log" 2>&1 &)
-if wait_until 10 answers "$APP_SOCK"; then pass "the menu bar app is running from the build again"; else abort "the menu bar app did not restart"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+relaunch_app "the menu bar app is running from the build again"

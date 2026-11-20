@@ -27,7 +27,7 @@ enum WarmHelper {
     static func quitIfNothingOpen() {
         guard !HelperLifecycle.hasShownWindow, EditorSessions.shared.sessions.isEmpty else { return }
         (NSApp.delegate as? HelperDelegate)?.stopServing()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApplication.shared.terminate(nil) }
+        NSApplication.terminateAfterReply()
     }
 
     /// Calls `quitIfNothingOpen()` when the menu bar app exits (it was killed, crashed or quit),

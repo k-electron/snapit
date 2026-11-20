@@ -2,7 +2,7 @@ import Foundation
 
 /// What happens when the user has selected an Area: the Capturing section of Settings.
 enum AfterSelectingArea: String, CaseIterable {
-    /// The selection stays on screen with eight handles and the Action bar. The default.
+    /// The Area stays on screen with eight handles and the Action bar. The default.
     case showActionBar
     /// Letting go of the mouse takes the Capture.
     case captureOnRelease

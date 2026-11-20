@@ -52,7 +52,11 @@
 //   png-inspect verify-window-scaled <file> <w> <h> <scale> <factor>
 //                                               the same window averaged down by a whole factor (a 1x Export of
 //                                               a Retina window): premultiplied averages, then straight, within 3
-//   png-inspect general-pasteboard             changeCount of the general pasteboard (never its contents)
+//   png-inspect general-pasteboard [<count>|-] [<name>]
+//                                               changeCount of the general pasteboard and, when it differs from <count>,
+//                                               its shape (png, hex for a #RRGGBB string, other, empty); never its contents
+//   png-inspect pasteboard-fixture <dev.snapit.test.name> png|hex|text
+//                                               puts such content on a private pasteboard, to test general-pasteboard
 //   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
 //                                               `<width>x<height> onscreen|offscreen`; no names, so no TCC prompt
 //
@@ -576,8 +580,42 @@ case "profile-sha":
     print(sha256(data))
 
 case "general-pasteboard":
-    // The change count only: the user's clipboard contents are never read.
-    print("change_count=\(NSPasteboard.general.changeCount)")
+    // general-pasteboard [<previous change count>|-] [<pasteboard name>]: the change count, and the shape of what is
+    // there only when the count differs from the previous one given, never the contents: `png` when a PNG is on it,
+    // `hex` when it holds only plain text of the form #RRGGBB (matched in memory, never printed), `other`,
+    // `empty`; `unread` when the count is the same (or none was given). The named pasteboard is for the run's own
+    // checks of this command (`pasteboard-fixture`); the user's general pasteboard is the default.
+    let board = arguments.count > 3 ? NSPasteboard(name: NSPasteboard.Name(arguments[3])) : NSPasteboard.general
+    print("change_count=\(board.changeCount)")
+    var shape = "unread"
+    if arguments.count > 2, let previous = Int(arguments[2]), previous != board.changeCount {
+        let types = board.types ?? []
+        shape = types.isEmpty ? "empty" : "other"
+        if types.contains(.png) {
+            shape = "png"
+        } else if types.contains(.string), types.allSatisfy({ $0.rawValue.contains("plain-text") || $0.rawValue == "NSStringPboardType" }), let text = board.string(forType: .string),
+            text.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil {
+            shape = "hex"
+        }
+    }
+    print("shape=\(shape)")
+
+case "pasteboard-fixture":
+    // pasteboard-fixture <name> png|hex|text|release: puts that kind of content on a private pasteboard (a name that starts
+    // with dev.snapit.test.), the way snapit's Copy and Color picker do. Never the general pasteboard.
+    guard arguments.count == 4, arguments[2].hasPrefix("dev.snapit.test.") else { fail("pasteboard-fixture dev.snapit.test.<name> png|hex|text|release") }
+    let board = NSPasteboard(name: NSPasteboard.Name(arguments[2]))
+    board.clearContents()
+    switch arguments[3] {
+    case "png":
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        board.setData(bitmap.representation(using: .png, properties: [:])!, forType: .png)
+    case "hex": board.setString("#1A2B3C", forType: .string)
+    case "text": board.setString("some text", forType: .string)
+    case "release": board.releaseGlobally()
+    default: fail("pasteboard-fixture <name> png|hex|text|release")
+    }
 
 case "windows":
     guard arguments.count == 3, let pid = Int32(arguments[2]) else { fail("windows <pid>") }

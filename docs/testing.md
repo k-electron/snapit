@@ -58,7 +58,7 @@ unassigned by default, like Pick Color, has `defaultKeyCode: nil`. Test mode nev
 KeyboardShortcuts: `InjectedShortcuts` keeps the handlers in a dictionary and the combos in the run's
 defaults, so a recorded Shortcut survives a relaunch of the menu bar app.
 
-Test mode adds socket commands (they exist only while test mode is on). The scripted run sends them
+Test mode adds socket commands (they exist only while test mode is on: `menu-titles` and `start-editor` in the menu bar app, `engine-version` in both processes, and every command below). The scripted run sends them
 to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper), one line each:
 
 | Command | What it does |
@@ -88,7 +88,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|left\|right\|up\|down\|<letter>\|<key code> [shift]` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does; `shift` adds the Shift modifier) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `picked #RRGGBB` (the Color picker copied that hex), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `area` (the display and the Area: `<display> <x>,<y> <w>x<h>`, or `none`), `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
 | `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
 | `overlay-picker` | the Color picker: `display`, `pixel=<x>,<y>` (device pixels of that display's frame), `hex`, `origin` (`bar` or `entry`), `frame` (the frame's size in pixels), `loupe` (its frame in display points, or `none`), `outlined` and `swatch` (the centres of the outlined cell and the swatch, in display points, to read back from an `overlay-snapshot`); `none` when the picker is not up |
 | `color-toast` | the text of the "Copied #…" toast showing now, or `none` |
@@ -277,7 +277,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 working on one flow (flows share state, so `scripts/test.sh` always runs them all).
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
-menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
+menu bar app, then sources every flow in name order (`05-` the run's own measuring tools, `10-` menu bar app, `20-` Screen Capture
 into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `47-` the Color picker (before the Last Capture flow and Settings, which relaunch the menu bar app), `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `56-` Check for Updates, `57-` a missing permission (Screen Recording at a Shortcut press or menu item, a folder a Save can't write to, a Save that fails after the hand-over; it relaunches the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
@@ -312,8 +312,31 @@ Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w
 
 `check-run.sh` also ends with the isolation assertion: no `dev.snapit.snapit*.plist` in
 `~/Library/Preferences` is new or changed, `defaults read` of the bundle ID domains is unchanged,
-`~/Library/Caches/dev.snapit.snapit` is unchanged and the general pasteboard's change count is the
-same as before the run.
+`~/Library/Caches/dev.snapit.snapit` is unchanged and the general pasteboard was not written to by the
+run. The general pasteboard is the user's, and a user may copy something during a run, so the run never
+reads its contents: `png-inspect general-pasteboard` prints the change count and, only when the count differs from the one it is given, a shape (`png`, `hex`
+for plain text of the form #RRGGBB, matched in memory and never printed, `other`, `empty`); a pasteboard
+nobody wrote to is never read. snapit writes
+only a PNG (Copy) or a hex string (the Color picker), so a rise in the count fails the run only when the
+pasteboard now has one of those two shapes (`pasteboard_verdict` in `lib.sh`); a copy of anything else
+passes with a note. A user who copies a PNG (a screenshot to the clipboard) or a #RRGGBB string during a run
+still trips it: run again. A real regression, product code writing to `NSPasteboard.general`, changes the
+count to one of those shapes and is caught. Flow `05-run-helpers.sh` puts a PNG, a hex string and other text on a
+private pasteboard (`png-inspect pasteboard-fixture`, never the general one) and runs the same probe and
+`pasteboard_verdict` over it: the PNG and the hex string fail, the other text does not.
+
+`assert_idle_cpu <label> <pid> <seconds>` reads the process's CPU time over one-second windows (a run of 1 or
+2 seconds is a single window, passing at 0.02 s of CPU as before). Several windows pass when the mean of the
+quietest half is at most 0.5% of a CPU and at most max(2, windows / 4) windows used 10 ms or more, so a short
+burst from a loaded machine drops out, while a loop that runs all the time (1% and up) or a timer that fires
+every second or two (it is in many windows) fails. Flow `05-run-helpers.sh` checks that on a process that burns 2% CPU steadily and on one that
+burns 20 ms every two seconds (both must fail) and on one with a single 60 ms burst (it must pass). `overlay_panels` waits up to 20 s for the window
+server's list to agree with the app's own count.
+
+The menu bar app is started again with `relaunch_app [<why>]` (after it quit or was killed; sets `APP_PID`),
+`restart_app [<why>]` (quit, wait, relaunch) and `launch_app [<root>]` (a second one under its own root), all in
+`lib.sh`; do not write a flow's own `nohup "$APP_EXE"`. The helper's process count and the warm-up state are
+`helper_count`, `no_helper`, `some_helper`, `warm_state`, `warm_is`, also in `lib.sh`.
 
 ## Adding an edge or a test-mode command
 
@@ -351,7 +374,7 @@ The Action bar is drawn in layers on Liquid Glass. AppKit controls and SwiftUI c
 memory that never comes back (a bar of `NSButton`s +2.4 MB, of SwiftUI buttons +2.7 MB, of
 SwiftUI on glass +4.2 MB, a bare `NSGlassEffectView` +1.7 MB; each once per process), a layer
 bar about 1 MB; so the bar is layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
-`AreaOverlayView` (the scene) fills it and, once a selection is being adjusted, the bar sits above it as
+`AreaOverlayView` (the scene) fills it and, once an Area is being adjusted, the bar sits above it as
 two small views, `ActionBarBackdropView` (an `NSGlassEffectView`, the Liquid Glass capsule) and
 `ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
 container (it hands everything to the scene view): every click reaches `AreaOverlayView`, whose
@@ -377,7 +400,7 @@ badge are glass too and share that one cost: once the bar has loaded it a second
 
 The Color picker is a state of the Area overlay (`State.pickingColor`), not a second overlay system:
 the same frozen frames, panels and key monitor. It opens from the Action bar (`PickColorActionBarItem`:
-the button and P; Esc goes back to the bar with the selection kept), and from the menu's Pick Color
+the button and P; Esc goes back to the bar with the Area kept), and from the menu's Pick Color
 and the `pick-color` Shortcut (`AreaCaptureFlow.startPickingColor()`: the overlay starts in the picker,
 Esc ends it, and no Editor is warmed up because no Capture opens). `ColorPickerSession` is the sampled
 device pixel as a plain value: the pointer aims it with `AreaGeometry.pixel(of:scale:...)` (display-local
@@ -387,7 +410,7 @@ let go, wherever it was dragged to; the second click of a double-click on the Pi
 `NSEvent.doubleClickInterval` of the picker opening is that button's and picks nothing.
 
 The hex is the frozen frame's pixel as stored, in the display's own color space, never converted to
-sRGB: `PixelSampler` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
+sRGB: `PixelColorReader` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
 image's own color space, so a Display P3 display gives Display P3 values (the same numbers the Capture
 file and the Editor hold for that pixel) and any pixel layout reads alike. The loupe (`PickLoupe`)
 shows 15 x 15 device pixels at 16x with the sampled pixel outlined, and its swatch is filled in the
@@ -443,7 +466,7 @@ own, so a premultiplied or dropped alpha shows).
 
 An item's tile is its hit area and its `tooltip` is the pill the scene draws: the standard button control does both, and a custom control needs only to give `id` and `tooltip` to `ActionBarControl.init`. The bar's size follows the controls' `preferredSize`. A control changes layers inside `CATransaction.setDisableActions(true)`.
 `FrozenDisplay.displayID` is the display's `CGDirectDisplayID` for a
-feature that needs to know which display a selection is on (Timed Capture's fresh Capture).
+feature that needs to know which display an Area is on (Timed Capture's fresh Capture).
 
 ## Adding to the Editor
 

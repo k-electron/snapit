@@ -33,7 +33,6 @@ slider_to() { slider_press "$1"; slider_release; }
 overlay_gone() { [[ "$(overlay_panels | grep -c '^600x400 ')" == "0" ]]; }
 countdown_windows() { overlay_panels | grep -c .; }
 no_countdown_windows() { [[ "$(countdown_windows)" == "0" ]]; }
-helper_count() { pgrep -f "$HELPER_EXE" | wc -l | tr -d ' '; }
 no_helper_running() { [[ "$(helper_count)" == "0" ]]; }
 # timed_png <path>: copies the Capture open in the Editor (which closes it) and saves the PNG.
 timed_png() {
@@ -291,7 +290,6 @@ wait_until 10 no_helper_running
 #     helper is warm while the seconds run. A helper that quit meanwhile (the last Editor closed:
 #     the warm state is stale) does not stop the Capture: it opens, in a new helper.
 timed_start 200 100 400 300
-warm_is() { [[ "$(send "$APP_SOCK" "editor-warm-up state")" == "$1" ]]; }
 if wait_until 8 warm_is warm; then pass "the Editor helper is warm during the countdown"; else fail "the helper is not warm during the countdown ('$(send "$APP_SOCK" "editor-warm-up state")')"; fi
 area_result
 expect_equal "the Capture opens in the warm helper" "opened" "${AREA_REPLY%% *}"
@@ -396,7 +394,7 @@ MAIN_APP_SOCK="$APP_SOCK"
 MAIN_APP_PID="$APP_PID"
 TIMED_ROOT="$(mktemp -d /tmp/snapit-run2.XXXXXX)"
 APP_SOCK="$TIMED_ROOT/app.sock"
-(SNAPIT_TEST_ROOT="$TIMED_ROOT" nohup "$APP_EXE" >"$TIMED_ROOT/app.log" 2>&1 &)
+launch_app "$TIMED_ROOT"
 if wait_until 15 answers "$APP_SOCK"; then pass "a second snapit starts for the relaunch check"; else fail "the second snapit did not start"; fi
 APP_PID="$(pgrep -f "$APP_EXE" | grep -v "^$MAIN_APP_PID\$" | head -1)"
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
@@ -414,7 +412,7 @@ expect_equal "the slider moved to 8 s" "Capture in 8 s" "$(timer_title)"
 area_cancel
 send "$APP_SOCK" quit >/dev/null
 if wait_until 60 gone "$APP_PID"; then pass "snapit quits"; else fail "snapit did not quit"; fi
-(SNAPIT_TEST_ROOT="$TIMED_ROOT" nohup "$APP_EXE" >>"$TIMED_ROOT/app.log" 2>&1 &)
+launch_app "$TIMED_ROOT"
 if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else fail "snapit did not start again"; fi
 APP_PID="$(pgrep -f "$APP_EXE" | grep -v "^$MAIN_APP_PID\$" | head -1)"
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null

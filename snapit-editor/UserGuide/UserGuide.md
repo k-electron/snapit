@@ -134,15 +134,15 @@ Until you turn them off, macOS uses those keys first, and snapit flags them whil
 
 Press ⌃⌥⌘4, or choose Capture Area.
 
-- The screen freezes under a full-screen crosshair, with a loupe next to your pointer for precise selection.
-- The window under the pointer is highlighted, and everything outside your selection is dimmed.
+- The screen freezes under a full-screen crosshair, with a loupe next to your pointer to place the Area precisely.
+- The window under the pointer is highlighted, and everything outside the Area is dimmed.
 - Drag to select an Area. It stays on the display where you started dragging.
 - Click a highlighted window to use that window as the Area.
 - **Esc** cancels. Nothing is captured.
 
 What happens when you let go depends on Settings › Capturing › After selecting an Area:
 
-- **Show Action bar** (the default) keeps the selection on screen with eight handles and the [Action bar](#action-bar).
+- **Show Action bar** (the default) keeps the Area on screen with eight handles and the [Action bar](#action-bar).
 - **Capture on release** takes the Capture the moment you let go of the mouse. Clicking a highlighted window captures it straight away.
 
 The Capture is at the display's native pixels and in its color space. The mouse pointer is not in it. The [Editor](#editor) opens right away.
@@ -163,28 +163,28 @@ Press ⌃⌥⌘3, or choose Capture Screen. snapit captures the whole display un
 
 ## The Action bar {#action-bar icon=slider.horizontal.below.rectangle}
 
-With After selecting an Area set to Show Action bar, the Action bar floats beside your selection, below it or wherever it fits. It offers:
+With After selecting an Area set to Show Action bar, the Action bar floats beside the Area, below it or wherever it fits. It offers:
 
 | Button | What it does |
 |---|---|
-| Capture | Takes the Capture of the selection (Enter). |
+| Capture | Takes the Capture of the Area (Enter). |
 | Timer slider | Chooses 1 to 10 seconds for a [Timed Capture](#timed-capture). |
 | Capture in N s | Starts the [Timed Capture](#timed-capture). |
 | Pick Color | Opens the [Color picker](#color-picker) (P). |
-| Cancel | Ends the selection (Esc). |
+| Cancel | Ends the Area Capture (Esc). |
 
 Without the buttons:
 
-- **Enter**, or a double-click inside the selection, captures it.
+- **Enter**, or a double-click inside the Area, captures it.
 - **Esc** cancels.
-- Drag any of the eight **handles** to resize the selection, even past the opposite edge. Drag inside it to move it. Drag outside it to make a new selection.
+- Drag any of the eight **handles** to resize the Area, even past the opposite edge. Drag inside it to move it. Drag outside it to draw a new Area.
 - Rest the pointer on a button for its tooltip.
 
 ## Timed Capture {#timed-capture icon=timer}
 
-A Timed Capture takes a Capture of your selection after a countdown, while the rest of the desktop stays usable. Use it to catch a menu or a tooltip.
+A Timed Capture takes a Capture of your Area after a countdown, while the rest of the desktop stays usable. Use it to catch a menu or a tooltip.
 
-1. Make an Area selection and set the timer slider (1 to 10 s). snapit remembers the value.
+1. Choose an Area and set the timer slider (1 to 10 s). snapit remembers the value.
 2. Click **Capture in N s**. The overlay goes away and you have your desktop back.
 3. A thin border marks the Area and a small badge shows the seconds left with a ✕. Clicks pass through the border to the apps beneath.
 4. At zero snapit takes a fresh Capture of the screen as it is at that moment. Its own border and badge are not in it.
@@ -233,7 +233,7 @@ Pick a tool on the left toolbar, or press its key.
 | Crop | C | Drag a crop rectangle, adjust its handles, then press Enter or **Apply Crop**. Esc cancels. |
 
 - **Redaction** is what you see is what you get: the preview is the same pixelate the Export uses. On Export the pixels beneath it are destroyed for good, so the hidden content can't be recovered from the file.
-- **Crop** fixes a loose selection. It is one Undo step.
+- **Crop** fixes a loose Area. It is one Undo step.
 - While you type a Text, tool keys and ⌫ are typing, and ⌘Z takes the typing back first.
 
 ## Annotation color and width {#annotation-color icon=paintpalette}

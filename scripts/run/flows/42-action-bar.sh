@@ -19,7 +19,7 @@ bar_side() {
     else print "inside"
   }'
 }
-selection_frame() { fact selection | sed 's/^[^ ]* //'; }
+selection_frame() { fact area | sed 's/^[^ ]* //'; }
 # tile_point <item id> <dx> <dy>: a point of the display <dx>,<dy> points in from the tile's top-left
 # corner (a negative number counts from the opposite edge).
 tile_point() {
@@ -61,7 +61,7 @@ expect_equal "before a selection there is no Action bar" "none" "$(fact action-b
 area_drag 0 100 60 300 160
 expect_equal "letting go keeps the overlay up" "1" "$(overlay_panels | grep -c '^600x400 ')"
 expect_equal "the overlay is adjusting the selection" "adjusting" "$(fact state)"
-expect_equal "the selection stays where it was dragged" "0 100,60 200x100" "$(fact selection)"
+expect_equal "the selection stays where it was dragged" "0 100,60 200x100" "$(fact area)"
 expect_equal "the selection has eight handles" "8" "$(fact handles)"
 expect_equal "nothing was captured" "$FILES_BEFORE" "$(capture_files)"
 expect_equal "and the Capture has not finished" "" "$(open_editors 2>/dev/null)"
@@ -184,35 +184,35 @@ mouse drag 0 350 200 >/dev/null
 expect_equal "the loupe shows while a handle is dragged, for the exact pixel" "shown" "$(fact loupe)"
 mouse up 0 350 200 >/dev/null
 expect_equal "the loupe goes when the handle is let go" "hidden" "$(fact loupe)"
-expect_equal "the bottom-right handle resizes" "0 100,60 250x140" "$(fact selection)"
+expect_equal "the bottom-right handle resizes" "0 100,60 250x140" "$(fact area)"
 mouse down 0 225 60 >/dev/null    # the top edge's handle
 mouse drag 0 225 40 >/dev/null
 mouse up 0 225 40 >/dev/null
-expect_equal "the top handle resizes" "0 100,40 250x160" "$(fact selection)"
+expect_equal "the top handle resizes" "0 100,40 250x160" "$(fact area)"
 mouse down 0 100 120 >/dev/null   # the left edge's handle
 mouse drag 0 80 120 >/dev/null
 mouse up 0 80 120 >/dev/null
-expect_equal "the left handle resizes" "0 80,40 270x160" "$(fact selection)"
+expect_equal "the left handle resizes" "0 80,40 270x160" "$(fact area)"
 mouse down 0 350 120 >/dev/null   # the right edge's handle
 mouse drag 0 340 120 >/dev/null
 mouse up 0 340 120 >/dev/null
-expect_equal "the right handle resizes" "0 80,40 260x160" "$(fact selection)"
+expect_equal "the right handle resizes" "0 80,40 260x160" "$(fact area)"
 mouse down 0 210 200 >/dev/null   # the bottom edge's handle
 mouse drag 0 210 190 >/dev/null
 mouse up 0 210 190 >/dev/null
-expect_equal "the bottom handle resizes" "0 80,40 260x150" "$(fact selection)"
+expect_equal "the bottom handle resizes" "0 80,40 260x150" "$(fact area)"
 mouse down 0 80 40 >/dev/null     # top-left
 mouse drag 0 90 50 >/dev/null
 mouse up 0 90 50 >/dev/null
-expect_equal "the top-left handle resizes" "0 90,50 250x140" "$(fact selection)"
+expect_equal "the top-left handle resizes" "0 90,50 250x140" "$(fact area)"
 mouse down 0 340 50 >/dev/null    # top-right
 mouse drag 0 330 60 >/dev/null
 mouse up 0 330 60 >/dev/null
-expect_equal "the top-right handle resizes" "0 90,60 240x130" "$(fact selection)"
+expect_equal "the top-right handle resizes" "0 90,60 240x130" "$(fact area)"
 mouse down 0 90 190 >/dev/null    # bottom-left
 mouse drag 0 100 180 >/dev/null
 mouse up 0 100 180 >/dev/null
-expect_equal "the bottom-left handle resizes" "0 100,60 230x120" "$(fact selection)"
+expect_equal "the bottom-left handle resizes" "0 100,60 230x120" "$(fact area)"
 expect_equal "still eight handles after resizing" "8" "$(fact handles)"
 IN_BOUNDS="$(bar_frame)"
 if in_display "$IN_BOUNDS" 600 400; then pass "the Action bar follows the resized selection and stays on screen"; else fail "the Action bar is off screen after resizing ($IN_BOUNDS)"; fi
@@ -222,60 +222,61 @@ mouse down 0 330 120 >/dev/null   # the right edge's handle
 mouse drag 0 200 120 >/dev/null
 mouse drag 0 40 120 >/dev/null
 mouse up 0 40 120 >/dev/null
-expect_equal "the right handle dragged past the left edge turns the Area over" "0 40,60 60x120" "$(fact selection)"
+expect_equal "the right handle dragged past the left edge turns the Area over" "0 40,60 60x120" "$(fact area)"
 mouse down 0 70 180 >/dev/null    # the bottom edge's handle
 mouse drag 0 70 100 >/dev/null
 mouse drag 0 70 20 >/dev/null
 mouse up 0 70 20 >/dev/null
-expect_equal "the bottom handle dragged past the top edge turns the Area over" "0 40,20 60x40" "$(fact selection)"
+expect_equal "the bottom handle dragged past the top edge turns the Area over" "0 40,20 60x40" "$(fact area)"
 mouse down 0 40 20 >/dev/null     # the top-left corner, dragged past the opposite corner
 mouse drag 0 200 150 >/dev/null
 mouse up 0 200 150 >/dev/null
-expect_equal "a corner dragged past the opposite corner turns the Area over on both axes" "0 100,60 100x90" "$(fact selection)"
+expect_equal "a corner dragged past the opposite corner turns the Area over on both axes" "0 100,60 100x90" "$(fact area)"
 mouse down 0 100 60 >/dev/null
 mouse drag 0 -50 -50 >/dev/null
 mouse up 0 -50 -50 >/dev/null
-expect_equal "a handle stops at the display's edge" "0 0,0 200x150" "$(fact selection)"
+expect_equal "a handle stops at the display's edge" "0 0,0 200x150" "$(fact area)"
 mouse down 0 200 150 >/dev/null
 mouse drag 0 200 150.5 >/dev/null  # under 3 pt: nothing moves
 mouse up 0 200 150.5 >/dev/null
-expect_equal "a handle press under 3 pt changes nothing" "0 0,0 200x150" "$(fact selection)"
+expect_equal "a handle press under 3 pt changes nothing" "0 0,0 200x150" "$(fact area)"
 
 # 6. Moving: a drag inside moves the Area, kept inside the display; a small jitter moves nothing.
 mouse down 0 50 30 >/dev/null
 mouse drag 0 150 130 >/dev/null
 mouse up 0 150 130 >/dev/null
-expect_equal "dragging inside moves the selection" "0 100,100 200x150" "$(fact selection)"
+expect_equal "dragging inside moves the selection" "0 100,100 200x150" "$(fact area)"
 mouse down 0 150 130 >/dev/null
 mouse drag 0 1000 1000 >/dev/null
 mouse up 0 1000 1000 >/dev/null
-expect_equal "the selection stops at the display's edge" "0 400,250 200x150" "$(fact selection)"
+expect_equal "the selection stops at the display's edge" "0 400,250 200x150" "$(fact area)"
 mouse down 0 500 320 >/dev/null
 mouse drag 0 501 321 >/dev/null
 mouse up 0 501 321 >/dev/null
-expect_equal "a 1 pt jitter inside the selection moves nothing" "0 400,250 200x150" "$(fact selection)"
+expect_equal "a 1 pt jitter inside the selection moves nothing" "0 400,250 200x150" "$(fact area)"
 expect_equal "the moved selection keeps its handles" "8" "$(fact handles)"
 if in_display "$(bar_frame)" 600 400; then pass "the Action bar stays on screen with the selection at the display's corner"; else fail "the Action bar is off screen at the display's corner"; fi
 
 # 7. A plain click away from the selection changes nothing; a drag away starts a new selection.
 mouse down 0 100 50 >/dev/null
 mouse up 0 100 50 >/dev/null
-expect_equal "a click away from the selection keeps it" "0 400,250 200x150" "$(fact selection)"
+expect_equal "a click away from the selection keeps it" "0 400,250 200x150" "$(fact area)"
 expect_equal "and it is still adjustable" "adjusting" "$(fact state)"
 expect_equal "with its eight handles" "8" "$(fact handles)"
 mouse down 0 100 50 >/dev/null
 mouse drag 0 101 51 >/dev/null
 mouse up 0 101 51 >/dev/null
-expect_equal "a jitter under 3 pt away from the selection keeps it" "0 400,250 200x150" "$(fact selection)"
+expect_equal "a jitter under 3 pt away from the selection keeps it" "0 400,250 200x150" "$(fact area)"
 mouse down 0 20 300 >/dev/null
 mouse drag 0 50 320 >/dev/null
 mouse drag 0 80 340 >/dev/null
 mouse up 0 80 340 >/dev/null
-expect_equal "a drag away from the selection replaces it" "0 20,300 60x40" "$(fact selection)"
+expect_equal "a drag away from the selection replaces it" "0 20,300 60x40" "$(fact area)"
 expect_equal "and it is adjustable" "adjusting" "$(fact state)"
 expect_equal "with its eight handles on the new selection" "8" "$(fact handles)"
 mouse move 0 10 10 >/dev/null
 # Moving the pointer while adjusting changes nothing on screen: no layer work.
+wait_until 10 scene_updates_quiet
 UPDATES_BEFORE="$(fact scene-updates)"
 for i in $(seq 1 50); do mouse move 0 $((20 + i * 5)) $((20 + i * 3)) >/dev/null; done
 expect_equal "pointer moves while adjusting redraw nothing" "$UPDATES_BEFORE" "$(fact scene-updates)"
@@ -330,7 +331,7 @@ area_drag 0 100 60 300 160
 mouse down 0 200 110 1 >/dev/null
 mouse drag 0 201 111 >/dev/null
 mouse up 0 201 111 >/dev/null
-expect_equal "a click and a little jitter inside the selection leave it where it is" "0 100,60 200x100" "$(fact selection)"
+expect_equal "a click and a little jitter inside the selection leave it where it is" "0 100,60 200x100" "$(fact area)"
 mouse down 0 201 111 2 >/dev/null
 if area_result; then pass "a double-click inside the selection captures: Capture $EDITOR_N"; else fail "the double-click finished with '$AREA_REPLY'"; fi
 if [[ -n "${EDITOR_N:-}" ]]; then
@@ -361,7 +362,7 @@ area_start "press-shortcut capture-area" >/dev/null
 mouse move 0 70 50 >/dev/null
 mouse down 0 70 50 >/dev/null
 mouse up 0 70 50 >/dev/null
-expect_equal "a click on a highlighted window selects it" "0 60,40 100x60" "$(fact selection)"
+expect_equal "a click on a highlighted window selects it" "0 60,40 100x60" "$(fact area)"
 expect_equal "the window selection is adjustable" "adjusting" "$(fact state)"
 expect_equal "and has eight handles" "8" "$(fact handles)"
 expect_equal "nothing was captured by the click" "1" "$(overlay_panels | grep -c '^600x400 ')"
@@ -413,7 +414,7 @@ area_start "press-shortcut capture-area" >/dev/null
 DISPLAY_IDS="$(fact display-ids)"
 expect_equal "each display has an ID of its own" "2" "$(printf '%s\n' "$DISPLAY_IDS" | tr ',' '\n' | sort -u | grep -c .)"
 area_drag 1 20 20 120 90
-expect_equal "the selection is on the second display" "1 20,20 100x70" "$(fact selection)"
+expect_equal "the selection is on the second display" "1 20,20 100x70" "$(fact area)"
 if in_display "$(bar_frame)" 800 300; then pass "the Action bar is on the second display"; else fail "the Action bar is not inside the second display ($(bar_frame))"; fi
 expect_equal "eight handles on the second display" "8" "$(fact handles)"
 send "$APP_SOCK" "overlay-key enter" >/dev/null

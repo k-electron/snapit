@@ -95,10 +95,10 @@ enum UserGuideFacts {
         ]
         lines += document.sections.map { "section \($0.group)|\($0.id)|\($0.title)" }
         if model.previous != nil {
-            lines.append("button \(model.previousButton.id)|\(model.previousButton.title)|\(model.previousButton.tooltip)")
+            lines.append(model.previousButton.factsLine)
         }
         if model.next != nil {
-            lines.append("button \(model.nextButton.id)|\(model.nextButton.title)|\(model.nextButton.tooltip)")
+            lines.append(model.nextButton.factsLine)
         }
         return lines.joined(separator: "\n")
     }

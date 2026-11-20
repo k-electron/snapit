@@ -1,6 +1,6 @@
 import AppKit
 
-/// One of the eight handles of an adjusted selection, and the geometry that goes with them:
+/// One of the eight handles of an adjusted Area, and the geometry that goes with them:
 /// which handle a point grabs, what resizing and moving do to the Area. Points, origin at the
 /// display's top left.
 nonisolated enum AreaHandle: CaseIterable {

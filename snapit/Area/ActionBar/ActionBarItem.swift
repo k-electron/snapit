@@ -4,7 +4,7 @@ import CoreGraphics
 @MainActor
 protocol ActionBarHost: AnyObject {
     /// The Area now selected, in whole device pixels. Nil when there is none.
-    var selectedArea: AreaSelection? { get }
+    var selectedArea: ChosenArea? { get }
     /// Ends the overlay.
     func finish(with outcome: AreaOverlayOutcome)
     /// Opens the Color picker over the Area now selected.

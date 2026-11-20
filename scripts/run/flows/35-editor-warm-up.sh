@@ -12,12 +12,6 @@ WARM_OPEN_MS_MAX="${SNAPIT_WARM_OPEN_MS_MAX:-120}"
 # The footprint ceiling for a warm helper (hidden window, toolbars and canvas built, no Capture).
 WARM_HELPER_MB_MAX="${SNAPIT_WARM_HELPER_MB_MAX:-60}"
 
-warm_state() { send "$APP_SOCK" "editor-warm-up state"; }
-helper_count() { pgrep -f "$HELPER_EXE" | wc -l | tr -d ' '; }
-no_helper() { [[ "$(helper_count)" == "0" ]]; }
-warm_is() { [[ "$(warm_state)" == "$1" ]]; }
-some_helper() { [[ "$(helper_count)" != "0" ]]; }
-one_snapit() { [[ "$(pgrep -f "$APP_EXE" | wc -l | tr -d ' ')" == "1" ]]; }
 
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 send "$APP_SOCK" "fixture-delay 0" >/dev/null
@@ -171,7 +165,7 @@ expect_equal "snapit is still an agent (no Dock icon)" "UIElement" "$(app_type "
 #    shown nothing, goes with it. A second menu bar app under its own root, so this run's stays up.
 SECOND_ROOT="$(mktemp -d /tmp/snapit-run2.XXXXXX)"
 SECOND_SOCK="$SECOND_ROOT/app.sock"
-(SNAPIT_TEST_ROOT="$SECOND_ROOT" nohup "$APP_EXE" >"$SECOND_ROOT/app.log" 2>&1 &)
+launch_app "$SECOND_ROOT"
 if wait_until 10 answers "$SECOND_SOCK"; then
   SECOND_PID="$(pgrep -f "$APP_EXE" | grep -v "^$APP_PID\$" | head -1)"
   send "$SECOND_SOCK" "editor-warm-up begin" >/dev/null

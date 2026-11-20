@@ -6,7 +6,7 @@ import AppKit
 /// The Shortcut and the "Capture Area" menu item both call `start()`, which returns as soon as
 /// the overlay is up. What happens next is the user's: with "After selecting an Area" at Capture on
 /// release, a drag released (or a click on the highlighted window) takes the Capture; with Show
-/// Action bar, the selection stays and the Action bar, Return or a double-click takes it. Esc
+/// Action bar, the Area stays and the Action bar, Return or a double-click takes it. Esc
 /// cancels. The pixels go to the Editor helper through a Capture file (`CaptureHandoff`); this
 /// process keeps nothing afterwards, and every frozen frame is gone when the overlay closes.
 ///
@@ -108,14 +108,14 @@ enum AreaCaptureFlow {
         guard let controller = overlay else { return }
         overlay = nil
         switch outcome {
-        case .capture(let selection):
-            let frozen = controller.displays[selection.displayIndex]
+        case .capture(let area):
+            let frozen = controller.displays[area.displayIndex]
             controller.teardown()
             Task {
-                conclude(await capture(frozen.screen, area: selection.pixels))
+                conclude(await capture(frozen.screen, area: area.pixels))
             }
-        case .timed(let selection, let seconds):
-            beginTimedCapture(from: controller, selection: selection, seconds: seconds)
+        case .timed(let area, let seconds):
+            beginTimedCapture(from: controller, area: area, seconds: seconds)
         case .window(let window):
             controller.teardown()
             Task {

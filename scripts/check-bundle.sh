@@ -24,7 +24,8 @@ plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1/Contents/Info.plist" 2>/dev
 equal() { [[ "$1" == "$2" && -n "$1" ]]; }
 
 check "app executable exists" test -x "$APP/Contents/MacOS/snapit"
-check "helper nested in Contents/Helpers" test -x "$HELPER/Contents/MacOS/snapit Editor"
+check "helper nested in Contents/Helpers" test -x "$HELPER/Contents/MacOS/snapit"
+check "helper runs under the same process name as snapit" equal "$(plist "$HELPER" CFBundleExecutable)" "$(plist "$APP" CFBundleExecutable)"
 check "app is signed strictly" codesign --verify --strict --verbose=2 "$APP"
 check "helper is signed strictly" codesign --verify --strict --verbose=2 "$HELPER"
 check "app signature is ad-hoc" bash -c "codesign -dv '$APP' 2>&1 | grep -q 'Signature=adhoc'"
@@ -46,11 +47,11 @@ check "app package type is APPL" equal "$(plist "$APP" CFBundlePackageType)" "AP
 check "helper package type is APPL" equal "$(plist "$HELPER" CFBundlePackageType)" "APPL"
 check "deployment target is macOS 26.0" equal "$(plist "$APP" LSMinimumSystemVersion)" "26.0"
 check "app is arm64 only" equal "$(lipo -archs "$APP/Contents/MacOS/snapit")" "arm64"
-check "helper is arm64 only" equal "$(lipo -archs "$HELPER/Contents/MacOS/snapit Editor")" "arm64"
+check "helper is arm64 only" equal "$(lipo -archs "$HELPER/Contents/MacOS/snapit")" "arm64"
 check "engine is linked statically into the app" bash -c "! otool -L '$APP/Contents/MacOS/snapit' | grep -qi snapit_engine"
-check "engine is linked statically into the helper" bash -c "! otool -L '$HELPER/Contents/MacOS/snapit Editor' | grep -qi snapit_engine"
+check "engine is linked statically into the helper" bash -c "! otool -L '$HELPER/Contents/MacOS/snapit' | grep -qi snapit_engine"
 check "app contains the engine" bash -c "nm '$APP/Contents/MacOS/snapit' | grep -q snapit_engine_version"
-check "helper contains the engine" bash -c "nm '$HELPER/Contents/MacOS/snapit Editor' | grep -q snapit_engine_version"
+check "helper contains the engine" bash -c "nm '$HELPER/Contents/MacOS/snapit' | grep -q snapit_engine_version"
 
 if ((failures > 0)); then
   echo "$failures bundle check(s) failed"

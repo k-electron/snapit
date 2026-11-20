@@ -15,10 +15,10 @@ extension AreaCaptureFlow {
     private(set) static var lastStartedAt: ContinuousClock.Instant?
 
     /// The overlay ended with a Timed Capture: the frozen frames go and the countdown starts.
-    static func beginTimedCapture(from controller: AreaOverlayController, selection: AreaSelection, seconds: Int) {
-        let frozen = controller.displays[selection.displayIndex]
+    static func beginTimedCapture(from controller: AreaOverlayController, area: ChosenArea, seconds: Int) {
+        let frozen = controller.displays[area.displayIndex]
         let target = TimedCountdown.Target(
-            displayID: frozen.displayID, frame: frozen.frame, scale: frozen.scale, pixels: selection.pixels)
+            displayID: frozen.displayID, frame: frozen.frame, scale: frozen.scale, pixels: area.pixels)
         controller.teardown()
         // The desktop is the user's again, and what they switch to during the countdown is theirs.
         if let previous = previousApp {

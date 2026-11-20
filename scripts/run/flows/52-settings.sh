@@ -305,9 +305,7 @@ send_slow "$EDITOR_SOCK" settings-close >/dev/null
 wait_until 10 no_helper_process
 send "$APP_SOCK" quit >/dev/null
 wait_until 30 gone "$APP_PID"
-(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again"; else fail "snapit did not start again"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+relaunch_app
 expect_equal "the recorded Area Shortcut is still ⌃⌥⌘6 after the relaunch" "22 control,option,command" "$(send "$APP_SOCK" "shortcut-combo capture-area")"
 expect_equal "the Area menu item still shows ⌃⌥⌘6" "6 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.area")"
 send "$APP_SOCK" "shortcut-set capture-area 21 control option command" >/dev/null
