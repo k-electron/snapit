@@ -42,6 +42,7 @@ extension EditorSession {
     func annotationsDidChange() {
         guard let document else { return }
         if let id = selectedAnnotationID, document.history.annotation(id: id) == nil { selectedAnnotationID = nil }
+        syncCropView()
         canvas?.showAnnotations(document.annotations, selected: selectedAnnotation)
         refreshToolbarState()
     }
@@ -56,10 +57,12 @@ extension EditorSession {
         var state = AnnotationToolbarState()
         let idle = annotationGesture == nil
         state.revision = idle ? (document?.revision ?? 0) : toolbarState.revision
-        state.canUndo = idle && document?.canUndo == true
-        state.canRedo = idle && document?.canRedo == true
+        // Undo, Redo and Delete wait while a crop is being drawn: Apply or Cancel it first.
+        let editable = idle && !isCropping
+        state.canUndo = editable && document?.canUndo == true
+        state.canRedo = editable && document?.canRedo == true
         if let selected = selectedAnnotation {
-            state.canDelete = idle
+            state.canDelete = editable
             state.selectionSupportsFill = AnnotationKinds.kind(selected.kind)?.supportsFill ?? false
             state.selectionFilled = selected.style.filled
         }
