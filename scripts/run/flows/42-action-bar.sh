@@ -465,7 +465,8 @@ else
   fail "memory is ${BAR_AFTER} MB after the Action bar Captures, ${BAR_FIRST_BEFORE} MB before the first bar (limit +${BAR_FIRST_USE_MB_MAX} MB)"
 fi
 echo "     Action bar peak ${BAR_PEAK} MB with a 16 MB frozen frame on screen (${BAR_BASELINE} MB at rest)"
-if awk -v peak="$BAR_PEAK" -v base="$BAR_BASELINE" 'BEGIN { exit !(peak - base <= 16 + 10) }'; then
+frame_peak_limit "the overlay with the Action bar"
+if awk -v peak="$BAR_PEAK" -v base="$BAR_BASELINE" -v max="$PEAK_LIMIT" 'BEGIN { exit !(peak - base <= max) }'; then
   pass "the overlay with the Action bar holds the frozen frame once: peak ${BAR_PEAK} MB over a ${BAR_BASELINE} MB base"
 else
   fail "the overlay with the Action bar peaks at ${BAR_PEAK} MB over a ${BAR_BASELINE} MB base: more than one copy of a 16 MB frame"
