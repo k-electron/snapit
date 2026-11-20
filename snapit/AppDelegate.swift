@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ExportFiles.removeAll()
             // Only the copy that owns the menu bar listens for Shortcuts.
             ShortcutBindings.registerAll()
+            SaveFailureNotice.register()
             SocketOwnership.adopt(server)
             // Where this copy runs from: a mounted disk image or a translocated path needs a move.
             Task {
@@ -65,11 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let wait = SaveService.shared.waitForSavesBeforeQuit {
             Self.onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
         }
+        // The quit is decided (agreed to, or it needed no asking): a Save that fails while the last ones finish
+        // opens no window. A quit the user cancels never gets here.
+        SaveFailureNotice.isQuitting = true
         return wait ? .terminateLater : .terminateNow
     }
 
     /// The quit is agreed: it goes on once the Saves already made have landed.
     private static func finishQuitting() {
+        // The quit has been agreed to: a Save that fails while the last ones finish opens no window.
+        SaveFailureNotice.isQuitting = true
         let wait = SaveService.shared.waitForSavesBeforeQuit {
             onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
         }

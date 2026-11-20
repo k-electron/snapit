@@ -197,8 +197,17 @@ fn the_legacy_entry_point_and_a_file_stream_make_the_same_rgba_png() {
     let file = std::fs::File::create(&path).unwrap();
     use std::os::fd::AsRawFd;
     let p = params(SNAPIT_PNG_FAST, (40, 30));
-    let status =
-        unsafe { snapit_png_encode_to_fd(pixels.as_ptr(), 40, 30, 160, &p, file.as_raw_fd()) };
+    let status = unsafe {
+        snapit_png_encode_to_fd(
+            pixels.as_ptr(),
+            40,
+            30,
+            160,
+            &p,
+            file.as_raw_fd(),
+            std::ptr::null_mut(),
+        )
+    };
     assert_eq!(status, SNAPIT_STATUS_OK);
     let streamed = std::fs::read(&path).unwrap();
     std::fs::remove_file(&path).unwrap();

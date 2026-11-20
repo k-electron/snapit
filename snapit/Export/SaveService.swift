@@ -24,8 +24,9 @@ import Foundation
 /// (`waitForSavesBeforeQuit`).
 ///
 /// A failure after the hand-over (disk full, the rename failed) cannot reach the Editor, which may
-/// be gone. It goes to the observers registered with `observeWriteFailures`, on the main queue; with
-/// none registered the menu bar app beeps.
+/// be gone. It goes to the observers registered with `observeWriteFailures`, on the main queue
+/// (`SaveFailureNotice` asks the Editor helper for a window); with none registered the menu bar app
+/// beeps.
 nonisolated final class SaveService: @unchecked Sendable {
     static let shared = SaveService()
 
@@ -34,7 +35,8 @@ nonisolated final class SaveService: @unchecked Sendable {
     private var pending = 0
     private var idleWaiters: [@Sendable () -> Void] = []
     private var inFlightPartials: Set<String> = []
-    private var writeFailureObservers: [@Sendable (String) -> Void] = []
+    private var writeFailureObservers: [@Sendable (SaveWriteFailure) -> Void] = []
+    private var checkFailureForTest: Int32?
     private var heldForTest = false
     private var testDelay: TimeInterval = 0
     private let testGate = DispatchSemaphore(value: 0)
@@ -53,9 +55,9 @@ nonisolated final class SaveService: @unchecked Sendable {
         }
     }
 
-    /// Calls `observer`, on the main queue, with a message when a Save fails after it was handed
-    /// over (the Editor can no longer be told).
-    func observeWriteFailures(_ observer: @escaping @Sendable (String) -> Void) {
+    /// Calls `observer`, on the main queue, when a Save fails after it was handed over (the Editor
+    /// can no longer be told).
+    func observeWriteFailures(_ observer: @escaping @Sendable (SaveWriteFailure) -> Void) {
         lock.withLock { writeFailureObservers.append(observer) }
     }
 
@@ -85,7 +87,15 @@ nonisolated final class SaveService: @unchecked Sendable {
 
         let partialName = ".snapit-\(UUID().uuidString).partial"
         let partial = folder.appendingPathComponent(partialName)
-        let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        let descriptor: Int32
+        if let injected = lock.withLock({ checkFailureForTest }) {
+            // Test mode: the failure macOS's privacy check gives (EPERM) or a read-only volume's (EROFS),
+            // which a run can't make for real.
+            errno = injected
+            descriptor = -1
+        } else {
+            descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        }
         guard descriptor >= 0 else { return .folderNotWritable(folder: folder.path, code: errno) }
         lock.withLock { _ = inFlightPartials.insert(partialName) }
         removeAbandonedPartials(in: folder)
@@ -124,11 +134,11 @@ nonisolated final class SaveService: @unchecked Sendable {
             dpi: PNGOutputPlan.nativeDPI(scale: info.scale), standardResolution: downscale)
         do {
             try capture.pixels.writePNG(level: .balanced, plan: plan, toDescriptor: descriptor)
-            guard close(descriptor) == 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
+            guard close(descriptor) == 0 else { throw EngineError.system(errno: errno) }
         } catch {
             close(descriptor)
             unlink(partial.path)
-            reportWriteFailure("\(error)")
+            reportWriteFailure(error, folder: folder)
             return
         }
         do {
@@ -136,18 +146,19 @@ nonisolated final class SaveService: @unchecked Sendable {
             NSLog("snapit: Saved \(name)")
         } catch {
             unlink(partial.path)
-            reportWriteFailure("\(error)")
+            reportWriteFailure(error, folder: folder)
         }
     }
 
-    private func reportWriteFailure(_ message: String) {
-        NSLog("snapit: Save failed: \(message)")
+    private func reportWriteFailure(_ error: Error, folder: URL) {
+        let failure = SaveWriteFailure(folder: folder.path, code: (error as? EngineError)?.errno, message: "\(error)")
+        NSLog("snapit: Save failed: \(failure.message)")
         let observers = lock.withLock { writeFailureObservers }
         DispatchQueue.main.async {
             if observers.isEmpty {
                 if !TestMode.isActive { NSSound.beep() }
             } else {
-                for observer in observers { observer(message) }
+                for observer in observers { observer(failure) }
             }
         }
     }
@@ -167,12 +178,12 @@ nonisolated final class SaveService: @unchecked Sendable {
                 var status = stat()
                 if lstat(target.path, &status) == 0 { continue }
                 if rename(partial.path, target.path) == 0 { return name }
-                throw EngineError(status: .ioFailed, rawValue: errno)
+                throw EngineError.system(errno: errno)
             default:
-                throw EngineError(status: .ioFailed, rawValue: errno)
+                throw EngineError.system(errno: errno)
             }
         }
-        throw EngineError(status: .ioFailed, rawValue: EEXIST)
+        throw EngineError.system(errno: EEXIST)
     }
 
     private func finishOne() {
@@ -210,6 +221,19 @@ nonisolated final class SaveService: @unchecked Sendable {
         lock.withLock { testDelay = seconds }
     }
 
+    /// Makes the writability check fail with `code` (an `errno`; nil to stop), as macOS's privacy
+    /// check does for a folder the user denied (test mode only: a run never meets a real prompt).
+    func failChecksForTest(code: Int32?) {
+        lock.withLock { checkFailureForTest = code }
+    }
+
+    /// Makes every write fail with `code` once it starts (an `errno`; nil to stop): a disk that
+    /// filled up after the hand-over. The failure is made where the engine's answer is read
+    /// (`PNGWriteFault`), so it goes through the real mapping to the message. Test mode only.
+    func failWritesForTest(code: Int32?) {
+        PNGWriteFault.injectedOSError = code
+    }
+
     private func awaitTestGate() {
         guard TestMode.isActive else { return }
         let delay = lock.withLock { testDelay }
@@ -217,4 +241,13 @@ nonisolated final class SaveService: @unchecked Sendable {
         guard lock.withLock({ heldForTest }) else { return }
         testGate.wait()
     }
+}
+
+/// A Save that failed after it was handed over: where it was going, the `errno` of the system call
+/// that failed (nil when the failure is not one: an engine status is not an `errno`), and the error's
+/// own words for the log.
+nonisolated struct SaveWriteFailure: Sendable, Equatable {
+    let folder: String
+    let code: Int32?
+    let message: String
 }
