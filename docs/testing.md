@@ -73,9 +73,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `shown-ms` (Shortcut to overlay on screen) |
-| `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points |
-| `overlay-press <item id>` | runs an Action bar item's action, as its button does (the item's tile is checked through its frame in `overlay-actionbar`) |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
 | `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 | `save-hold`, `save-release` | hold every Save's write (the encode into the Save location) until released, so the run can quit the helper while a Save is still being written |
@@ -217,29 +216,39 @@ coordinates). The fixture frames are
 IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
 
-The Action bar is real views, which a layer-hosting view cannot hold: each panel's content view is an
-`AreaOverlayContainerView` with the layer-hosting `AreaOverlayView` (the scene) filling it and, once
-a selection is being adjusted, an `ActionBarHostingView` (SwiftUI, macOS 26 glass) sized exactly to
-the bar beside it. The container draws nothing (`wantsUpdateLayer`), so no full-screen backing store
-exists. The first Action bar keeps the footprint about 4 MB higher from then on (16 MB at rest, 20 MB
-after the first bar, flat over repeated Captures). That is what a live view with a blurred
-backdrop costs, not SwiftUI: an `NSGlassEffectView` with two `NSButton`s leaves the same 4 MB and
-a plain material 3 MB. Flow 42 therefore ends by taking the process's new resting footprint as
-`AT_REST` for the flows after it.
+The Action bar is drawn in layers, like the rest of the overlay. AppKit controls and SwiftUI cost
+memory that never comes back (a bar of `NSButton`s +2.4 MB, of SwiftUI buttons +2.7 MB, of
+SwiftUI on glass +4.2 MB, a bare `NSGlassEffectView` +1.7 MB; each once per process), a layer
+bar about 1 MB. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
+`AreaOverlayView` (the scene) fills it and, once a selection is being adjusted, the bar sits above it as
+two small views, `ActionBarBackdropView` (an `NSVisualEffectView`, `.hudWindow`, the blur) and
+`ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
+container (it hands everything to the scene view): every click reaches `AreaOverlayView`, whose
+controller finds the tile under the pointer from `ActionBar.control(at:)` and calls its pointer hooks.
+A tile is a full-size hit area. Tooltips are `CATextLayer` pills in the scene, shown after the pointer
+rests 0.5 s on a tile (a one-shot `DispatchWorkItem`, cancelled when the pointer leaves): AppKit
+tooltips sit below the overlay's window level. Making `ActionBarBackdropView` an `NSGlassEffectView`
+is a one-line swap that costs about 2 MB more, once. The container draws nothing (`wantsUpdateLayer`), so
+no full-screen backing store exists.
+
+The scripted run holds the bar to its budget: flow 42 takes the footprint before the first bar of the
+run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
+at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured 0.96 MB). Five Captures through the bar leave it where it
+was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
 
 ## Adding to the Area overlay
 
 | To add | Add a file in `snapit/Area/` | And |
 |---|---|---|
-| a button or control on the Action bar | `ActionBar/<Name>ActionBarItem.swift` (`ActionBarItem`: `id`, `order`, `title`, `symbol`, `look`, `tooltip`, optionally `keyEquivalent`, `perform(on:)`, and `makeView(host:)` for a control that is not a plain button, such as a slider) | one line in `ActionBar/ActionBarRegistry.swift` |
+| a button on the Action bar | `ActionBar/<Name>ActionBarItem.swift` (`ActionBarItem`: `id`, `order`, `title`, optionally `glyph` (a `CGPath` in a 14 x 14 box, origin at the bottom left), `look`, `tooltip`, optionally `keyEquivalent`, and `perform(on:)`) | one line in `ActionBar/ActionBarRegistry.swift` |
+| a control that is not a button (Timed Capture's slider) | the same item file, with `makeControl(context:)` returning an `ActionBarControl` subclass (`ActionBar/ActionBarControl.swift`): set `preferredSize`, add layers to `layer` in `didLayout()`, override `pointerDown`/`pointerDragged`/`pointerUp` (points in the tile's own space, top-left origin; the controller keeps calling `pointerDragged` while the button is down, wherever the pointer is) and `stateChanged()` for hover and press. `prototype/area-overlay`'s `Geo.dBar`, `sliderValue` and `sliderX` are the slider's geometry | one line in the registry |
 | a key that runs an Action bar item (the Color picker's P) | nothing: the item's `keyEquivalent` | the key monitor in `AreaOverlayController.handle` asks the registry |
 | a new way out of the overlay (Timed Capture) | a case in `Overlay/AreaOverlayOutcome.swift`, produced by the item through `host.finish(with:)`, and its handling in `AreaCaptureFlow+<Name>.swift` | one arm in `AreaCaptureFlow.finish` |
 | an overlay mode (the Color picker's pointer mode) | a case in `AreaOverlayController.State` and the handling of its pointer and key events | `AreaSceneState` for what it draws |
 | a test command about the Action bar | `ActionBar/ActionBarCommands.swift` (`registerActionBarTestCommands()`) | nothing |
 
-An item's tile is its hit area, and its tooltip is `.help(tooltip)`: the standard `makeView` does both.
-`ActionBarView` puts `onGeometryChange` around every item, so `overlay-actionbar` reports each item's
-frame whatever its view is. `FrozenDisplay.displayID` is the display's `CGDirectDisplayID` for a
+An item's tile is its hit area and its `tooltip` is the pill the scene draws: the standard button control does both, and a custom control needs only to give `id` and `tooltip` to `ActionBarControl.init`. The bar's size follows the controls' `preferredSize`. A control changes layers inside `CATransaction.setDisableActions(true)`.
+`FrozenDisplay.displayID` is the display's `CGDirectDisplayID` for a
 feature that needs to know which display a selection is on (Timed Capture's fresh Capture).
 
 ## Adding to the Editor
