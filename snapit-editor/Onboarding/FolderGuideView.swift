@@ -46,10 +46,10 @@ struct FolderGuideView: View {
     }
 
     @ViewBuilder private var picture: some View {
-        if model.cause == .privacy {
+        if let category = model.category, model.showsSettingsSwitch {
             FolderGuideDrawing(
                 progress: model.animation.progress, isPlaying: model.animation.state == .playing,
-                folderName: URL(fileURLWithPath: model.folder).lastPathComponent
+                rowName: category.title
             )
             .id(model.animation.epoch)
             .padding(12)
@@ -66,13 +66,14 @@ struct FolderGuideView: View {
 }
 
 /// The picture for a folder macOS refused: System Settings' Files & Folders list, snapit's row with the
-/// folder's switch off, and the cursor turning it on. Like `GuideDrawing` it is a pure function of
+/// category's switch off, and the cursor turning it on. Like `GuideDrawing` it is a pure function of
 /// `progress` (a loop counter whose fraction is the position in the loop), so nothing runs when it is
 /// not changing, and a play is one finite animation.
 struct FolderGuideDrawing: View, Animatable {
     var progress: Double
     var isPlaying: Bool
-    var folderName: String
+    /// The switch's label in System Settings (`FolderCategory.title`).
+    var rowName: String
 
     var animatableData: Double {
         get { progress }
@@ -166,7 +167,7 @@ struct FolderGuideDrawing: View, Animatable {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.accentColor)
                 .position(x: 162, y: y)
-            Text(folderName)
+            Text(rowName)
                 .font(.system(size: 10.5, weight: .medium))
                 .lineLimit(1)
                 .frame(width: 110, alignment: .leading)

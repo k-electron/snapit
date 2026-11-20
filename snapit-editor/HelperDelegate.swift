@@ -36,6 +36,7 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        QuitPreparation.steps.append { HelperLifecycle.isQuitRequested = true }
         let registry = SocketCommandRegistry()
         registry.registerBuiltinCommands()
         registry.registerHelperCommands()
@@ -52,12 +53,14 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // The last window closed a moment ago and the menu bar app has since asked for a window (a Save that
-        // failed after its hand-over, a guide): that window is the reason to stay. A quit that was asked for
-        // (the `quit` command, "Quit snapit") is not preceded by a last window closing, so it still ends.
+        // The last window closed a moment ago and a window of ours has shown since (the menu bar app asked
+        // for a guide, for a Save that failed after its hand-over): that window is the reason to stay. A quit
+        // that was asked for (the `quit` command, "Quit snapit") always ends, and so does one with no new window.
         let closedLastWindow = lastWindowJustClosed
         lastWindowJustClosed = false
-        if closedLastWindow, NSApp.windows.contains(where: { $0.isVisible }) { return .terminateCancel }
+        if closedLastWindow, HelperLifecycle.windowShownSinceLastClose, !HelperLifecycle.isQuitRequested {
+            return .terminateCancel
+        }
         // Stop answering first: a menu bar app that sends a Capture from here on starts a
         // new helper instead of handing it to this dying one.
         stopServing()
@@ -79,6 +82,7 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     /// started with `start-editor`, or warming up) it stays.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         lastWindowJustClosed = HelperLifecycle.hasShownWindow
+        HelperLifecycle.windowShownSinceLastClose = false
         return lastWindowJustClosed
     }
 }

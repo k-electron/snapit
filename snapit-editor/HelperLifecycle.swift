@@ -11,6 +11,12 @@ enum HelperLifecycle {
     /// True once any window has shown. Until then the helper (warm, or started on its own)
     /// must not quit just because it has no window.
     private(set) static var hasShownWindow = false
+    /// True when one of the helper's windows has shown since its last window closed: a helper that is
+    /// quitting because it has no windows stays for it (`HelperDelegate.applicationShouldTerminate`).
+    static var windowShownSinceLastClose = false
+    /// True once the helper was told to quit (the `quit` command, "Quit snapit"): nothing keeps it.
+    static var isQuitRequested = false
+
     static func windowWillShow() {
         // Become a regular app before the window shows, so it appears once, already owned by
         // a regular app.
@@ -21,6 +27,7 @@ enum HelperLifecycle {
 
     static func windowDidShow() {
         hasShownWindow = true
+        windowShownSinceLastClose = true
         // Re-assign the main menu so the menu bar refreshes after the policy switch.
         NSApp.mainMenu = NSApp.mainMenu
         activate()

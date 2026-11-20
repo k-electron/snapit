@@ -248,7 +248,7 @@ fn other_invalid_arguments_are_refused_with_a_status() {
             "stride below a row"
         );
         assert_eq!(
-            snapit_png_encode_to_fd(px, 8, 8, 64, &p, -1),
+            snapit_png_encode_to_fd(px, 8, 8, 64, &p, -1, ptr::null_mut()),
             bad,
             "no descriptor"
         );
@@ -296,6 +296,7 @@ fn a_streamed_file_holds_the_same_png_as_the_bytes() {
                 image.stride,
                 &p,
                 file.as_raw_fd(),
+                ptr::null_mut(),
             )
         };
         assert_eq!(status, SNAPIT_STATUS_OK);
@@ -308,15 +309,49 @@ fn a_streamed_file_holds_the_same_png_as_the_bytes() {
 }
 
 #[test]
-fn a_write_that_fails_comes_back_as_an_io_status() {
+fn a_write_that_fails_comes_back_as_an_io_status_with_its_os_error() {
     let image = fixture(64, 48, 256);
     let p = params(SNAPIT_PNG_FAST, 72, (64, 48), &[]);
-    // A file opened for reading refuses every write.
+    // A file opened for reading refuses every write, with EBADF: the engine passes that errno on,
+    // because the status alone (6) is not an errno and the caller can not read it from `errno`.
     let file = File::open("/dev/null").unwrap();
+    let mut os_error = -1;
     let status = unsafe {
-        snapit_png_encode_to_fd(image.pixels.as_ptr(), 64, 48, 256, &p, file.as_raw_fd())
+        snapit_png_encode_to_fd(
+            image.pixels.as_ptr(),
+            64,
+            48,
+            256,
+            &p,
+            file.as_raw_fd(),
+            &mut os_error,
+        )
     };
     assert_eq!(status, SNAPIT_STATUS_IO_FAILED);
+    assert_eq!(os_error, libc::EBADF);
+}
+
+#[test]
+fn a_write_that_works_clears_the_os_error() {
+    let image = fixture(64, 48, 256);
+    let p = params(SNAPIT_PNG_FAST, 72, (64, 48), &[]);
+    let path = std::env::temp_dir().join(format!("snapit-os-error-{}.png", std::process::id()));
+    let file = File::create(&path).unwrap();
+    let mut os_error = 99;
+    let status = unsafe {
+        snapit_png_encode_to_fd(
+            image.pixels.as_ptr(),
+            64,
+            48,
+            256,
+            &p,
+            file.as_raw_fd(),
+            &mut os_error,
+        )
+    };
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(status, SNAPIT_STATUS_OK);
+    assert_eq!(os_error, 0);
 }
 
 #[test]

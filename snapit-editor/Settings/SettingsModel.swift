@@ -39,6 +39,20 @@ final class SettingsModel {
     @ObservationIgnored private(set) var applying: Task<Void, Never>?
 
     @ObservationIgnored private let recorder = ShortcutRecorder()
+    @ObservationIgnored private nonisolated(unsafe) var saveLocationObserver: (any NSObjectProtocol)?
+
+    init() {
+        // The folder Permission guide can change the Save location while a Settings window shows the old one.
+        saveLocationObserver = NotificationCenter.default.addObserver(
+            forName: .saveLocationDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveLocation = SaveLocation.folder }
+        }
+    }
+
+    deinit {
+        if let saveLocationObserver { NotificationCenter.default.removeObserver(saveLocationObserver) }
+    }
 
     var shortcutsLoaded: Bool { !combos.isEmpty }
 

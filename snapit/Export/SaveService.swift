@@ -37,7 +37,6 @@ nonisolated final class SaveService: @unchecked Sendable {
     private var inFlightPartials: Set<String> = []
     private var writeFailureObservers: [@Sendable (SaveWriteFailure) -> Void] = []
     private var checkFailureForTest: Int32?
-    private var writeFailureForTest: Int32?
     private var heldForTest = false
     private var testDelay: TimeInterval = 0
     private let testGate = DispatchSemaphore(value: 0)
@@ -130,14 +129,12 @@ nonisolated final class SaveService: @unchecked Sendable {
     private func write(_ capture: OpenedCapture, downscale: Bool, descriptor: Int32, partial: URL, folder: URL) {
         awaitTestGate()
         let info = capture.info
-        let injectedFailure = lock.withLock { writeFailureForTest }
         let plan = PNGOutputPlan(
             pixelWidth: info.width, pixelHeight: info.height, scale: info.scale,
             dpi: PNGOutputPlan.nativeDPI(scale: info.scale), standardResolution: downscale)
         do {
-            if let injectedFailure { throw EngineError(status: .ioFailed, rawValue: injectedFailure) }
             try capture.pixels.writePNG(level: .balanced, plan: plan, toDescriptor: descriptor)
-            guard close(descriptor) == 0 else { throw EngineError(status: .ioFailed, rawValue: errno) }
+            guard close(descriptor) == 0 else { throw EngineError.system(errno: errno) }
         } catch {
             close(descriptor)
             unlink(partial.path)
@@ -154,7 +151,7 @@ nonisolated final class SaveService: @unchecked Sendable {
     }
 
     private func reportWriteFailure(_ error: Error, folder: URL) {
-        let failure = SaveWriteFailure(folder: folder.path, code: (error as? EngineError)?.rawValue, message: "\(error)")
+        let failure = SaveWriteFailure(folder: folder.path, code: (error as? EngineError)?.errno, message: "\(error)")
         NSLog("snapit: Save failed: \(failure.message)")
         let observers = lock.withLock { writeFailureObservers }
         DispatchQueue.main.async {
@@ -181,12 +178,12 @@ nonisolated final class SaveService: @unchecked Sendable {
                 var status = stat()
                 if lstat(target.path, &status) == 0 { continue }
                 if rename(partial.path, target.path) == 0 { return name }
-                throw EngineError(status: .ioFailed, rawValue: errno)
+                throw EngineError.system(errno: errno)
             default:
-                throw EngineError(status: .ioFailed, rawValue: errno)
+                throw EngineError.system(errno: errno)
             }
         }
-        throw EngineError(status: .ioFailed, rawValue: EEXIST)
+        throw EngineError.system(errno: EEXIST)
     }
 
     private func finishOne() {
@@ -231,9 +228,10 @@ nonisolated final class SaveService: @unchecked Sendable {
     }
 
     /// Makes every write fail with `code` once it starts (an `errno`; nil to stop): a disk that
-    /// filled up after the hand-over. Test mode only.
+    /// filled up after the hand-over. The failure is made where the engine's answer is read
+    /// (`PNGWriteFault`), so it goes through the real mapping to the message. Test mode only.
     func failWritesForTest(code: Int32?) {
-        lock.withLock { writeFailureForTest = code }
+        PNGWriteFault.injectedOSError = code
     }
 
     private func awaitTestGate() {
@@ -245,8 +243,9 @@ nonisolated final class SaveService: @unchecked Sendable {
     }
 }
 
-/// A Save that failed after it was handed over: where it was going, the `errno` when the failure
-/// has one, and the error's own words for the log.
+/// A Save that failed after it was handed over: where it was going, the `errno` of the system call
+/// that failed (nil when the failure is not one: an engine status is not an `errno`), and the error's
+/// own words for the log.
 nonisolated struct SaveWriteFailure: Sendable, Equatable {
     let folder: String
     let code: Int32?
