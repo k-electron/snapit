@@ -48,6 +48,9 @@ enum AreaCaptureFlow {
             conclude(.permissionNeeded)
             return .permissionNeeded
         }
+        // The Capture has started: the Editor helper warms up while the displays are frozen and
+        // the user chooses an Area.
+        EditorWarmUp.begin()
         do {
             // The window list is read now, before anything else can change it.
             let windows = OnScreenWindowSources.current.windowsFrontToBack()
@@ -96,6 +99,7 @@ enum AreaCaptureFlow {
     /// Crops the frozen frame in the engine into a Capture file and opens the Editor on it.
     private static func capture(_ frozen: FrozenDisplay, area: PixelRect) async -> Result {
         do {
+            let clock = CaptureTiming.Clock()
             let number = try await CaptureHandoff.publish(frozen.screen, cropping: area)
             do {
                 try await EditorHelperLauncher.open(capture: number)
@@ -103,6 +107,7 @@ enum AreaCaptureFlow {
                 CaptureHandoff.discard(number: number)
                 throw error
             }
+            clock.stop()
             CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {
@@ -117,7 +122,11 @@ enum AreaCaptureFlow {
         result = outcome
         let previous = previousApp
         previousApp = nil
-        if case .opened = outcome {} else { previous?.activate() }
+        if case .opened = outcome {} else {
+            // No Capture: the helper that was warming up for it goes, and the user's app comes back.
+            EditorWarmUp.cancel()
+            previous?.activate()
+        }
         CaptureGate.leave()
         let pending = waiters
         waiters.removeAll()
