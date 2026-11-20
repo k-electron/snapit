@@ -45,6 +45,10 @@ final class CanvasView: NSView {
     private var capture: PixelBuffer?
     private var captureScale = 1.0
     weak var session: EditorSession?
+    /// The text being typed, if any (`CanvasView+Text.swift`).
+    var textEditing: TextEditingController?
+    /// The view beside the canvas that holds the text view of a text being typed.
+    weak var textHost: NSView?
 
     /// Space kept free around the Capture.
     var padding: CGFloat = 6
@@ -101,7 +105,10 @@ final class CanvasView: NSView {
     }
 
     override var isOpaque: Bool { false }
-    override var acceptsFirstResponder: Bool { true }
+    /// Not while a text is typed: AppKit would move the keyboard to the canvas on the very press
+    /// that should only commit the text, and the text view's loss of it would commit first, so the
+    /// same press would start another text box. `mouseDown` takes the keyboard back itself.
+    override var acceptsFirstResponder: Bool { textEditing == nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -168,12 +175,14 @@ final class CanvasView: NSView {
         cropOverlay.show(cropDraft, imageSize: pointSize, zoom: zoom)
         CATransaction.commit()
         annotationLayers.contextChanged(renderContext)
+        textEditing?.reposition()
     }
 
     /// What a kind's preview layer is given.
     var renderContext: AnnotationRenderContext {
         AnnotationRenderContext(
-            capture: capture, scale: captureScale, zoom: zoom, cropPixels: cropPixels,
+            capture: capture, scale: captureScale, zoom: zoom,
+            backingScale: window?.backingScaleFactor ?? 2, cropPixels: cropPixels,
             isLive: session?.annotationGesture != nil)
     }
 
@@ -199,11 +208,22 @@ final class CanvasView: NSView {
         return CGPoint(x: (point.x - originX) / zoom + view.minX, y: (originY - point.y) / zoom + view.minY)
     }
 
+    /// A point of the Capture (origin at its top left), as a point in the view.
+    func viewPoint(fromImagePoint point: CGPoint) -> CGPoint {
+        let zoom = zoom
+        let view = viewRect
+        let originX = bounds.midX - view.width * zoom / 2
+        let originY = bounds.midY + view.height * zoom / 2
+        return CGPoint(x: originX + (point.x - view.minX) * zoom, y: originY - (point.y - view.minY) * zoom)
+    }
+
     /// Lets go of the Capture's pixels. The mapping is unmapped once nothing else holds them.
     func tearDown() {
         imageLayer.contents = nil
         annotationLayers.tearDown()
         capture = nil
+        textEditing?.tearDown()
+        textEditing = nil
         effectLayer.sublayers = nil
         annotationLayer.sublayers = nil
         cropOverlay.tearDown()
@@ -239,8 +259,14 @@ final class CanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard let session else { return }
+        let point = gesturePoint(event, isPress: true)
+        // A click while a text is typed only commits it, and a double click on a Text edits it: both
+        // before the canvas takes the keyboard (that would end the typing on its own).
+        let imagePoint = point ?? imagePoint(fromViewPoint: convert(event.locationInWindow, from: nil))
+        if session.consumesPointerDown(at: imagePoint, clickCount: event.clickCount) { return }
         window?.makeFirstResponder(self)
-        guard let session, let point = gesturePoint(event, isPress: true) else { return }
+        guard let point else { return }
         session.currentTool.pointerDown(at: point, in: session)
     }
 

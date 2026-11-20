@@ -9,6 +9,7 @@ extension EditorSession {
     /// open and `SaveFailureSignal` tells whoever shows the folder Permission guide.
     func startSave() {
         guard !isExporting, document != nil else { return }
+        commitTextEditing()
         isExporting = true
         copyTask = Task { await save() }
     }

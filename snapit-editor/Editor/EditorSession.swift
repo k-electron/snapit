@@ -20,6 +20,14 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The style a new Annotation starts with: the color, width and fill used last, which
     /// `AnnotationSettings` remembers across launches.
     var annotationStyle = AnnotationSettings.style
+    /// The thickness a new Highlighter gets (it is remembered apart from the line width).
+    var highlighterWidth = AnnotationSettings.highlighterWidth
+    /// True while the eyedropper waits for a click inside the Capture (see `EditorSession+Color`).
+    var isEyedropperActive = false
+    /// Goes up whenever the typed text, or whether one is being typed, changes: the typing's Undo
+    /// state lives in the text view's `UndoManager`, which nothing can observe, so the toolbar reads
+    /// this to know when to look again.
+    var textEditRevision = 0
     /// What the toolbar shows about the Annotations. Changes when a gesture starts or ends, a
     /// selection changes or Undo history changes, never while the pointer moves, so the toolbar
     /// pills are not rebuilt on every mouse move.
@@ -40,6 +48,8 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// The running Copy or Save, so a caller can wait for it.
     @ObservationIgnored var copyTask: Task<Void, Never>?
 
+    /// Set while this is the Last Capture's Editor: it keeps the state file current.
+    @ObservationIgnored var lastCapture: LastCapturePersistence?
     @ObservationIgnored private(set) var chrome: EditorChrome?
     @ObservationIgnored var onClosed: ((EditorSession) -> Void)?
     @ObservationIgnored private var isClosing = false
@@ -54,14 +64,21 @@ final class EditorSession: NSObject, NSWindowDelegate {
     var window: EditorWindow? { chrome?.window }
     var canvas: CanvasView? { chrome?.canvas }
 
-    var currentTool: any EditorTool { ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial }
+    /// The tool the pointer drives: the eyedropper while it is active, else the selected tool.
+    var currentTool: any EditorTool {
+        isEyedropperActive ? EyedropperTool() : (ToolRegistry.tool(id: selectedToolID) ?? ToolRegistry.initial)
+    }
 
     func selectTool(id: String) {
         guard ToolRegistry.tool(id: id) != nil else { return }
+        commitTextEditing()
+        cancelEyedropper()
+        endColorGesture()
         abortAnnotationGesture()
         let previousToolID = selectedToolID
         selectedToolID = id
         cropToolChanged(from: previousToolID, to: id)
+        if (previousToolID == CropTool.toolID) != (id == CropTool.toolID) { chrome?.refitToolbars() }
         // A drawing tool starts from nothing selected: its options (the fill) are then the
         // tool's, not the previous selection's.
         if ToolRegistry.tool(id: id)?.annotationKind != nil, selectedAnnotationID != nil { selectAnnotation(nil) }
@@ -76,6 +93,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
         self.document = document
         // A warmed-up Editor was built before the last style was chosen.
         annotationStyle = AnnotationSettings.style
+        highlighterWidth = AnnotationSettings.highlighterWidth
         chrome?.attach(document)
         document.onChange = { [weak self] in self?.annotationsDidChange() }
         annotationsDidChange()
@@ -102,6 +120,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     func discard() {
         guard !isClosing else { return }
         isClosing = true
+        ColorPanelController.shared.sessionClosed(self)
         chrome?.tearDown()
         chrome = nil
     }
@@ -109,6 +128,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     /// Esc: closes the Editor without exporting. A tool with something pending (text being
     /// typed, a crop) finishes that first, before this closes.
     func escape() {
+        if commitTextEditing() || cancelEyedropper() { return }
         if cancelCropIfCropping() { return }
         close()
     }
@@ -118,17 +138,36 @@ final class EditorSession: NSObject, NSWindowDelegate {
         guard let number = document?.captureNumber else { return close() }
         // The helper may quit as this window closes, so the menu bar app hears first; the
         // main thread never waits for the reply.
+        EditorSessions.shared.markDeleted(captureNumber: number)
         Task {
+            // The Capture's state is not written again (not even by the close below), and a write
+            // already queued has run or been dropped before the files are removed.
+            if isLastCapture {
+                stopBeingLastCapture()
+                LastCaptureStore.shared.supersede()
+                await LastCaptureStore.shared.fence()
+            }
             _ = try? await CommandSocketClient.send(
                 .deleteCapture, arguments: [String(number)], to: AppIdentity.appSocketPath)
             close()
         }
     }
 
+    /// The color panel follows the Editor in front: with two Editors, it recolors the one you are in.
+    func windowDidBecomeKey(_ notification: Notification) {
+        ColorPanelController.shared.retarget(to: self)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        // Nothing half-done goes into the Last Capture's state: the typed text is committed and a color
+        // drag's Undo step is closed before it is stored.
+        commitTextEditing(refocus: false)
+        endColorGesture()
+        ColorPanelController.shared.sessionClosed(self)
         isClosing = true
         if let number = document?.captureNumber { SaveFailureSignal.forget(captureNumber: number) }
+        saveLastCaptureOnClose()
         onClosed?(self)
         // A button's own action may be what closed the window: free everything one run-loop
         // turn later, once that action has returned.

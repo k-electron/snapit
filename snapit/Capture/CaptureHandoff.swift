@@ -3,10 +3,10 @@ import Foundation
 /// Hands a Capture to the Editor: the pixels go into a Capture file (memory-mapped, never over
 /// the socket), then the Editor helper is told to open Capture N.
 ///
-/// Only the newest Capture's file is kept (it becomes the Last Capture): once Capture N is open
-/// in the Editor, the one before it goes. A Capture that fails to open leaves the previous one
-/// alone. Deleting the Capture, or quitting, removes the file too. The menu bar app holds no
-/// pixels afterwards: the mapping is gone when `publish` returns.
+/// Only the newest Capture's files are kept (it becomes the Last Capture, see `LastCapture`):
+/// once Capture N is open in the Editor, the one before it goes. A Capture that fails to open
+/// leaves the previous one alone. Deleting the Capture, or quitting, removes the files too. The
+/// menu bar app holds no pixels afterwards: the mapping is gone when `publish` returns.
 @MainActor
 enum CaptureHandoff {
     /// Starts at a number no earlier run of the menu bar app used (milliseconds since 1970), so a
@@ -34,8 +34,11 @@ enum CaptureHandoff {
 
     /// Capture N is open in the Editor: it is now the Last Capture, and the one before goes.
     static func didOpen(number: Int) {
+        // The helper has stopped writing the previous Last Capture's state before it answered
+        // `open-capture` (a new Capture supersedes it first), so nothing recreates its files.
         if let previous = latestNumber, previous != number { CaptureFiles.remove(number: previous) }
         latestNumber = number
+        LastCapture.shared.set(number)
     }
 
     /// Capture N could not be opened: its file goes, the previous Capture stays.
@@ -43,16 +46,21 @@ enum CaptureHandoff {
         CaptureFiles.remove(number: number)
     }
 
-    /// The user deleted Capture N in the Editor.
+    /// The user deleted Capture N in the Editor, or the store of Capture N is damaged and
+    /// cannot be reopened.
     static func delete(number: Int) {
         CaptureFiles.remove(number: number)
-        if latestNumber == number { latestNumber = nil }
+        if latestNumber == number {
+            latestNumber = nil
+            LastCapture.shared.set(nil)
+        }
     }
 
     /// Removes every Capture file: at launch (anything left by a crash) and at quit.
     static func removeAll() {
         CaptureFiles.removeAll()
         latestNumber = nil
+        LastCapture.shared.set(nil)
     }
 
     @concurrent

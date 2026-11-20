@@ -15,8 +15,24 @@ final class EditorWindow: NSWindow {
         !(firstResponder is NSText) || item.keyEquivalent?.usesCommand == true
     }
 
+    /// The helper has no standard Edit items (Cut, Copy, Paste, Select All), so nothing else would
+    /// turn ⌘X, ⌘C, ⌘V and ⌘A into the text's own commands: ⌘C, with the registry's Copy item
+    /// next in line, would Export the whole Capture while a text is being typed.
+    private static let textEditingKeys: [String: Selector] = [
+        "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
+        "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
+    ]
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        // Text being edited takes its own keys first (⌘C copies its selection).
+        // A text being edited takes the standard editing keys itself.
+        if firstResponder is NSText {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
+            if flags == .command, let key = event.charactersIgnoringModifiers?.lowercased(),
+                let action = Self.textEditingKeys[key]
+            {
+                return firstResponder?.tryToPerform(action, with: self) == true
+            }
+        }
         if firstResponder is NSText, super.performKeyEquivalent(with: event) { return true }
         if let session, let item = ToolbarRegistry.item(matching: event), allowsKey(of: item), item.isEnabled(in: session) {
             item.perform(in: session)
