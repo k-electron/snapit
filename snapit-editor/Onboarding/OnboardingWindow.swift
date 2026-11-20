@@ -37,7 +37,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         let hosting = NSHostingView(rootView: OnboardingView(model: model))
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 600, height: 640)),
-            styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "Onboarding"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -51,7 +51,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         HelperLifecycle.windowWillShow()
         window.makeKeyAndOrderFront(nil)
         HelperLifecycle.windowDidShow()
-        model.guide.isVisible = window.isVisible
+        model.guide.isVisible = window.isSeenByUser
     }
 
     // MARK: Window events
@@ -64,9 +64,15 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         model.windowResigned()
     }
 
-    func windowDidChangeOcclusionState(_ notification: Notification) {
-        model.guide.isVisible = window?.occlusionState.contains(.visible) ?? false
+    /// On screen: not minimised, and not covered by other windows.
+    private func updateVisibility() {
+        guard let window else { return }
+        model.guide.isVisible = window.isSeenByUser
     }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) { updateVisibility() }
+    func windowDidMiniaturize(_ notification: Notification) { updateVisibility() }
+    func windowDidDeminiaturize(_ notification: Notification) { updateVisibility() }
 
     func windowWillClose(_ notification: Notification) {
         model.settings.cancelRecording()

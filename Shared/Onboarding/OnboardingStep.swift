@@ -12,14 +12,24 @@ enum OnboardingStep: String, CaseIterable {
     /// 1 for Welcome … 6 for Done.
     var number: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
 
+    /// What the step is called (in the Back and Continue tooltips).
     var title: String {
         switch self {
-        case .welcome: "Welcome to snapit"
+        case .welcome: "Welcome"
         case .screenRecording: "Screen Recording"
         case .saveLocation: "Save location"
         case .shortcuts: "Shortcuts"
         case .openAtLogin: "Open at Login"
+        case .done: "Done"
+        }
+    }
+
+    /// The step's heading in the window.
+    var heading: String {
+        switch self {
+        case .welcome: "Welcome to snapit"
         case .done: "You're all set"
+        default: title
         }
     }
 
