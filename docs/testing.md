@@ -216,10 +216,11 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `44-` Window Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
+Flow 44 uses the helpers of flow 40: `SNAPIT_FLOWS="40 44" scripts/check-run.sh <app>` runs the two.
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
@@ -303,6 +304,34 @@ The scripted run holds the bar to its budget: flow 42 takes the footprint before
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
 at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured about 0.4 MB, the tiles using the overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
 was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
+
+## The Window Capture
+
+The Window Capture (`snapit/Window/`) is the Area overlay in `.window` mode (`AreaCaptureFlow.start(mode:)`,
+`WindowCaptureFlow.start()`): the same panels, frozen frames, layers and window list (`OnScreenWindow`, now with
+the `CGWindowID`), but the pointer only picks. Hover highlights the front-most window under the pointer from the
+list read when the Shortcut fired (no window-server call per move, no polling); a click captures that window and
+nothing else (`AreaOverlayOutcome.window`); a drag selects nothing; there is no Action bar whatever "After
+selecting an Area" says. The capture itself is a second seam, `WindowCaptureSources.current`: the real one
+(`ScreenCaptureKitWindowSource`) fetches `SCShareableContent` once the overlay shows, matches the window id and
+captures through `SCContentFilter(desktopIndependentWindow:)` at `contentRect * pointPixelScale`, SDR, in the
+display's color space; the fixture one (`FixtureWindowCaptureSource`) returns an image of the window's size with
+transparent rounded corners (the formula is in its header and in `scripts/run/png-inspect.swift`).
+`fixture-window-fail on|off` makes the capture fail, as if the window had closed.
+
+**Shadow.** The spec leaves the window shadow open. Window Captures do not include it
+(`WindowCapture.includesShadow` is false, passed to ScreenCaptureKit as `ignoreShadows`), and the Capture is exactly
+the window's frame with transparent rounded corners. Flipping the constant is a one-line change; the steps to check
+it are in `docs/manual-checks.md`.
+
+**Alpha.** Pixels are premultiplied BGRA in memory, in the Capture file and through the Export stages (crop copies
+bytes; Annotations are drawn by Core Graphics into a premultiplied context, so they composite over the corners).
+The engine's PNG encoder looks at the pixels: when every alpha is 255 (a Screen or Area Capture) the PNG is RGB
+(colour type 2), otherwise RGBA (colour type 6) with the colours un-premultiplied, and the 1x average and the
+thumbnail average all four premultiplied channels. The scripted run asserts both: window Captures give RGBA PNGs
+through Copy and Save (and the 1x averaged ones), a Screen Capture and an Area Capture still give RGB ones
+(`png-inspect info` prints `color_type`; `rgba-pixel` and `verify-window` decode the PNG with a decoder of their
+own, so a premultiplied or dropped alpha shows).
 
 ## Adding to the Area overlay
 
@@ -493,7 +522,8 @@ own independent block-mean reference, non-tight strides, edge blocks, windows, i
 builder (any stride, padding filled with garbage that must never reach the output) and a PNG chunk
 reader that does not use the encoder under test. A new engine function gets a test file with:
 a round trip, a non-tight stride, invalid arguments (null pointers, zero sizes, overflow) and its
-metadata. After changing the C interface run `scripts/generate-header.sh` and commit the header.
+metadata. `engine/tests/png_alpha.rs` is the model for transparent pixels (premultiplied input, straight RGBA out,
+the opaque case staying RGB, averaging, the thumbnail). After changing the C interface run `scripts/generate-header.sh` and commit the header.
 
 ## Never in a test
 
