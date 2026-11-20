@@ -10,6 +10,8 @@ enum ToolbarRegistry {
         CloseToolbarItem(),
         CopyToolbarItem(),
         DeleteCaptureToolbarItem(),
+        DragOutToolbarItem(),
+        SaveToolbarItem(),
     ]
 
     /// The items of one slot, in order.

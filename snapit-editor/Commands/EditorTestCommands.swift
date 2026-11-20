@@ -6,7 +6,7 @@ nonisolated extension SocketCommand {
     /// `editor-facts <N>`: `key=value` lines about Editor N: the Capture's pixel size, scale and
     /// resolution, the window, the canvas, the active tool, the app's activation policy. Test mode only.
     static let editorFacts = SocketCommand("editor-facts")
-    /// `editor-key <N> copy|escape|close`: sends Editor N's window the key press (⌘C, Esc, ⌘W)
+    /// `editor-key <N> copy|save|escape|close`: sends Editor N's window the key press (⌘C, ⌘S, Esc, ⌘W)
     /// as an event, and replies `ok` when what it does has finished. Test mode only.
     static let editorKey = SocketCommand("editor-key")
     /// Builds the Editor ahead of its Capture, hidden, as a warming-up helper does. Test mode only.
@@ -61,13 +61,14 @@ extension SocketCommandRegistry {
         }
         register(.editorKey) { request in
             guard let session = Self.session(request), request.arguments.count >= 2 else {
-                return "error editor-key <N> copy|escape|close"
+                return "error editor-key <N> copy|save|escape|close"
             }
             guard let window = session.window else { return "error the Editor has no window" }
             let sent: Bool
             switch request.arguments[1] {
             case "copy": sent = Self.send(Self.keyEvent("c", code: 8, flags: .command, window: window), to: window)
             case "close": sent = Self.send(Self.keyEvent("w", code: 13, flags: .command, window: window), to: window)
+            case "save": sent = Self.send(Self.keyEvent("s", code: 1, flags: .command, window: window), to: window)
             case "escape": sent = Self.send(Self.keyEvent("\u{1B}", code: 53, flags: [], window: window), to: window)
             default: return "error unknown key \(request.arguments[1])"
             }

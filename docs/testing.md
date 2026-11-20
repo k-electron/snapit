@@ -61,6 +61,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
+| `save-hold`, `save-release` | hold every Save's write (the encode into the Save location) until released, so the run can quit the helper while a Save is still being written |
+| `save-pending` | how many Saves are still being written |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
 
@@ -68,12 +70,16 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 |---|---|
 | `editors` | the numbers of the open Editors, one per line (a Capture's number is the `N` in `open-capture <N>`) |
 | `editor-facts <N>` | `key=value` lines about Editor N: `pixels`, `scale`, `dpi`, `window`, `canvas`, `tool`, `activation` |
-| `editor-key <N> copy\|escape\|close` | sends the window the ⌘C, Esc or ⌘W key event; replies `ok` when a Copy it started has finished. A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
+| `editor-key <N> copy\|save\|escape\|close` | sends the window the ⌘C, ⌘S, Esc or ⌘W key event; replies `ok` when a Copy or Save it started has been handed over (the helper's part of a Save ends when the menu bar app has accepted it). A key that closes the last Editor makes the helper quit before it can reply: wait for the process to go instead |
 | `editor-press <N> <item id>` | runs a toolbar item's action (`copy`, `delete-capture`, `close`, ...), as its button does |
 | `editor-warm`, `editor-warm-state` | builds the Editor ahead of its Capture, hidden; replies `warm window=hidden canvas=built` or `cold` |
 | `export-owned-probe <N>` | makes an owned copy of Editor N's Capture, encodes it into `<root>/probe/owned.png` and replies `ok <path>` |
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
+| `export-name <N>` | the file name Editor N's Export has (`snapit-YYYYMMDD-HHMMSS.png`, from its Capture's time) |
+| `editor-save-outcome <N>` | how Editor N's latest Save ended: `none`, `handed-over`, `failed folder-not-writable <errno> <folder>` or `failed <message>` |
+| `editor-drag-file <N>` | does what pressing the mouse on the thumbnail does (Fast-encodes the Export into `<root>/drag-out/<N>/`), waits and replies `ok <path>` |
+| `editor-drag-thumbnail <N>` | the thumbnail view: `view=<w>x<h> thumbnail=<w>x<h>\|none` |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
 
 `editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
@@ -94,7 +100,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `40-` Save and drag-out, `90-` Editor helper and Quit, which must stay last).
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
@@ -160,7 +166,18 @@ The Export pipeline never touches the Capture's mapping, which is read-only (`Pi
 buffer (`image.makeOwned()`, or crop's smaller `makeEmptyBuffer`); later stages change it in place.
 Buffers made from another carry its ICC profile along. Document state a stage reads is copied into
 `ExportJob` (`EditorDocument.makeExportJob`) so the pipeline runs off the main actor. `flatten`
-returns the flattened image for a sink (Save's shared export file); `run` also Fast-encodes it.
+returns the flattened image for a sink; `run` also Fast-encodes it (Copy). The sinks in
+`Export/ExportSinks.swift` are Save (`flattenIntoSharedFile`: the image goes into a memory-mapped
+file in the Capture file format, `<root>/exports/`, and the menu bar app encodes from it) and
+drag-out (`writePNG`: Fast-encodes into a file, streamed). The 1x downscale is never a buffer: the
+encode step reads `downscaleOnEncode` and the engine averages while it encodes
+(`PNGOutputPlan` is the one rule for the size and dpi, used by both processes).
+
+Save is `EditorSession+Save.swift`: the helper sends `save-export` and the menu bar app
+(`snapit/Export/SaveService.swift`) checks the Save location at once, then encodes in the
+background and writes `snapit-YYYYMMDD-HHMMSS.png`. A failed check keeps the Editor open and goes
+to `SaveFailureSignal` (`Export/SaveFailure.swift`): a feature that reacts to it (the folder
+Permission guide) registers with `SaveFailureSignal.observe`.
 
 The Editor's window, toolbars and canvas layers are built without a Capture (`EditorSession()`),
 and `attach(_:)` gives it the Capture: a warming-up helper calls `EditorSessions.warmUp()` ahead of

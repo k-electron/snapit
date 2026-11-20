@@ -6,6 +6,7 @@
 
 mod buffer;
 mod capture_file;
+mod downscale;
 mod png_encode;
 mod version;
 
@@ -19,9 +20,10 @@ pub use capture_file::{
     SNAPIT_PIXEL_FORMAT_BGRA8_PREMULTIPLIED, SnapitCaptureHeader, snapit_capture_file_create,
     snapit_capture_file_icc, snapit_capture_file_info, snapit_capture_file_map,
 };
+pub use downscale::snapit_downscale;
 pub use png_encode::{
-    SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_PNG_HIGH, SnapitBytes, snapit_bytes_free,
-    snapit_png_encode,
+    SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_PNG_HIGH, SnapitBytes, SnapitPngParams,
+    snapit_bytes_free, snapit_png_encode, snapit_png_encode_ex, snapit_png_encode_to_fd,
 };
 pub use version::snapit_engine_version;
 

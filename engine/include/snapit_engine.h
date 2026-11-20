@@ -140,10 +140,40 @@ typedef struct SnapitBytes {
    */
   size_t len;
   /*
-   Number of bytes allocated.
+   Length of the page-backed allocation in bytes (whole pages).
    */
   size_t capacity;
 } SnapitBytes;
+
+/*
+ How to encode: the level, the resolution to record, the size of the PNG and the color profile.
+ */
+typedef struct SnapitPngParams {
+  /*
+   One of `SNAPIT_PNG_FAST`, `SNAPIT_PNG_BALANCED` or `SNAPIT_PNG_HIGH`.
+   */
+  uint32_t level;
+  /*
+   Becomes the `pHYs` chunk: 144 for a Retina Capture, 72 at 1x.
+   */
+  uint32_t dpi;
+  /*
+   Width of the PNG in pixels: the source width, or less to average the image down to it.
+   */
+  uint32_t out_width;
+  /*
+   Height of the PNG in pixels: the source height, or less.
+   */
+  uint32_t out_height;
+  /*
+   The display's color profile, embedded as an `iCCP` chunk; null (with `icc_len` 0) for none.
+   */
+  const uint8_t *icc;
+  /*
+   Length of `icc` in bytes.
+   */
+  size_t icc_len;
+} SnapitPngParams;
 
 /*
  The call succeeded.
@@ -285,6 +315,32 @@ SnapitStatus snapit_capture_file_map(int32_t fd,
                                      struct SnapitPixelBuffer *out);
 
 /*
+ Averages a BGRA image down to `out_width` x `out_height` and writes it as BGRA, opaque, into
+ `dst`, rows `dst_stride` bytes apart. For previews such as the drag-out thumbnail; the
+ averaging is the one the PNG encoder uses for a 1x Export.
+
+ `out_width` and `out_height` must be at least 1 and no larger than the source, and the source
+ no larger than 65535 pixels either way. `max_row_samples` limits how many source rows are read
+ for each output row (evenly spaced, equally weighted); 0 reads them all, which is the exact
+ average. A preview of a big Capture passes a small number, so most of the Capture's memory-mapped
+ pages are never read.
+
+ # Safety
+
+ `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes and `dst` for
+ writes of `(out_height - 1) * dst_stride + out_width * 4` bytes; they must not overlap.
+ */
+SnapitStatus snapit_downscale(const uint8_t *pixels,
+                              uint32_t width,
+                              uint32_t height,
+                              size_t stride,
+                              uint32_t out_width,
+                              uint32_t out_height,
+                              uint8_t *dst,
+                              size_t dst_stride,
+                              uint32_t max_row_samples);
+
+/*
  Encodes BGRA pixels as an RGB PNG (alpha is dropped) and stores the bytes in `out`.
 
  * `stride` is the distance in bytes between rows and must be at least `width * 4`; bytes
@@ -310,6 +366,43 @@ SnapitStatus snapit_png_encode(const uint8_t *pixels,
                                const uint8_t *icc,
                                size_t icc_len,
                                struct SnapitBytes *out);
+
+/*
+ Like [`snapit_png_encode`], with the options in `params`. When `params.out_width` and
+ `out_height` are smaller than the source, the image is averaged down to that size (area
+ averaging) in the same pass as the encode: a 1x Export of a Retina Capture. The size must be
+ at least 1 and no larger than the source; a source of more than 65535 pixels either way can
+ only be encoded at its own size.
+
+ # Safety
+
+ `pixels` must be valid for reads of `(height - 1) * stride + width * 4` bytes, `params` for a
+ read (and its `icc` for `icc_len` bytes, when not null), and `out` for a write of one
+ `SnapitBytes`.
+ */
+SnapitStatus snapit_png_encode_ex(const uint8_t *pixels,
+                                  uint32_t width,
+                                  uint32_t height,
+                                  size_t stride,
+                                  const struct SnapitPngParams *params,
+                                  struct SnapitBytes *out);
+
+/*
+ Encodes like [`snapit_png_encode_ex`], but streams the PNG into the file `fd` through a
+ small buffer: the PNG is never held in memory, whatever its size. The engine writes from the
+ file's current position and leaves the descriptor open (and unflushed beyond the write); the
+ caller owns it. A failed write comes back as `SNAPIT_STATUS_IO_FAILED`.
+
+ # Safety
+
+ As for [`snapit_png_encode_ex`], and `fd` must be a file open for writing.
+ */
+SnapitStatus snapit_png_encode_to_fd(const uint8_t *pixels,
+                                     uint32_t width,
+                                     uint32_t height,
+                                     size_t stride,
+                                     const struct SnapitPngParams *params,
+                                     int32_t fd);
 
 /*
  Releases bytes from [`snapit_png_encode`] and clears them. Freeing empty bytes does nothing.
