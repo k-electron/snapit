@@ -12,10 +12,8 @@ save_dir_entries() { ls -A "$SAVE" 2>/dev/null | wc -l | tr -d ' '; }
 file_exists() { [[ -f "$1" ]]; }
 save_idle() { [[ "$(send "$APP_SOCK" save-pending)" == "0" ]]; }
 file_size() { stat -f '%z' "$1"; }
-# A setting is changed while no Editor helper runs, by the menu bar app: a helper reads settings
-# when it starts, and the next Capture starts a new one. (In the test store's file a running
-# helper neither picks up a key another process wrote nor can override it; the product's
-# Settings window writes inside the helper.)
+# A setting is changed while no Editor helper runs, by the menu bar app. (Flow 50 changes them
+# through the Settings window, inside the helper, the product's own path.)
 no_helper() { [[ -z "$(helper_pid)" ]]; }
 set_default() {
   wait_until 10 no_helper

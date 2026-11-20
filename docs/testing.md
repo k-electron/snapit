@@ -26,7 +26,10 @@ the real system is replaced:
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
-| defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
+| defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist`, read and written straight through under a file lock (`FileBackedDefaults`): both processes see each other's writes at once | `Shared/Edges/AppDefaults.swift` |
+| Open at Login | `SMAppService.mainApp` (menu bar app) | a status held in memory, starting enabled; the real login items are never touched | `snapit/Settings/LoginItem.swift` |
+| macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5 | `Shared/Edges/SystemShortcutClashes.swift` |
+| System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
 | install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
@@ -70,6 +73,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
+| `login-item-status`, `login-item-set on\|off`, `login-item-simulate <status>` | the (fake) login item Settings drives: read its status, register or unregister it, set the status as System Settings would (`enabled`, `notRegistered`, `requiresApproval`, `notFound`) |
+| `apply-shortcut <id> none\|<key code> [<modifier>,...]` | what the helper's recorder sends: rebinds a Shortcut of `ShortcutCatalog` (and the menu glyph follows) |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
@@ -112,6 +117,11 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-click <N> tool <id>`, `item <id>`, `canvas <x> <y>` | a click (press and release through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture. With `editor-background` first, it is the first click on a background Editor: the window refuses it for Delete Capture and accepts it everywhere else |
 | `editor-preview <N>` | renders the canvas's own layers (no selection) at the Capture's pixel size, writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export |
 | `editor-inject-effect <N> <x1> <y1> <x2> <y2>` | adds an Annotation of a test kind that Export's Annotations stage does not draw (as Redaction will not), to check it lies beneath the others in the canvas and in hit testing |
+| `settings-facts` | the Settings window: `window`, `title`, `activation`, then per section a `section <title>` line and one `control <id>\|<kind>\|<title>\|<value>\|<tooltip>` line per control (`display <id>\|<glyphs>` and `note <id>\|<text>` follow a Shortcut that has a combination or a flag) |
+| `settings-press <control id> [<value>]` | what clicking a control does: flips a switch, picks an option (`after-selecting-area captureOnRelease`), starts a recorder (`shortcut.<id>`), clears one (`shortcut-clear.<id>`), presses a button |
+| `settings-key <key code> [<modifier>,...]` | a key press sent through the application's event dispatch, as a recorder that is waiting receives it; replies `ok` once the menu bar app has been told |
+| `settings-choose-save-location <folder>` | what choosing a folder in the chooser does (the folder must be inside the root) |
+| `settings-snapshot <png>`, `settings-close` | render the page to a PNG inside the root; press the close button (the helper then quits) |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -148,7 +158,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `45-` Save and drag-out, `50-` Settings, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -342,8 +352,41 @@ sets `drawnByAnnotationStage` false). Tools are shared by every open Editor, so 
 
 ## Adding a Shortcut
 
-Add an `AppShortcut` in its own file (`snapit/Shortcuts/AppShortcut.swift` shows the shape), bind
-it with one line in `ShortcutBindings`, and press it in a flow with `press-shortcut <id>`.
+Add an `AppShortcut` in its own file (`Shared/Shortcuts/AppShortcut.swift` shows the shape; the
+type is shared because Settings in the helper lists the Shortcuts), bind it with one line in
+`ShortcutBindings`, and press it in a flow with `press-shortcut <id>`. A Shortcut the user may
+record in Settings is also an `Entry` in `Shared/Shortcuts/ShortcutCatalog.swift` (the Window and
+Pick Color Shortcuts are defined there). `Shortcuts.current` is an `ObservedShortcuts`: a menu
+section that reads `menuShortcut(for:)` follows `setCombo`, so a rebound Shortcut's glyph changes
+with no code of its own.
+
+## Settings
+
+Settings is one window in the Editor helper (`snapit-editor/Settings/`): `SettingsWindow` (one
+instance; a second request brings it forward and reads Open at Login again), `SettingsView` (a
+single `Form`, one `Section` per `SettingsSection`) and `SettingsModel` (what it shows; every
+change is written through `AppDefaults.store` at once, and the Editor, the Area flow and Save read
+their key when they need it, so nothing waits for a relaunch). `SettingsControls.swift` holds each
+control's id, title and tooltip, which the view and `settings-facts` both read.
+
+| To add | Do |
+|---|---|
+| a setting | a key and a reader in `Shared/Settings/<Name>Settings.swift` (the reader falls back to the default); a `SettingsControl` in `SettingsControls.swift`; a setter in `SettingsModel`; a row in `SettingsView`; a line in `SettingsFacts.describe()` and a case in `SettingsFacts.press` |
+| something Settings needs from the menu bar app | a `SocketCommand` in `Shared/Commands/SettingsCommands.swift` and its handler in `snapit/Settings/SettingsAppCommands.swift` (Open at Login and applying a Shortcut do this) |
+| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…, User Guide and Check for Updates… |
+
+Open at Login lives in the menu bar app (`LoginItem.current`: `SMAppService.mainApp`, or the fake
+in test mode); the helper sends `login-item-status` when Settings opens and `login-item-set`
+when the switch is flipped. Nothing polls. The Shortcut recorders use `ShortcutRecorder`, a local
+key monitor that exists only while one waits; the result goes to `ShortcutSettings` (the key
+`shortcut.<id>` in `AppDefaults.store`) and to the menu bar app with `apply-shortcut`. A
+combination that macOS also uses (`SystemShortcuts.current`) or another Shortcut already has
+carries a note under its recorder; it is still accepted.
+
+While developing one flow, `SNAPIT_FLOWS='^(20|45|50)-' scripts/check-run.sh <app>` runs only the
+flows whose file names match (a flow that uses another's helpers needs it in the pattern). The
+flow `50-settings.sh` is the model for driving a helper window: read `settings-facts`, act with
+`settings-press` and `settings-key`, and assert on what the rest of snapit does.
 
 ## Engine tests
 
