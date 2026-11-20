@@ -4,9 +4,29 @@
 # shellcheck shell=bash
 
 failures=0
+# Checks that ran differently because of the machine's environment (see docs/testing.md, "CI environment"):
+# always 0 on a machine that is not a virtual machine, and always printed in the run's last line.
+adaptations=0
 
 pass() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; failures=$((failures + 1)); }
+# adapt <what changed and why>: a check below this line is measured against what a virtual machine can do
+# (software rendering, a noisy CPU) rather than a real Mac's. Loud, counted, and only when IS_VM is 1.
+adapt() { echo "ENV  $1"; adaptations=$((adaptations + 1)); }
+# frame_peak_limit <what>: sets PEAK_LIMIT, the most MB over the at-rest footprint that an overlay showing one
+# 16 MB frozen frame may hold at its peak. A real Mac holds the frame once (16 MB) and a little more (10 MB).
+# A virtual machine renders in software, which keeps copies of the layers' buffers in the process: the same
+# overlay measured 47 to 62 MB over there, so it is allowed five frames and ten MB. A frame kept by mistake
+# still shows in the checks of memory returning to its baseline, which keep their limits everywhere.
+frame_peak_limit() {
+  PEAK_LIMIT=26
+  if [[ "${IS_VM:-0}" == 1 ]]; then
+    PEAK_LIMIT=90
+    adapt "$1: the peak over the at-rest footprint is allowed 90 MB (five copies of a 16 MB frame) instead of 26 MB: a virtual machine renders in software"
+  fi
+}
+# vm_or <real Mac's value> <virtual machine's value>: the value for this machine.
+vm_or() { if [[ "${IS_VM:-0}" == 1 ]]; then echo "$2"; else echo "$1"; fi; }
 expect_equal() { # description, expected, actual
   if [[ "$2" == "$3" ]]; then pass "$1"; else fail "$1 (expected '$2', got '$3')"; fi
 }
@@ -62,6 +82,10 @@ footprint_mb() { footprint -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++)
 # of snapit's that fires again and again is in every window, or in many windows spread out, and stays.
 idle_cpu_sample() {
   local pid="$1" seconds="$2" windows="$2" length=1 index previous current
+  # `ps` reports CPU time in 10 ms steps, so one step is the smallest "active" window. A virtual machine's
+  # own wake-ups (display and session events) show as single steps; IDLE_ACTIVE_MIN says how many seconds
+  # make a window active (0.01 on a real Mac; 0.02 in a virtual machine, where a 20 ms timer still counts).
+  local active_min="${IDLE_ACTIVE_MIN:-0.01}"
   local -a used=()
   if ((seconds < 3)); then windows=1; length="$seconds"; fi
   previous="$(cpu_seconds "$pid")"
@@ -71,8 +95,8 @@ idle_cpu_sample() {
     used+=("$(awk -v a="$previous" -v b="$current" 'BEGIN { printf "%.2f", b - a }')")
     previous="$current"
   done
-  printf '%s\n' "${used[@]}" | sort -n | awk -v n="$windows" -v len="$length" '
-    NF { v[++count] = $1; if ($1 >= 0.01) active++ }
+  printf '%s\n' "${used[@]}" | sort -n | awk -v n="$windows" -v len="$length" -v min="$active_min" '
+    NF { v[++count] = $1; if ($1 >= min) active++ }
     END { k = int((n + 1) / 2); for (i = 1; i <= k; i++) sum += v[i]; printf "%.4f %.2f %d %d", sum / k / len, v[count], active, n }'
 }
 # idle_cpu_ok <sample>: a run of several windows passes when the quietest half averages at most 0.5% of a CPU
@@ -96,8 +120,17 @@ assert_idle_cpu() {
   if idle_cpu_ok "$sample"; then
     pass "$1 idles at 0% CPU (busiest of $windows window(s) ${busiest}s of CPU, $active active, over ${3}s)"
   else
-    fail "$1 used CPU at idle: $active of $windows window(s) active, ${rate}s of CPU per second in the quietest half, busiest ${busiest}s, over ${3}s"
+    fail "$1 used CPU at idle: $active of $windows window(s) active (from ${IDLE_ACTIVE_MIN:-0.01}s), ${rate}s of CPU per second in the quietest half, busiest ${busiest}s, over ${3}s; $(ambient_events)"
   fi
+}
+
+# ambient_events: what the machine told the menu bar app so far (from its log, which the app writes in test
+# mode): screen-parameter notifications nobody in the run posted, screens sleeping, the session switching. A
+# virtual machine can send these with nothing having changed.
+ambient_events() {
+  local log="$RUN_ROOT/app.log"
+  [[ -f "$log" ]] || { echo "ambient events: no app log"; return; }
+  echo "ambient events: $(grep -c 'screen parameters notification (real)' "$log") real screen-parameter notifications, $(grep -c 'NSWorkspaceScreensDidSleep' "$log") screen sleeps, $(grep -c 'NSWorkspaceSessionDidResignActive' "$log") session switches, $(grep -c 'displays notification .* changed=false' "$log") ignored (displays unchanged)"
 }
 
 # expect_no_internet <label> <pid>: the process has no internet (TCP or UDP) socket open. The fixture

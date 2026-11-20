@@ -69,7 +69,9 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
-| `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification); the overlay ends, and so does a Timed Capture's countdown |
+| `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification, with the displays counted as different); the overlay ends, and so does a Timed Capture's countdown |
+| `overlay-screens-noise` | the same notification with the displays as they were (what a Dock that moved, or a virtual machine, posts); the overlay and the countdown carry on. The overlay and the countdown end on that notification only when the displays' IDs, frames or scales differ from when they started (`snapit/Area/DisplayConfiguration.swift`) |
+| `screen-events` | what the machine told the menu bar app during the run: real screen-parameter notifications (those the run posts are not counted), screen sleeps and wakes, session switches, and the real displays. The same events are logged (`snapit:` lines of the run's `app.log`), and a failing run prints that log |
 | `fixture-fail on\|off` | makes the fixture Capture fail, so a flow can check what a Capture that ends without a Capture does (it cancels the warm-up) |
 | `capture-timing` | `capture-to-editor-ms=<n> warm=yes\|no` for the last Capture: from its pixels being ready (the Capture itself is not counted) to the Editor window on screen: writing the Capture file, the command to the helper, attaching, showing, and the helper flushing its drawing before it replies. A normal run adds asking macOS to bring the helper forward |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
@@ -748,6 +750,38 @@ through `user-guide-facts` and `user-guide-text <id>`, navigation (`user-guide-s
 search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle,
 memory and idle CPU. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
 (`docs/manual-checks.md`).
+
+## CI environment
+
+CI runs `scripts/test.sh` on a GitHub-hosted macOS runner, which is a virtual machine: a virtual
+display with no GPU, a few CPUs shared with the host, and a window server that may post
+screen-parameter notifications for nothing (a Dock that resized, a display that "changed" to the same
+frame). The run is the same there; what differs is told in the log.
+
+- **The preamble.** `scripts/check-run.sh` starts with `environment:` lines: macOS version and build,
+  model, CPUs, memory, load, whether the kernel says it is a virtual machine, Xcode, and every real
+  screen (frame, visible frame, scale, pixels, color space). The fixture displays are fake; the real
+  screens are only where their panels sit. At the end it prints the ambient events the menu bar app saw
+  (real screen-parameter notifications, screen sleeps, session switches, notifications ignored because
+  the displays were unchanged), and when a check failed it prints the app's `snapit:` log (why each
+  overlay and countdown ended).
+- **Product behaviour, not a test allowance.** The overlay and a Timed Capture's countdown end on a
+  change of displays, and only on one: they compare each display's ID, frame and scale with the ones
+  they started under, never the visible frame (`DisplayConfiguration`). The checks `overlay-screens-noise`
+  makes (flows 40 and 43) say a notification with the same displays does nothing.
+- **Adaptations to a virtual machine** are the only differences, all behind `IS_VM` (the kernel's
+  `kern.hv_vmm_present`; `SNAPIT_VM=0|1` forces either value on any machine), each printed as an `ENV` line
+  and counted in the run's last line (`N adaptation(s) to a virtual machine`, always 0 on a real Mac, where
+  every check keeps its real limit):
+  - an overlay's memory peak over the at-rest footprint (`frame_peak_limit` in `scripts/run/lib.sh`, used by
+    flows 40, 42 and 44) is allowed 90 MB instead of 26 MB, because software rendering keeps copies of the
+    layers' buffers in the process (measured 47 to 62 MB over a 16 MB frame on the runner). Memory returning
+    to its baseline keeps its limit everywhere.
+  - an idle window counts as active from 0.02 s of CPU instead of 0.01 s (`IDLE_ACTIVE_MIN`): `ps` reports in
+    10 ms steps, and a virtual machine's own wake-ups are single steps. A steady load, or a timer that
+    uses 20 ms every two seconds, still fails (flow 05 checks both under either rule).
+- A check that waits for something the VM does late (the memory of a frozen frame coming back while a
+  countdown runs) polls for a few seconds on every machine rather than looking once.
 
 ## Engine tests
 

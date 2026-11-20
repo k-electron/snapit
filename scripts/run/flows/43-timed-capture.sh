@@ -36,6 +36,7 @@ no_countdown_windows() { [[ "$(countdown_windows)" == "0" ]]; }
 no_helper_running() { [[ "$(helper_count)" == "0" ]]; }
 # timed_png <path>: copies the Capture open in the Editor (which closes it) and saves the PNG.
 timed_png() {
+  rm -f "$1"  # a Capture that did not open must not be read as the file of the one before
   send "$APP_SOCK" pasteboard-clear >/dev/null
   copy_closes_editor
   send "$APP_SOCK" "pasteboard-dump-png $1" >/dev/null
@@ -45,7 +46,7 @@ timed_start() {
   area_start "press-shortcut capture-area" >/dev/null
   area_drag 0 "$1" "$2" "$3" "$4"
   press_tile timed-capture 10 10
-  wait_until 5 timed_is state counting
+  wait_until 5 timed_is state counting || fail "a countdown did not start after 'Capture in N s' (the Capture is '$(send "$APP_SOCK" overlay-facts | head -1)', countdown '$(timed state)')"
 }
 SRGB_SHA_TIMED="$("$INSPECT" profile-sha srgb)"
 P3_SHA_TIMED="$("$INSPECT" profile-sha displayP3)"
@@ -149,6 +150,10 @@ expect_equal "and the badge, 84 x 30 points" "1" "$(printf '%s\n' "$PANELS" | gr
 expect_equal "and nothing else: five panels" "5" "$(countdown_windows)"
 expect_equal "no Capture is taken while it counts" "$FRESH0" "$(timed fresh-captures)"
 expect_equal "the badge is below the border, aligned to its right edge" "318,308 84x30" "$(timed badge)"
+# macOS posts the displays-changed notification for a Dock that moved too (and a virtual machine posts it
+# for nothing): with the displays as they were, the countdown goes on.
+send "$APP_SOCK" overlay-screens-noise >/dev/null
+expect_equal "a displays-changed notification with the same displays does not end the countdown" "counting" "$(timed state)"
 SEQ=""
 LAST=""
 for _ in $(seq 1 40); do
@@ -350,9 +355,17 @@ area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 100 1400 800
 TIMED_WITH_OVERLAY="$(precise_mb "$APP_PID")"
 press_tile timed-capture 10 10
-wait_until 5 timed_is state counting
+wait_until 5 timed_is state counting || fail "no countdown started for the memory check ('$(timed state)')"
 sleep 0.8
+# The frame goes when the overlay does; the process's footprint follows within a few seconds (a virtual
+# machine's software rendering lets go of its copies late), so this waits for it: the Capture that was
+# taken at zero is ten seconds away.
 TIMED_COUNTING="$(precise_mb "$APP_PID")"
+for _ in $(seq 1 12); do
+  awk -v a="$TIMED_COUNTING" -v b="$TIMED_REST" 'BEGIN { exit !(a - b <= 6) }' && break
+  sleep 0.5
+  TIMED_COUNTING="$(precise_mb "$APP_PID")"
+done
 echo "     ${TIMED_REST} MB at rest, ${TIMED_WITH_OVERLAY} MB with the overlay and the bar, ${TIMED_COUNTING} MB while counting"
 if awk -v a="$TIMED_COUNTING" -v b="$TIMED_REST" 'BEGIN { exit !(a - b <= 6) }'; then
   pass "the countdown holds no frozen frame (${TIMED_COUNTING} MB counting, ${TIMED_REST} MB at rest, with the 21 MB frame gone)"

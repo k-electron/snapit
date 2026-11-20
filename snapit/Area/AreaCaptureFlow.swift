@@ -160,6 +160,7 @@ enum AreaCaptureFlow {
     /// the outcome, and when no Editor opened the app the user was in gets focus back.
     static func conclude(_ outcome: Result) {
         result = outcome
+        if TestMode.isActive { NSLog("snapit: Area Capture concluded: \(outcome)") }
 
         // Window Capture: lets go of the shareable-window list fetched while the overlay showed.
         WindowCaptureSources.current.release()
