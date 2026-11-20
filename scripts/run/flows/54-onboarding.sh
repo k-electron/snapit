@@ -57,7 +57,6 @@ restart_app() {
 }
 
 ONB_APP_FOOT_BEFORE="$(footprint_mb "$APP_PID")"
-LAST_CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
 
 # 1. Test mode starts finished: nothing shows, and a Shortcut still captures (every other flow).
 expect_equal "Onboarding starts finished in test mode: the launch check shows nothing" "none" "$(send "$APP_SOCK" onboarding-launch-check)"
@@ -116,6 +115,7 @@ expect_equal "it resumes at Save location" "saveLocation" "$(onb step)"
 
 # 6. Resume at a Shortcut press: nothing is captured meanwhile.
 onb_close_all
+LAST_CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
 send_slow "$APP_SOCK" "press-shortcut capture-area" >/dev/null
 if wait_until 15 onb_visible; then pass "a Shortcut press opens Onboarding while it is unfinished"; else fail "a Shortcut press did not open Onboarding"; fi
 expect_equal "the Shortcut press resumes at Save location" "saveLocation" "$(onb step)"
@@ -362,7 +362,10 @@ fi
 assert_idle_cpu "the menu bar app after Onboarding" "$APP_PID" "$IDLE_SECONDS"
 
 # Put the fake macOS and Onboarding back for the flows after this one.
+# The relaunch through Relaunch snapit went through LaunchServices, which leaves the process without the
+# run's log file: start it again the way the run does, so later flows read its log.
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 send "$APP_SOCK" "defaults-set saveLocation $ONB_SAVE_BEFORE" >/dev/null
 rm -rf "$ONB_ELSEWHERE" "$RUN_ROOT/onboarding-guide.png"
+restart_app "its log is the run's again"
