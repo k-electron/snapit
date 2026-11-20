@@ -4,10 +4,19 @@
 //
 //   png-inspect info <file>                     key=value lines: size, chunks, pHYs, iCCP
 //   png-inspect verify-fixture <file> <w> <h>   compares every pixel with the fixture formula
-//   png-inspect verify-fixture-halved <file> <w> <h>
-//                                               the file is the fixture of w x h pixels averaged down to half
-//                                               size (1x Export of a Retina Capture): every pixel is the
-//                                               average of its 2 x 2 source block, rounded half up
+//   png-inspect verify-fixture-scaled <file> <w> <h> <factor>
+//                                               the file is the fixture of w x h pixels averaged down by a whole
+//                                               factor (a 1x Export of a Retina Capture): its size is the source
+//                                               size divided by the factor, rounded, and every pixel is the
+//                                               average of its factor x factor block, rounded half up
+//   png-inspect pixel <file> <x> <y>            the pixel's red,green,blue as 0-255 values in the PNG's own color space
+//   png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]
+//                                               how many pixels differ from the fixture formula, their bounding
+//                                               box (`x0,y0,x1,y1`, end exclusive) and, given a rectangle
+//                                               (end exclusive), how many of them lie outside and inside it
+//   png-inspect compare <a> <b>                 how two PNGs of the same size differ: `max_diff=` (the largest
+//                                               difference of any channel, 0-255) and `over_<n>=` (how many
+//                                               pixels differ by more than 8 in any channel)
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect verify-fixture <file> <w> <h> <full w> <full h> <x> <y>
 //                                               the same for a crop: the file is the w x h pixels of the
@@ -86,8 +95,21 @@ func loadImage(_ path: String) -> (CGImage, [CFString: Any]) {
     return (image, properties)
 }
 
+/// A bitmap holding the image's pixels as 8-bit red, green, blue, unused, in the image's own
+/// color space (`data`, owned by the context: keep the context while reading).
+func readPixels(_ image: CGImage) -> CGContext {
+    guard let space = image.colorSpace,
+        let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { fail("cannot read pixels in the image's color space") }
+    context.setBlendMode(.copy)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return context
+}
+
 let arguments = CommandLine.arguments
-guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|profile-sha|general-pasteboard|windows") }
+guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|verify-fixture-scaled|pixel|diff-fixture|profile-sha|general-pasteboard|windows") }
 
 switch arguments[1] {
 case "info":
@@ -165,38 +187,35 @@ case "verify-fixture":
     print("mismatches=\(mismatches)")
     if mismatches > 0 { print("first_mismatch=\(first)") }
 
-case "verify-fixture-halved":
-    guard arguments.count == 5, let sourceWidth = Int(arguments[3]), let sourceHeight = Int(arguments[4]),
-        sourceWidth % 2 == 0, sourceHeight % 2 == 0
-    else { fail("verify-fixture-halved <file> <w> <h> (even sizes)") }
-    let width = sourceWidth / 2, height = sourceHeight / 2
+case "verify-fixture-scaled":
+    guard arguments.count == 6, let sourceWidth = Int(arguments[3]), let sourceHeight = Int(arguments[4]),
+        let factor = Int(arguments[5]), factor >= 1, sourceWidth % factor == 0, sourceHeight % factor == 0
+    else { fail("verify-fixture-scaled <file> <w> <h> <factor> (sizes a multiple of the factor)") }
+    let width = sourceWidth / factor, height = sourceHeight / factor
     let (image, _) = loadImage(arguments[2])
     guard image.width == width, image.height == height else {
         print("size=\(image.width)x\(image.height)")
         print("mismatches=all")
         exit(0)
     }
-    guard let space = image.colorSpace,
-        let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
-    else { fail("cannot read pixels in the image's color space") }
-    context.setBlendMode(.copy)
-    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-    let pixels = context.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
     func fixture(_ x: Int, _ y: Int) -> (Int, Int, Int) {
         (x * 255 / max(sourceWidth - 1, 1), y * 255 / max(sourceHeight - 1, 1), (x / 8 + y / 8) % 2 == 0 ? 40 : 200)
     }
     var mismatches = 0
     var first = ""
+    let block = factor * factor
     for y in 0..<height {
         for x in 0..<width {
             var sum = (0, 0, 0)
-            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                let c = fixture(2 * x + dx, 2 * y + dy)
-                sum = (sum.0 + c.0, sum.1 + c.1, sum.2 + c.2)
+            for dy in 0..<factor {
+                for dx in 0..<factor {
+                    let c = fixture(factor * x + dx, factor * y + dy)
+                    sum = (sum.0 + c.0, sum.1 + c.1, sum.2 + c.2)
+                }
             }
-            let expected = ((sum.0 + 2) / 4, (sum.1 + 2) / 4, (sum.2 + 2) / 4)
+            let expected = ((sum.0 + block / 2) / block, (sum.1 + block / 2) / block, (sum.2 + block / 2) / block)
             let at = pixels + (y * width + x) * 4
             if Int(at[0]) != expected.0 || Int(at[1]) != expected.1 || Int(at[2]) != expected.2 {
                 if mismatches == 0 { first = "\(x),\(y) got \(at[0]),\(at[1]),\(at[2]) want \(expected)" }
@@ -207,6 +226,76 @@ case "verify-fixture-halved":
     print("size=\(width)x\(height)")
     print("mismatches=\(mismatches)")
     if mismatches > 0 { print("first_mismatch=\(first)") }
+
+case "pixel":
+    guard arguments.count == 5, let x = Int(arguments[3]), let y = Int(arguments[4]) else { fail("pixel <file> <x> <y>") }
+    let (image, _) = loadImage(arguments[2])
+    guard x >= 0, y >= 0, x < image.width, y < image.height else { fail("pixel outside the \(image.width)x\(image.height) image") }
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: image.width * image.height * 4)
+    let at = pixels + (y * image.width + x) * 4
+    print("\(at[0]),\(at[1]),\(at[2])")
+
+case "diff-fixture":
+    guard arguments.count == 5 || arguments.count == 9, let width = Int(arguments[3]), let height = Int(arguments[4]) else {
+        fail("diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]")
+    }
+    let rect = arguments.count == 9 ? arguments[5...8].compactMap { Int($0) } : []
+    if arguments.count == 9, rect.count != 4 { fail("the rectangle is four integers") }
+    let (image, _) = loadImage(arguments[2])
+    guard image.width == width, image.height == height else {
+        print("size=\(image.width)x\(image.height)")
+        print("changed=all")
+        exit(0)
+    }
+    let bitmap = readPixels(image)
+    let pixels = bitmap.data!.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    var changed = 0, outside = 0, inside = 0
+    var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+    for y in 0..<height {
+        for x in 0..<width {
+            let at = pixels + (y * width + x) * 4
+            let expected = (
+                UInt8(x * 255 / max(width - 1, 1)), UInt8(y * 255 / max(height - 1, 1)),
+                UInt8((x / 8 + y / 8) % 2 == 0 ? 40 : 200)
+            )
+            guard at[0] != expected.0 || at[1] != expected.1 || at[2] != expected.2 else { continue }
+            changed += 1
+            minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y)
+            if rect.count == 4 {
+                if x < rect[0] || x >= rect[2] || y < rect[1] || y >= rect[3] { outside += 1 } else { inside += 1 }
+            }
+        }
+    }
+    print("changed=\(changed)")
+    print(changed == 0 ? "bbox=none" : "bbox=\(minX),\(minY),\(maxX + 1),\(maxY + 1)")
+    if rect.count == 4 {
+        print("outside=\(outside)")
+        print("inside=\(inside)")
+    }
+
+case "compare":
+    guard arguments.count == 4 else { fail("compare <a> <b>") }
+    let (imageA, _) = loadImage(arguments[2])
+    let (imageB, _) = loadImage(arguments[3])
+    guard imageA.width == imageB.width, imageA.height == imageB.height else {
+        print("size=\(imageA.width)x\(imageA.height) and \(imageB.width)x\(imageB.height)")
+        print("max_diff=all")
+        exit(0)
+    }
+    let bitmapA = readPixels(imageA), bitmapB = readPixels(imageB)
+    let count = imageA.width * imageA.height * 4
+    let a = bitmapA.data!.bindMemory(to: UInt8.self, capacity: count)
+    let b = bitmapB.data!.bindMemory(to: UInt8.self, capacity: count)
+    var maxDiff = 0, over = 0
+    for pixel in 0..<(imageA.width * imageA.height) {
+        var worst = 0
+        for channel in 0..<3 { worst = max(worst, abs(Int(a[pixel * 4 + channel]) - Int(b[pixel * 4 + channel]))) }
+        maxDiff = max(maxDiff, worst)
+        if worst > 8 { over += 1 }
+    }
+    print("max_diff=\(maxDiff)")
+    print("over_8=\(over)")
 
 case "profile-sha":
     guard arguments.count == 3 else { fail("profile-sha <srgb|displayP3>") }
