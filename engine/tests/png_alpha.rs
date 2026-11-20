@@ -9,8 +9,8 @@ use std::ptr;
 
 use snapit_engine::{
     SNAPIT_PNG_BALANCED, SNAPIT_PNG_FAST, SNAPIT_STATUS_OK, SnapitPngParams, snapit_buffer_free,
-    snapit_bytes_free, snapit_crop, snapit_downscale, snapit_png_encode, snapit_png_encode_ex,
-    snapit_png_encode_to_fd,
+    snapit_bytes_free, snapit_crop, snapit_downscale, snapit_pixelate, snapit_png_encode,
+    snapit_png_encode_ex, snapit_png_encode_to_fd,
 };
 use support::{alloc, bytes_of, chunk, empty_bytes, fixture_bgra};
 
@@ -235,6 +235,54 @@ fn a_crop_copies_alpha_bytes_untouched() {
     // Column 20 (4 in the crop) has half alpha.
     assert_eq!(out[4 * 4 + 3], 128);
     unsafe { snapit_buffer_free(&mut dst) };
+}
+
+#[test]
+fn a_redaction_over_a_transparent_corner_averages_premultiplied_pixels() {
+    // The window's top-left 8 x 8 tile: 6 x 6 pixels are the transparent corner, the rest is
+    // opaque. The tile's mean is premultiplied, so it keeps a quarter-ish alpha, never an
+    // opaque colour next to a transparent one.
+    let pixels = window(160);
+    let mut dst = alloc(8, 8);
+    let status = unsafe {
+        snapit_pixelate(
+            pixels.as_ptr(),
+            40,
+            30,
+            160,
+            0,
+            0,
+            8,
+            8,
+            8,
+            dst.data,
+            dst.stride,
+        )
+    };
+    assert_eq!(status, SNAPIT_STATUS_OK);
+    let out = unsafe { std::slice::from_raw_parts(dst.data, dst.stride * 8) }.to_vec();
+    unsafe { snapit_buffer_free(&mut dst) };
+    // 64 pixels, 28 of them opaque (the corner square is 6 x 6 = 36 transparent).
+    let expected_alpha = (28 * 255 / 64) as u8;
+    for y in 0..8usize {
+        for x in 0..8usize {
+            assert_eq!(out[y * dst_stride_of(8) + x * 4 + 3], expected_alpha);
+        }
+    }
+    // Encoding it gives an RGBA PNG with that alpha and a straight colour no brighter than 255.
+    let tile = image(8, 8, 32, |x, y| {
+        let at = y as usize * dst_stride_of(8) + x as usize * 4;
+        [out[at], out[at + 1], out[at + 2], out[at + 3]]
+    });
+    let png = encode(&tile, (8, 8, 32), &params(SNAPIT_PNG_FAST, (8, 8)));
+    let (rgba, _, _, stored) = decode_rgba(&png);
+    assert_eq!(stored, 6);
+    assert!(rgba.iter().all(|p| p[3] == expected_alpha));
+}
+
+/// The stride the engine gives a buffer `width` pixels wide.
+fn dst_stride_of(width: usize) -> usize {
+    (width * 4).next_multiple_of(64)
 }
 
 #[test]

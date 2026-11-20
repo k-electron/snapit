@@ -371,6 +371,45 @@ SnapitStatus snapit_downscale(const uint8_t *pixels,
                               uint32_t max_row_samples);
 
 /*
+ Pixelates the `width` x `height` rectangle of a BGRA image that starts at column `x`, row
+ `y`, writing the result into `dst`: the rectangle is cut into square tiles of `block` pixels
+ with the first tile at the rectangle's top left corner, and every pixel of a tile becomes the
+ mean of the tile's source pixels, channel by channel (all four, rounded down). What is left at
+ the right and bottom edge, when the sides are not whole numbers of blocks, is folded into the
+ last tile of its row or column, so the edge tiles are between `block` and `2 * block - 1`
+ pixels on a side and never a thin strip or a lone pixel; a side shorter than one block is a
+ single tile. The result's top-left pixel is the pixelated source pixel `(x, y)`.
+
+ The source is never changed, so a caller can pixelate the same pixels again after the
+ destination has been drawn on, and Redactions that overlap each average the original
+ pixels. Both images are 8-bit BGRA, each read or written through its own stride (the
+ distance in bytes between the starts of two rows, at least `width * 4`); only the
+ `width * 4` pixel bytes of each destination row are written. `dst` may be the window of a
+ larger image (its pointer moved to the window's top left pixel, its stride the larger
+ image's), and so may `src`.
+
+ Returns `SNAPIT_STATUS_INVALID_ARGUMENT`, writing nothing, when a pointer is null, a size or
+ `block` is zero, a stride is too small, the rectangle is not wholly inside the source image,
+ the rectangle holds more than 2^40 pixels, or the two images overlap in memory.
+
+ # Safety
+
+ `src` must be valid for reads of `src_stride * (src_height - 1) + src_width * 4` bytes and
+ `dst` valid for writes of `dst_stride * (height - 1) + width * 4` bytes, for the whole call.
+ */
+SnapitStatus snapit_pixelate(const uint8_t *src,
+                             uint32_t src_width,
+                             uint32_t src_height,
+                             size_t src_stride,
+                             uint32_t x,
+                             uint32_t y,
+                             uint32_t width,
+                             uint32_t height,
+                             uint32_t block,
+                             uint8_t *dst,
+                             size_t dst_stride);
+
+/*
  Encodes premultiplied BGRA pixels as a PNG and stores the bytes in `out`: RGB when every pixel
  is opaque, RGBA (colours un-premultiplied) when any is not.
 
