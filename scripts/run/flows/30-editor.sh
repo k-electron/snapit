@@ -147,8 +147,7 @@ HELPER_MIN=""
 HELPER_MAX=""
 for _ in 1 2 3 4 5; do
   if capture_into_editor "menu-click capture.screen"; then
-    sleep 1
-    HELPER_MB="$(footprint_mb "$HELPER_PID")"
+    HELPER_MB="$(peak_footprint_mb "$HELPER_PID" 3)"
     if [[ -z "$HELPER_MIN" ]] || awk -v a="$HELPER_MB" -v b="$HELPER_MIN" 'BEGIN { exit !(a < b) }'; then HELPER_MIN="$HELPER_MB"; fi
     if [[ -z "$HELPER_MAX" ]] || awk -v a="$HELPER_MB" -v b="$HELPER_MAX" 'BEGIN { exit !(a > b) }'; then HELPER_MAX="$HELPER_MB"; fi
     copy_closes_editor
