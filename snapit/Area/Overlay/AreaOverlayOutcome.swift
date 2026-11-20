@@ -5,4 +5,6 @@ enum AreaOverlayOutcome: Equatable {
     case capture(AreaSelection)
     /// Esc, the Cancel button, or the displays changed: nothing is captured.
     case cancel
+    /// The Color picker picked this pixel: its hex goes to the pasteboard and a toast says so.
+    case pickColor(PickedColor)
 }

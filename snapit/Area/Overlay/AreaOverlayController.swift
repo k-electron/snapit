@@ -14,12 +14,17 @@ struct AreaSelection: Equatable {
 /// Action bar (the default) the selection stays: the overlay is `adjusting`, with eight handles to
 /// resize it, a drag inside it to move it, and the Action bar. Return, a double-click inside the
 /// selection and the bar's Capture button finish with it; Esc and the bar's Cancel finish with
-/// `.cancel`. The controller keeps no pixels of its own; the frozen frames belong to the scenes'
+/// `.cancel`. The Color picker is a state of this same overlay (`pickingColor`): the selection, the
+/// Action bar and the crosshair give way to a loupe on the one pixel being sampled. From the Action
+/// bar, Esc goes back to it; opened from the menu or its Shortcut, the overlay starts in the picker
+/// and Esc ends it. The controller keeps no pixels of its own; the frozen frames belong to the scenes'
 /// layers and go with the panels at `teardown()`.
 @MainActor
 final class AreaOverlayController: ActionBarHost {
     enum State: String {
         case idle, hoverWindow, dragging, adjusting
+        /// The Color picker: a loupe on one device pixel; click or Enter copies its hex.
+        case pickingColor
     }
 
     /// What the pressed mouse button is doing.
@@ -27,6 +32,8 @@ final class AreaOverlayController: ActionBarHost {
         case none, newArea, resize(AreaHandle), move
         /// A press on a tile of the Action bar.
         case bar
+        /// A press while the Color picker is up: letting go picks.
+        case pick
     }
 
     let displays: [FrozenDisplay]
@@ -50,6 +57,8 @@ final class AreaOverlayController: ActionBarHost {
     private(set) var selection: CGRect?
     private(set) var selectionIndex: Int?
     private(set) var hoveredWindow: CGRect?
+    /// The Color picker's sampled pixel while `state` is `pickingColor`.
+    private(set) var picker: ColorPickerSession?
 
     // The gesture in progress.
     private var isPressed = false
@@ -82,11 +91,16 @@ final class AreaOverlayController: ActionBarHost {
 
     /// Puts a panel on every display. `takesFocus` is false in a scripted run, which never
     /// activates snapit or takes the keyboard from what the user is doing.
-    func show(takesFocus: Bool) {
+    /// With `startsPicking` the overlay opens in the Color picker (the menu item and its Shortcut).
+    func show(takesFocus: Bool, startsPicking: Bool = false) {
         activeIndex = displays.firstIndex { NSMouseInRect(pointer, $0.frame, false) } ?? 0
         let active = displays[activeIndex]
         cursor = AreaGeometry.clamp(
             CGPoint(x: pointer.x - active.frame.minX, y: active.frame.maxY - pointer.y), to: active.bounds)
+        if startsPicking {
+            state = .pickingColor
+            picker = makePickerSession(origin: .entry)
+        }
 
         for (index, display) in displays.enumerated() {
             let panel = AreaOverlayPanel(frame: display.frame)
@@ -161,6 +175,7 @@ final class AreaOverlayController: ActionBarHost {
     func mouseMoved(_ index: Int, _ point: CGPoint) {
         guard !isFinished else { return }
         setCursor(index, point)
+        aimPicker()
         refreshHover()
         setHoveredTile(tile(at: cursor, on: index))
         updateCursor()
@@ -171,6 +186,10 @@ final class AreaOverlayController: ActionBarHost {
         guard !isFinished else { return }
         setCursor(index, point)
         setHoveredTile(nil)
+        if state == .pickingColor {
+            pressInPicker(index, clickCount: clickCount)
+            return
+        }
         // A press on the Action bar is the bar's: on a tile it is that tile's, on its padding nothing.
         if let frame = containers[index].actionBarFrame, frame.contains(cursor) {
             isPressed = true
@@ -213,6 +232,11 @@ final class AreaOverlayController: ActionBarHost {
             if let pressedTile { pressedTile.pointerDragged(at: tilePoint(clamped, in: pressedTile, on: index)) }
             return
         }
+        if case .pick = gesture {
+            aimPicker()
+            refreshScenes()
+            return
+        }
         // A press that moves less than the threshold moves nothing: a double-click's jitter leaves
         // the selection where it is.
         if !hasMovedPastThreshold {
@@ -229,7 +253,7 @@ final class AreaOverlayController: ActionBarHost {
         case .newArea: selection = AreaGeometry.rect(anchor, clamped)
         case .resize(let handle): selection = handle.resized(pressedSelection, by: delta, in: bounds)
         case .move: selection = AreaHandle.moved(pressedSelection, by: delta, in: bounds)
-        case .none, .bar: break
+        case .none, .bar, .pick: break
         }
         updateCursor()
         refreshScenes()
@@ -243,6 +267,11 @@ final class AreaOverlayController: ActionBarHost {
         let ended = gesture
         gesture = .none
         setCursor(index, hasMovedPastThreshold ? AreaGeometry.clamp(point, to: displays[index].bounds) : point)
+        if case .pick = ended {
+            aimPicker()
+            pickColor()
+            return
+        }
         if case .bar = ended, let tile = pressedTile {
             pressedTile = nil
             tile.isPressed = false
@@ -400,9 +429,17 @@ final class AreaOverlayController: ActionBarHost {
         guard event.type == .keyDown else { return true }
         switch event.keyCode {
         case 53:
-            cancel()
+            if state == .pickingColor { escapePicker() } else { cancel() }
         case 36, 76:
-            if state == .adjusting { captureSelection() }
+            if state == .pickingColor { pickColor() } else if state == .adjusting { captureSelection() }
+        case 123, 124, 125, 126:
+            // Left, right, down, up: nudge the sampled pixel (Shift: ten at a time).
+            if state == .pickingColor {
+                let step = event.modifierFlags.contains(.shift) ? 10 : 1
+                nudgePicker(
+                    dx: event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0,
+                    dy: event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0)
+            }
         default:
             // The Action bar's items name their own keys (the Color picker's P).
             if state == .adjusting, !event.isARepeat,
@@ -413,6 +450,97 @@ final class AreaOverlayController: ActionBarHost {
         }
         // Every other key is swallowed while the overlay is up, so none of them beeps.
         return true
+    }
+
+    // MARK: Color picker
+
+    /// Opens the Color picker from the Action bar (its button, or P). The selection stays where it
+    /// was; Esc comes back to it.
+    func beginPickingColor() {
+        guard state == .adjusting, !isFinished else { return }
+        setHoveredTile(nil)
+        state = .pickingColor
+        picker = makePickerSession(origin: .actionBar)
+        updateCursor()
+        refreshScenes()
+    }
+
+    private func makePickerSession(origin: ColorPickerSession.Origin) -> ColorPickerSession {
+        let display = displays[activeIndex]
+        return ColorPickerSession(
+            origin: origin, cursor: cursor, displayIndex: activeIndex, scale: display.scale,
+            width: display.image.width, height: display.image.height)
+    }
+
+    /// The pixel under the pointer is the sampled one.
+    private func aimPicker() {
+        guard state == .pickingColor else { return }
+        let display = displays[activeIndex]
+        picker?.aim(
+            at: cursor, on: activeIndex, scale: display.scale, width: display.image.width, height: display.image.height)
+    }
+
+    /// A press in the picker picks when it is let go, wherever the pointer has been dragged to. The
+    /// second click of a double-click on the Pick Color button is that button's, not a pick.
+    private func pressInPicker(_ index: Int, clickCount: Int) {
+        isPressed = true
+        hasMovedPastThreshold = false
+        pressedIndex = index
+        if picker?.isTailOfOpeningClick(clickCount: clickCount) == true {
+            gesture = .none
+            return
+        }
+        gesture = .pick
+        aimPicker()
+        refreshScenes()
+    }
+
+    private func nudgePicker(dx: Int, dy: Int) {
+        guard let index = picker?.displayIndex else { return }
+        let image = displays[index].image
+        picker?.nudge(dx: dx, dy: dy, width: image.width, height: image.height)
+        refreshScenes()
+    }
+
+    /// Esc: back to the Action bar when the picker came from it, else the overlay ends.
+    private func escapePicker() {
+        guard let picker else { return }
+        switch picker.origin {
+        case .actionBar:
+            self.picker = nil
+            state = .adjusting
+            isPressed = false
+            gesture = .none
+            updateCursor()
+            refreshScenes()
+        case .entry:
+            cancel()
+        }
+    }
+
+    /// Click or Enter: the sampled pixel's hex goes to the flow, which copies it and shows the toast.
+    private func pickColor() {
+        guard state == .pickingColor, let picker,
+            let color = PixelSampler.color(in: displays[picker.displayIndex].image, at: picker.pixel)
+        else { return }
+        finish(with: .pickColor(PickedColor(hex: color.hex, displayIndex: picker.displayIndex)))
+    }
+
+    /// The picker's loupe on the display being sampled; every other layer of the overlay is hidden.
+    private func refreshPickerScenes() {
+        for (index, container) in containers.enumerated() {
+            container.hideActionBar()
+            var picked: PickerSceneState?
+            if let picker, picker.displayIndex == index,
+                let color = PixelSampler.color(in: displays[index].image, at: picker.pixel)
+            {
+                picked = PickerSceneState(pixel: picker.pixel, color: color, cursor: cursor)
+            }
+            container.sceneView.scene.update(
+                AreaSceneState(
+                    hasPointer: false, cursor: .zero, hoveredWindow: nil, selection: nil, actionBar: nil,
+                    tooltip: nil, picker: picked))
+        }
     }
 
     // MARK: Finishing
@@ -441,6 +569,10 @@ final class AreaOverlayController: ActionBarHost {
     // MARK: Scenes
 
     private func refreshScenes() {
+        if state == .pickingColor {
+            refreshPickerScenes()
+            return
+        }
         let adjusting = state == .adjusting
         var resizing = false
         if case .resize = gesture { resizing = true }

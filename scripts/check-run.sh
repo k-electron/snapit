@@ -72,6 +72,13 @@ if wait_until 10 answers "$APP_SOCK"; then pass "menu bar app starts and answers
 APP_PID="$(pid_of "$APP_EXE")"
 
 for flow in "$ROOT_DIR"/scripts/run/flows/*.sh; do
+  # SNAPIT_FLOWS="10 20 46" runs only the flows whose names start with one of those numbers (a
+  # flow may build on an earlier one's helpers: 42 on 40, 40 on 20).
+  if [[ -n "${SNAPIT_FLOWS:-}" ]]; then
+    selected=0
+    for prefix in $SNAPIT_FLOWS; do [[ "$(basename "$flow")" == "$prefix"-* ]] && selected=1; done
+    ((selected)) || continue
+  fi
   echo "--- $(basename "$flow" .sh)"
   # shellcheck source=/dev/null
   source "$flow"

@@ -7,9 +7,13 @@ import AppKit
 /// the overlay is up. What happens next is the user's: with "After selecting an Area" at Capture on
 /// release, a drag released (or a click on the highlighted window) takes the Capture; with Show
 /// Action bar, the selection stays and the Action bar, Return or a double-click takes it. Esc
-/// cancels. The pixels go to the Editor helper through
-/// a Capture file (`CaptureHandoff`); this process keeps nothing afterwards, and every frozen
-/// frame is gone when the overlay closes.
+/// cancels. The pixels go to the Editor helper through a Capture file (`CaptureHandoff`); this
+/// process keeps nothing afterwards, and every frozen frame is gone when the overlay closes.
+///
+/// The Color picker opens over the same frozen frames: from the Action bar, or straight away from
+/// the menu item and its Shortcut through `startPickingColor()`. It ends with a hex on the
+/// pasteboard and a toast. No Capture is taken, so no Editor is warmed up for a pick started from
+/// the menu or the Shortcut.
 @MainActor
 enum AreaCaptureFlow {
     enum StartOutcome: Equatable {
@@ -25,6 +29,8 @@ enum AreaCaptureFlow {
     enum Result: Equatable {
         /// Capture N is showing in the Editor.
         case opened(number: Int)
+        /// The Color picker copied this `#RRGGBB`.
+        case pickedColor(String)
         case cancelled
         /// Screen Recording is not granted; macOS was asked to show its prompt.
         case permissionNeeded
@@ -41,6 +47,16 @@ enum AreaCaptureFlow {
 
     @discardableResult
     static func start() async -> StartOutcome {
+        await begin(picking: false)
+    }
+
+    /// The menu's Pick Color and its Shortcut: the overlay opens in the Color picker.
+    @discardableResult
+    static func startPickingColor() async -> StartOutcome {
+        await begin(picking: true)
+    }
+
+    private static func begin(picking: Bool) async -> StartOutcome {
         guard CaptureGate.enter() else { return .busy }
         let began = ContinuousClock.now
         result = nil
@@ -51,11 +67,11 @@ enum AreaCaptureFlow {
             return .permissionNeeded
         }
         // The Capture has started: the Editor helper warms up while the displays are frozen and
-        // the user chooses an Area.
-        EditorWarmUp.begin()
+        // the user chooses an Area. Picking a color takes no Capture, so nothing warms up for it.
+        if !picking { EditorWarmUp.begin() }
         do {
             // The window list is read now, before anything else can change it.
-            let windows = OnScreenWindowSources.current.windowsFrontToBack()
+            let windows = picking ? [] : OnScreenWindowSources.current.windowsFrontToBack()
             let source = AreaCaptureSources.current
             let displays = try await source.freezeDisplays()
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
@@ -63,7 +79,7 @@ enum AreaCaptureFlow {
             let controller = AreaOverlayController(displays: displays, windows: windows, pointer: source.pointerLocation)
             controller.onFinish = { outcome in finish(outcome) }
             overlay = controller
-            controller.show(takesFocus: !TestMode.isActive)
+            controller.show(takesFocus: !TestMode.isActive, startsPicking: picking)
             lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
@@ -98,6 +114,13 @@ enum AreaCaptureFlow {
             controller.teardown()
             // Cancelled: the Shortcut works again at once.
             conclude(.cancelled)
+        case .pickColor(let picked):
+            let frame = controller.displays[picked.displayIndex].frame
+            let scale = controller.displays[picked.displayIndex].scale
+            picked.copyToPasteboard()
+            controller.teardown()
+            ColorToast.show("Copied \(picked.hex)", on: frame, scale: scale)
+            conclude(.pickedColor(picked.hex))
         }
     }
 
