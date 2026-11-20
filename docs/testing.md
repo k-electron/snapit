@@ -58,7 +58,7 @@ unassigned by default, like Pick Color, has `defaultKeyCode: nil`. Test mode nev
 KeyboardShortcuts: `InjectedShortcuts` keeps the handlers in a dictionary and the combos in the run's
 defaults, so a recorded Shortcut survives a relaunch of the menu bar app.
 
-Test mode adds socket commands (they exist only while test mode is on). The scripted run sends them
+Test mode adds socket commands (they exist only while test mode is on: `menu-titles` and `start-editor` in the menu bar app, `engine-version` in both processes, and every command below). The scripted run sends them
 to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper), one line each:
 
 | Command | What it does |
@@ -277,7 +277,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 working on one flow (flows share state, so `scripts/test.sh` always runs them all).
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
-menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
+menu bar app, then sources every flow in name order (`05-` the run's own measuring tools, `10-` menu bar app, `20-` Screen Capture
 into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `47-` the Color picker (before the Last Capture flow and Settings, which relaunch the menu bar app), `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `56-` Check for Updates, `57-` a missing permission (Screen Recording at a Shortcut press or menu item, a folder a Save can't write to, a Save that fails after the hand-over; it relaunches the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
@@ -312,8 +312,31 @@ Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w
 
 `check-run.sh` also ends with the isolation assertion: no `dev.snapit.snapit*.plist` in
 `~/Library/Preferences` is new or changed, `defaults read` of the bundle ID domains is unchanged,
-`~/Library/Caches/dev.snapit.snapit` is unchanged and the general pasteboard's change count is the
-same as before the run.
+`~/Library/Caches/dev.snapit.snapit` is unchanged and the general pasteboard was not written to by the
+run. The general pasteboard is the user's, and a user may copy something during a run, so the run never
+reads its contents: `png-inspect general-pasteboard` prints the change count and, only when the count differs from the one it is given, a shape (`png`, `hex`
+for plain text of the form #RRGGBB, matched in memory and never printed, `other`, `empty`); a pasteboard
+nobody wrote to is never read. snapit writes
+only a PNG (Copy) or a hex string (the Color picker), so a rise in the count fails the run only when the
+pasteboard now has one of those two shapes (`pasteboard_verdict` in `lib.sh`); a copy of anything else
+passes with a note. A user who copies a PNG (a screenshot to the clipboard) or a #RRGGBB string during a run
+still trips it: run again. A real regression, product code writing to `NSPasteboard.general`, changes the
+count to one of those shapes and is caught. Flow `05-run-helpers.sh` puts a PNG, a hex string and other text on a
+private pasteboard (`png-inspect pasteboard-fixture`, never the general one) and runs the same probe and
+`pasteboard_verdict` over it: the PNG and the hex string fail, the other text does not.
+
+`assert_idle_cpu <label> <pid> <seconds>` reads the process's CPU time over one-second windows (a run of 1 or
+2 seconds is a single window, passing at 0.02 s of CPU as before). Several windows pass when the mean of the
+quietest half is at most 0.5% of a CPU and at most max(2, windows / 4) windows used 10 ms or more, so a short
+burst from a loaded machine drops out, while a loop that runs all the time (1% and up) or a timer that fires
+every second or two (it is in many windows) fails. Flow `05-run-helpers.sh` checks that on a process that burns 2% CPU steadily and on one that
+burns 20 ms every two seconds (both must fail) and on one with a single 60 ms burst (it must pass). `overlay_panels` waits up to 20 s for the window
+server's list to agree with the app's own count.
+
+The menu bar app is started again with `relaunch_app [<why>]` (after it quit or was killed; sets `APP_PID`),
+`restart_app [<why>]` (quit, wait, relaunch) and `launch_app [<root>]` (a second one under its own root), all in
+`lib.sh`; do not write a flow's own `nohup "$APP_EXE"`. The helper's process count and the warm-up state are
+`helper_count`, `no_helper`, `some_helper`, `warm_state`, `warm_is`, also in `lib.sh`.
 
 ## Adding an edge or a test-mode command
 

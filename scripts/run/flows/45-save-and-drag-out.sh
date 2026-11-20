@@ -14,7 +14,6 @@ save_idle() { [[ "$(send "$APP_SOCK" save-pending)" == "0" ]]; }
 file_size() { stat -f '%z' "$1"; }
 # A setting is changed while no Editor helper runs, by the menu bar app. (Flow 52 changes them
 # through the Settings window, inside the helper, the product's own path.)
-no_helper() { [[ -z "$(helper_pid)" ]]; }
 set_default() {
   wait_until 10 no_helper
   send "$APP_SOCK" "defaults-set $1 $2" >/dev/null
@@ -284,6 +283,4 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_equal "the drag-out folders go when snapit quits" "" "$(ls -A "$RUN_ROOT/drag-out" 2>/dev/null)"
 fi
 clear_save_folder
-(nohup "$APP_EXE" >>"$RUN_ROOT/app.log" 2>&1 &)
-if wait_until 15 answers "$APP_SOCK"; then pass "snapit starts again after the Quit"; else fail "snapit did not start again"; fi
-APP_PID="$(pid_of "$APP_EXE")"
+relaunch_app "after the Quit"
