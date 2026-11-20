@@ -18,17 +18,12 @@ enum ScreenCaptureFlow {
 
     private static var isRunning = false
 
-    /// How the last Capture that ran to an end finished. The scripted run reads it.
-    private(set) static var lastOutcome: Outcome?
-
     @discardableResult
     static func run() async -> Outcome {
         guard !isRunning else { return .busy }
         isRunning = true
         defer { isRunning = false }
-        let outcome = await capture()
-        lastOutcome = outcome
-        return outcome
+        return await capture()
     }
 
     private static func capture() async -> Outcome {

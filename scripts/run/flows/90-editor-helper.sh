@@ -17,6 +17,11 @@ expect_equal "an engine panic comes back as a status code in the Editor helper" 
 expect_equal "the Editor helper survives an engine panic" "$EXPECTED_VERSION" "$(send "$EDITOR_SOCK" engine-version)"
 expect_contains "the Editor helper runs in test mode with the same private pasteboard" \
   "pasteboard=dev.snapit.test.$(basename "$RUN_ROOT")" "$(send "$EDITOR_SOCK" test-seams)"
+# Both processes see the same defaults: write in one, read in the other.
+send "$APP_SOCK" "defaults-set shared-probe written-by-the-menu-bar-app" >/dev/null
+expect_equal "the Editor helper reads a default the menu bar app wrote" "written-by-the-menu-bar-app" "$(send "$EDITOR_SOCK" "defaults-get shared-probe")"
+send "$EDITOR_SOCK" "defaults-set helper-probe written-by-the-helper" >/dev/null
+expect_equal "the menu bar app reads a default the Editor helper wrote" "written-by-the-helper" "$(send "$APP_SOCK" "defaults-get helper-probe")"
 expect_equal "Editor helper replies ok to quit" "ok" "$(send "$EDITOR_SOCK" quit)"
 if wait_until 5 gone "$HELPER_PID"; then pass "Editor helper quits when told to"; else fail "Editor helper is still running after quit"; fi
 

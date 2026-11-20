@@ -12,7 +12,7 @@ enum AppPasteboard {
     }()
 
     /// True when `current` is the private test pasteboard.
-    static var isPrivate: Bool { current !== NSPasteboard.general }
+    static var isPrivate: Bool { TestMode.isActive }
 
     /// Puts `data` on the pasteboard as the only item, of the given type.
     static func write(_ data: Data, as type: NSPasteboard.PasteboardType) {

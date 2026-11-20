@@ -9,8 +9,8 @@ use png::{BitDepth, ColorType, Compression, Info, PixelDimensions, Unit};
 
 use crate::buffer::SNAPIT_BYTES_PER_PIXEL;
 use crate::{
-    SNAPIT_STATUS_ENCODE_FAILED, SNAPIT_STATUS_INVALID_ARGUMENT, SNAPIT_STATUS_OK, SnapitStatus,
-    guard,
+    SNAPIT_STATUS_ENCODE_FAILED, SNAPIT_STATUS_INVALID_ARGUMENT, SNAPIT_STATUS_OK,
+    SNAPIT_STATUS_OUT_OF_MEMORY, SnapitStatus, guard,
 };
 
 /// Fast: the encoder Copy and drag-out use.
@@ -36,6 +36,23 @@ fn pixels_per_metre(dpi: u32) -> u32 {
     (f64::from(dpi) / 0.0254).round() as u32
 }
 
+enum EncodeError {
+    OutOfMemory,
+    Failed,
+}
+
+impl From<png::EncodingError> for EncodeError {
+    fn from(_: png::EncodingError) -> Self {
+        Self::Failed
+    }
+}
+
+impl From<std::io::Error> for EncodeError {
+    fn from(_: std::io::Error) -> Self {
+        Self::Failed
+    }
+}
+
 fn encode(
     pixels: &[u8],
     width: u32,
@@ -44,7 +61,7 @@ fn encode(
     level: u32,
     dpi: u32,
     icc: &[u8],
-) -> Result<Vec<u8>, png::EncodingError> {
+) -> Result<Vec<u8>, EncodeError> {
     let (w, h) = (width as usize, height as usize);
     let mut info = Info::with_size(width, height);
     info.color_type = ColorType::Rgb;
@@ -60,7 +77,12 @@ fn encode(
     }
 
     // A Capture compresses to roughly a tenth of its size; start there and let it grow.
-    let mut out: Vec<u8> = Vec::with_capacity(w * h / 2 + 1024);
+    let mut out: Vec<u8> = Vec::new();
+    // Reserve up front at most 256 MiB; the output grows past that on demand.
+    const MAX_INITIAL_RESERVE: usize = 256 << 20;
+    let estimate = (w.saturating_mul(h) / 2 + 1024).min(MAX_INITIAL_RESERVE);
+    out.try_reserve_exact(estimate)
+        .map_err(|_| EncodeError::OutOfMemory)?;
     let mut encoder = png::Encoder::with_info(&mut out, info)?;
     encoder.set_compression(match level {
         SNAPIT_PNG_FAST => Compression::Fast,
@@ -153,7 +175,8 @@ pub unsafe extern "C" fn snapit_png_encode(
                 }
                 SNAPIT_STATUS_OK
             }
-            Err(_) => SNAPIT_STATUS_ENCODE_FAILED,
+            Err(EncodeError::OutOfMemory) => SNAPIT_STATUS_OUT_OF_MEMORY,
+            Err(EncodeError::Failed) => SNAPIT_STATUS_ENCODE_FAILED,
         }
     })
 }
@@ -162,19 +185,22 @@ pub unsafe extern "C" fn snapit_png_encode(
 ///
 /// # Safety
 ///
-/// `bytes` must be null or point to a `SnapitBytes` the engine filled in (or an empty one).
+/// `bytes` must point to a `SnapitBytes` the engine filled in (or an empty one).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snapit_bytes_free(bytes: *mut SnapitBytes) {
-    if bytes.is_null() {
-        return;
-    }
-    // SAFETY: the caller guarantees `bytes` points to a `SnapitBytes`.
-    let b = unsafe { &mut *bytes };
-    if !b.data.is_null() {
-        // SAFETY: `data`, `len` and `capacity` came from a `Vec<u8>` leaked by the encoder.
-        drop(unsafe { Vec::from_raw_parts(b.data, b.len, b.capacity) });
-    }
-    b.data = ptr::null_mut();
-    b.len = 0;
-    b.capacity = 0;
+pub unsafe extern "C" fn snapit_bytes_free(bytes: *mut SnapitBytes) -> SnapitStatus {
+    guard(|| {
+        if bytes.is_null() {
+            return SNAPIT_STATUS_INVALID_ARGUMENT;
+        }
+        // SAFETY: the caller guarantees `bytes` points to a `SnapitBytes`.
+        let b = unsafe { &mut *bytes };
+        if !b.data.is_null() {
+            // SAFETY: `data`, `len` and `capacity` came from a `Vec<u8>` leaked by the encoder.
+            drop(unsafe { Vec::from_raw_parts(b.data, b.len, b.capacity) });
+        }
+        b.data = ptr::null_mut();
+        b.len = 0;
+        b.capacity = 0;
+        SNAPIT_STATUS_OK
+    })
 }

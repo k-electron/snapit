@@ -24,7 +24,7 @@ the real system is replaced:
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
-| defaults | the bundle ID's `UserDefaults` | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
+| defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
 
 Product code always asks the edge (`AppPasteboard.current`, `SaveLocation.folder`,
@@ -34,18 +34,31 @@ directly: not `NSPasteboard.general`, `UserDefaults.standard`, `~/Downloads`,
 writes `UserDefaults.standard` the moment a name with an initial value is created, which is why test
 mode never touches it.
 
+### Shortcuts, and the two processes
+
+KeyboardShortcuts stores the user's choice in `UserDefaults.standard` of the process it runs in, so
+it works only in the menu bar app. The Editor helper (Settings, Onboarding) must not use
+KeyboardShortcuts' recorder or storage. It uses a binding-based recorder, stores the combination
+through `AppDefaults.store`, and sends a socket command; the menu bar app then applies it with
+`Shortcuts.current.setCombo(_:for:)`. `ShortcutRegistrar` also has `combo(for:)` and
+`menuShortcut(for:)` (the menu item's glyph follows the current Shortcut). A Shortcut that is
+unassigned by default, like Pick Color, has `defaultKeyCode: nil`. Test mode never touches
+KeyboardShortcuts: `InjectedShortcuts` keeps the combos in a dictionary.
+
 Test mode adds socket commands (they exist only while test mode is on). The scripted run sends them
 to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper), one line each:
 
 | Command | What it does |
 |---|---|
-| `test-seams` | one `key=value` line per edge: root, pasteboard, defaults, save, cache, permission |
+| `test-seams` | one `key=value` line per edge: root, pasteboard, save, cache, permission |
+| `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
 | `press-shortcut <id>` | presses an injected Shortcut; replies `ok` when its action has finished |
 | `bound-shortcuts` | the ids of the Shortcuts that are bound |
+| `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
+| `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
-| `capture-outcome` | how the last Screen Capture ended |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 
 ## The fixture image
@@ -110,5 +123,6 @@ metadata. After changing the C interface run `scripts/generate-header.sh` and co
 ## Never in a test
 
 Touch the real clipboard, `~/Downloads`, the real cache folder or the bundle ID's `UserDefaults`
-domain; register a real hot key; trigger a Screen Recording prompt. Real ScreenCaptureKit Captures,
-real hot keys and the permission prompt are on the per-release manual checklist.
+domain; register a real hot key; trigger a Screen Recording prompt. The paths the scripted run does
+not exercise are the real ScreenCaptureKit Capture, real hot keys, and the real Screen Recording
+permission and its prompt; they run only in a real install.

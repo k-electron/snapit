@@ -180,9 +180,9 @@ SnapitStatus snapit_png_encode(const uint8_t *pixels,
 
  # Safety
 
- `bytes` must be null or point to a `SnapitBytes` the engine filled in (or an empty one).
+ `bytes` must point to a `SnapitBytes` the engine filled in (or an empty one).
  */
-void snapit_bytes_free(struct SnapitBytes *bytes);
+SnapitStatus snapit_bytes_free(struct SnapitBytes *bytes);
 
 /*
  Copies the engine version, NUL terminated, into `buffer` (capacity `capacity` bytes)

@@ -55,8 +55,8 @@ nonisolated extension SocketCommand {
     static let quit = SocketCommand("quit")
     /// Replies with the engine version read through the C ABI.
     static let engineVersion = SocketCommand("engine-version")
-    /// Makes the engine panic on purpose and replies with the status it came back as (`panic`).
+    /// Makes the engine panic on purpose and replies with the status it came back as (`panic`). Test mode only.
     static let engineProbePanic = SocketCommand("engine-probe-panic")
-    /// Replies with its arguments, one per line. Checks that arguments survive spaces.
+    /// Replies with its arguments, one per line. Checks that arguments survive spaces. Test mode only.
     static let echo = SocketCommand("echo")
 }

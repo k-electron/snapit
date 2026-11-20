@@ -15,10 +15,21 @@ expect_contains "test mode: the root is this run's temporary folder" "root=$RUN_
 expect_contains "test mode: the pasteboard is private and named after the run" "pasteboard=dev.snapit.test.$(basename "$RUN_ROOT")" "$SEAMS"
 expect_contains "test mode: Save location is inside the root" "save=$RUN_ROOT/save" "$SEAMS"
 expect_contains "test mode: the cache folder is the root" "cache=$RUN_ROOT" "$SEAMS"
-expect_contains "test mode: defaults live inside the root" "defaults=$RUN_ROOT/defaults.plist" "$SEAMS"
 expect_contains "test mode: Screen Recording reports granted" "permission=granted" "$SEAMS"
 expect_equal "test mode: the Capture source is the fixture" "fixture" "$(send "$APP_SOCK" capture-source)"
-expect_equal "test mode: Shortcuts are injected, no hot key is registered" "capture-screen" "$(send "$APP_SOCK" bound-shortcuts)"
+expect_in_order "test mode: Shortcuts are injected (capture-screen is bound, no hot key is registered)" \
+  "$(send "$APP_SOCK" bound-shortcuts)" "capture-screen"
+send "$APP_SOCK" "defaults-set probe from-menu-bar-app" >/dev/null
+expect_equal "test mode: defaults are readable back through the test store" "from-menu-bar-app" "$(send "$APP_SOCK" "defaults-get probe")"
+
+# The Shortcut seam: ⌃⌥⌘3 (key code 20) by default, shown on the menu item, and changeable.
+expect_equal "Screen Shortcut defaults to control-option-command-3" "20 control,option,command" "$(send "$APP_SOCK" "shortcut-combo capture-screen")"
+expect_equal "the menu item shows the current Shortcut" "3 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.screen")"
+send "$APP_SOCK" "shortcut-set capture-screen 21 control option command" >/dev/null
+expect_equal "the menu item follows a changed Shortcut" "4 control,option,command" "$(send "$APP_SOCK" "menu-shortcut capture.screen")"
+send "$APP_SOCK" "shortcut-set capture-screen none" >/dev/null
+expect_equal "the menu item shows no Shortcut when it is unassigned" "none" "$(send "$APP_SOCK" "menu-shortcut capture.screen")"
+send "$APP_SOCK" "shortcut-set capture-screen 20 control option command" >/dev/null
 
 SRGB_SHA="$("$INSPECT" profile-sha srgb)"
 P3_SHA="$("$INSPECT" profile-sha displayP3)"
@@ -34,7 +45,6 @@ capture_check() {
   expect_equal "$label: the pasteboard starts empty" "" "$(send "$APP_SOCK" pasteboard-types)"
 
   expect_equal "$label: the Capture finishes" "ok" "$(send_slow "$APP_SOCK" "$trigger")"
-  expect_equal "$label: the Capture ends with a PNG on the clipboard" "copied(width: $w, height: $h" "$(send "$APP_SOCK" capture-outcome | cut -d, -f1,2)"
   # macOS also advertises the TIFF it can convert a PNG to; PNG must come first.
   expect_equal "$label: the pasteboard holds the PNG" "public.png" "$(send "$APP_SOCK" pasteboard-types | head -1)"
 

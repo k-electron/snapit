@@ -13,6 +13,24 @@ expect_equal() { # description, expected, actual
 expect_contains() { # description, needle, haystack
   if [[ "$3" == *"$2"* ]]; then pass "$1"; else fail "$1 (expected to contain '$2', got '$3')"; fi
 }
+# expect_in_order <description> <haystack> <line>...: every line given is a whole line of the
+# haystack, in the order given. Other lines may sit between them, so parallel tickets can add theirs.
+expect_in_order() {
+  local description="$1" haystack="$2" wanted="" found
+  shift 2
+  local -a remaining=()
+  while IFS= read -r found; do remaining+=("$found"); done <<<"$haystack"
+  local index=0
+  for wanted in "$@"; do
+    while ((index < ${#remaining[@]})) && [[ "${remaining[index]}" != "$wanted" ]]; do index=$((index + 1)); done
+    if ((index >= ${#remaining[@]})); then
+      fail "$description (missing or out of order: '$wanted' in: ${haystack//$'\n'/|})"
+      return
+    fi
+    index=$((index + 1))
+  done
+  pass "$description"
+}
 abort() { echo "FAIL $1"; exit 1; }
 
 # One command to a snapit process: send <socket> "<command line>". Arguments with spaces are
