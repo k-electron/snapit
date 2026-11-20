@@ -127,6 +127,9 @@ final class PermissionGuideModel {
 
     /// Relaunches snapit (the menu bar app, which holds the permission). The helper goes with it.
     func relaunch() async {
+        // A relaunch closes every Editor: one holding unexported edits is asked about first, before
+        // the menu bar app's clock below starts.
+        guard await QuitPreparation.confirm() else { return }
         do {
             let reply = try await CommandSocketClient.send(.relaunchSnapit, to: AppIdentity.appSocketPath, timeoutSeconds: 15)
             relaunchError = reply == "ok" ? nil : reply.replacingOccurrences(of: "error ", with: "")

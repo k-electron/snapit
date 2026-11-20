@@ -146,6 +146,17 @@ Run after changing the Last Capture store, the Editor's state file or the menu. 
 
 Clean up: quit snapit, so the cache folder's `captures` folder is removed.
 
+## Delete Capture, several Editors and the prompts (#28)
+
+Run on a real install after changing the Editor's close path, the Quit menu or the prompt. The scripted run answers the sheet with test commands and clicks with synthetic events; only a real mouse, keyboard and screen show the sheet's look, the Dock and the real first click.
+
+1. **The first click.** Take two Captures. Click the older Editor's trash button while the newer Editor is in front: the older window comes forward and nothing is deleted. Click the trash button again: the Editor closes at once with no question, and "Reopen Last Capture" stays enabled (it is the newer one's).
+2. **The close prompt.** In the older Editor, draw an Annotation and click the red close button: a sheet slides down from that Editor's title bar, "Discard this Capture?", with Cancel and Discard; Esc cancels and ⌘D discards. Cancel keeps the Editor. Copy, then close: no question. Draw another Annotation and press ⌘W: the question returns. The newer (Last Capture) Editor closes with no question however much it holds.
+3. **The Quit prompt.** With the older Editor holding an unexported Annotation and the newer one in front, choose Quit snapit in the menu bar: the older Editor comes forward with "Quit snapit?" on it. Cancel keeps snapit running. Choose it again and press "Discard and Quit": snapit and the Dock icon go. Repeat with ⌘Q from the Editor's own menu.
+4. **Hover and first click from another app.** Hover each button of the sheet: its tooltip shows. Make another app frontmost, then click the older Editor's trash button: the window comes forward and nothing is deleted.
+5. **Quit by the system.** With the older Editor holding an unexported Annotation, log out (or choose Restart): the Editor comes forward asking "Quit snapit?"; Cancel cancels the logout. Quit from Activity Monitor or `osascript -e 'tell application "snapit" to quit'` asks the same. Leave the prompt up past an hour (or let the Mac sleep through it) and press "Discard and Quit": nothing quits, because snapit stopped waiting and stayed.
+6. **The Dock.** While any Editor is open snapit shows in the Dock and Cmd-Tab; it goes when the last Editor closes. Open three, close the middle one, take another: the new window does not sit exactly on another's.
+
 ## Settings (#29)
 
 Run after changing the Settings window, the recorders or Open at Login. The scripted run drives the window through its model, with the fake login item and injected Shortcuts; it cannot show a real chooser, real hot keys, the real login items or System Settings.

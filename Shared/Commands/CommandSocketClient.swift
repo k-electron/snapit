@@ -29,6 +29,13 @@ nonisolated enum CommandSocketClient {
         (try? exchange(SocketRequest(command: .ping), path: path, timeoutSeconds: 1)) == "pong"
     }
 
+    /// Blocking send for a caller that is on a background queue (never the main thread), such as a
+    /// quit the system started. Nil when the other process cannot be reached or does not answer in
+    /// time.
+    static func sendBlocking(_ command: SocketCommand, arguments: [String] = [], to path: String, timeoutSeconds: Int) -> String? {
+        try? exchange(SocketRequest(command: command, arguments: arguments), path: path, timeoutSeconds: timeoutSeconds)
+    }
+
     /// Blocking send for the last moments of a process, when nothing else needs the main
     /// thread (an application in `applicationWillTerminate` no longer services tasks).
     /// Does nothing when no process listens on `path`.
