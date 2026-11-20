@@ -74,6 +74,8 @@ for bundle in "$APP" "$HELPER"; do
     { echo "error: $bundle has entitlements" >&2; exit 1; }
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")" == "$MARKETING" ]] ||
     { echo "error: $bundle does not carry version $MARKETING" >&2; exit 1; }
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$bundle/Contents/Info.plist")" == "$BUILD_NUMBER" ]] ||
+    { echo "error: $bundle does not carry build number $BUILD_NUMBER" >&2; exit 1; }
 done
 scripts/check-bundle.sh "$APP"
 

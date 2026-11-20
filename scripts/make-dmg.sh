@@ -26,12 +26,16 @@ mkdir -p "$BUILD" "$(dirname "$OUT")"
 APP="$(cd "$APP" && pwd)"
 OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 
-if [[ ! -x "$VENV/bin/dmgbuild" ]]; then
+REQUIREMENTS="$ROOT/packaging/dmg/requirements.txt"
+REQUIREMENTS_HASH="$(shasum -a 256 "$REQUIREMENTS" | cut -d' ' -f1)"
+if [[ ! -x "$VENV/bin/dmgbuild" || "$(cat "$VENV/requirements.sha256" 2>/dev/null)" != "$REQUIREMENTS_HASH" ]]; then
+  rm -rf "$VENV"
   python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' ||
     { echo "error: dmgbuild 2.x needs python3 3.11 or later" >&2; exit 1; }
   python3 -m venv "$VENV"
-  "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes \
-    -r "$ROOT/packaging/dmg/requirements.txt"
+  "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --no-cache-dir \
+    --require-hashes --only-binary :all: -r "$REQUIREMENTS"
+  echo "$REQUIREMENTS_HASH" > "$VENV/requirements.sha256"
 fi
 
 rm -rf "$ART"

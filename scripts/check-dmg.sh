@@ -77,7 +77,10 @@ if [[ -n "$EXPECTED_VERSION" ]]; then
 fi
 
 # The window layout: both icons where the background's arrow expects them.
-if [[ -x "$VENV/bin/python" ]]; then
+if [[ ! -x "$VENV/bin/python" ]]; then
+  echo "FAIL icons sit where the background's arrow expects them (no $VENV; run scripts/make-dmg.sh first)"
+  failures=$((failures + 1))
+else
   check "icons sit where the background's arrow expects them" "$VENV/bin/python" -I -c '
 import sys
 from ds_store import DSStore
