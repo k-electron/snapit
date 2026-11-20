@@ -17,7 +17,7 @@ extension SocketCommandRegistry {
                 // A helper that never showed a window has nothing left to do: quit rather than
                 // sit there with no window and no way for the user to close it.
                 if !HelperLifecycle.hasShownWindow {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApplication.shared.terminate(nil) }
+                    NSApplication.terminateAfterReply()
                 }
                 return "error \(error)"
             }

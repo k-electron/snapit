@@ -21,7 +21,6 @@ final class TimedCountdown {
     }
 
     static let borderWidth: CGFloat = 2
-    static let tooltipDelay: TimeInterval = 0.5
     static let crossTooltip = "Cancel the countdown"
 
     let target: Target
@@ -204,7 +203,7 @@ final class TimedCountdown {
                 Self.crossTooltip, near: self.badgeRect, in: self.target.frame, scale: CGFloat(self.target.scale))
         }
         tooltipTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.tooltipDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + TooltipTiming.restDelay, execute: work)
     }
 
     // MARK: Taking the windows away

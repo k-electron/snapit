@@ -63,23 +63,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return .terminateLater
         }
-        let wait = SaveService.shared.waitForSavesBeforeQuit {
-            Self.onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
-        }
-        // The quit is decided (agreed to, or it needed no asking): a Save that fails while the last ones finish
-        // opens no window. A quit the user cancels never gets here.
-        SaveFailureNotice.isQuitting = true
-        return wait ? .terminateLater : .terminateNow
+        // The quit is decided (agreed to, or it needed no asking).
+        return Self.waitForLastSaves() ? .terminateLater : .terminateNow
     }
 
     /// The quit is agreed: it goes on once the Saves already made have landed.
     private static func finishQuitting() {
-        // The quit has been agreed to: a Save that fails while the last ones finish opens no window.
+        if !waitForLastSaves() { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+    }
+
+    /// Replies that the app may terminate once the Saves already made have landed. Returns whether it has to wait:
+    /// when it does not, the caller carries on at once. A Save that fails from now on opens no window.
+    private static func waitForLastSaves() -> Bool {
         SaveFailureNotice.isQuitting = true
-        let wait = SaveService.shared.waitForSavesBeforeQuit {
+        return SaveService.shared.waitForSavesBeforeQuit {
             onMainLoop { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
         }
-        if !wait { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
     }
 
     private nonisolated static func onMainLoop(_ body: @escaping @MainActor @Sendable () -> Void) {

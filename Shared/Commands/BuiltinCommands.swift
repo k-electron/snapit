@@ -6,13 +6,16 @@ extension SocketCommandRegistry {
         register(.ping) { _ in "pong" }
         register(.quit) { _ in
             await QuitPreparation.run()
-            // Reply first, then quit, so the caller sees "ok".
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApplication.shared.terminate(nil) }
+            NSApplication.terminateAfterReply()
             return "ok"
         }
-        register(.engineVersion) { _ in
-            (try? Engine.version()) ?? "error engine"
-        }
         registerTestModeCommands()
+    }
+}
+
+extension NSApplication {
+    /// Quits a moment later, so the reply to the command that asked goes out first (the caller sees "ok").
+    @MainActor static func terminateAfterReply() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shared.terminate(nil) }
     }
 }

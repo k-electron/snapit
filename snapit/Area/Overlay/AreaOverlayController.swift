@@ -78,8 +78,6 @@ final class AreaOverlayController: ActionBarHost {
     private(set) var tooltip: String?
     private var tooltipTimer: DispatchWorkItem?
 
-    /// How long the pointer rests on a tile before its tooltip shows.
-    static let tooltipDelay: TimeInterval = 0.5
     /// The selection when the button went down: resizing and moving work from it.
     private var pressedSelection = CGRect.zero
 
@@ -365,7 +363,7 @@ final class AreaOverlayController: ActionBarHost {
             self.refreshScenes()
         }
         tooltipTimer = timer
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.tooltipDelay, execute: timer)
+        DispatchQueue.main.asyncAfter(deadline: .now() + TooltipTiming.restDelay, execute: timer)
     }
 
     /// The window under the pointer, from the list read when the Shortcut fired.
