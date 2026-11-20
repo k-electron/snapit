@@ -29,8 +29,8 @@ FOOTPRINT_MB_MAX="${SNAPIT_FOOTPRINT_MB_MAX:-20}"
 FOOTPRINT_GROWTH_MB_MAX="${SNAPIT_FOOTPRINT_GROWTH_MB_MAX:-4}"
 FOOTPRINT_FROM_REST_MB_MAX="${SNAPIT_FOOTPRINT_FROM_REST_MB_MAX:-5}"
 # The Action bar is Liquid Glass (an NSGlassEffectView), and the first one a process shows costs
-# memory that stays: measured +1.6 to +1.8 MB once it is cancelled, +1.8 to +2.1 MB after five
-# Captures through it. 2.5 MB is that with a little room, and still catches a bar built from
+# memory that stays: measured +0.7 to +1.8 MB once it is cancelled, +0.9 to +2.1 MB after five
+# Captures through it (it varies run to run). 2.5 MB is that with a little room, and still catches a bar built from
 # SwiftUI on glass (+4.2 MB) or AppKit controls (+2.4 MB).
 BAR_FIRST_USE_MB_MAX="${SNAPIT_BAR_FIRST_USE_MB_MAX:-2.5}"
 # From flow 42 on the process holds that glass, so what is measured against the resting footprint
