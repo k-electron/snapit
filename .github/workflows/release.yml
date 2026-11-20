@@ -1,0 +1,103 @@
+name: Release
+
+# Pushing a tag like v1.2.3 builds snapit, packages the DMG and publishes a GitHub Release.
+# A tag with a pre-release suffix (v1.2.3-beta.1) publishes as a pre-release.
+# Run by hand (workflow_dispatch), it builds and packages but publishes nothing.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to package (nothing is published)
+        default: v0.0.0-test
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CBINDGEN_VERSION: "0.29.4"
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  release:
+    name: Build, package and publish (macOS 26, arm64)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write # create the release and attach the DMG (only the publish step gets the token)
+      actions: read # read the CI run for the tagged commit
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+      SNAPIT_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode 26 toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -version | head -1 | grep -q '^Xcode 26' || { echo "expected Xcode 26 on the macos-26 image" >&2; exit 1; }
+
+      - name: Pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Cache cbindgen
+        id: cbindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cbindgen
+          key: cbindgen-${{ env.CBINDGEN_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cbindgen
+        if: steps.cbindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install cbindgen --version "$CBINDGEN_VERSION" --locked --root "$RUNNER_TEMP/cbindgen"
+
+      - name: Build, sign and package
+        # Ad-hoc signed: the Editor helper first, then the app, hardened runtime, no --deep,
+        # no entitlements. Then the DMG (dmgbuild 2.x), its SHA-256 and the release notes.
+        run: |
+          export PATH="$RUNNER_TEMP/cbindgen/bin:$PATH"
+          scripts/package-release.sh "$TAG"
+
+      - name: Publish the GitHub Release
+        # Draft first, attach every file, wait for CI on this commit, then publish: the release
+        # only goes live complete and green.
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${TAG#v}"
+          # A re-run replaces a leftover draft, never a published release.
+          if [[ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null)" == true ]]; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          flags=()
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "snapit $VERSION" \
+            --notes-file build/release/release-notes.md --generate-notes \
+            ${flags[@]+"${flags[@]}"} \
+            "build/release/snapit-$VERSION.dmg" "build/release/snapit-$VERSION.dmg.sha256"
+
+          # Publish only when CI passed for the tagged commit (up to 45 minutes of waiting).
+          for _ in $(seq 1 90); do
+            runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow CI --commit "$GITHUB_SHA" --json status,conclusion --limit 20)"
+            if jq -e 'any(.[]; .conclusion == "success")' <<<"$runs" >/dev/null; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+              exit 0
+            fi
+            if ! jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
+              echo "error: CI has not passed for $GITHUB_SHA; the release stays a draft" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "error: timed out waiting for CI on $GITHUB_SHA; the release stays a draft" >&2
+          exit 1
