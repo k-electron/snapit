@@ -11,15 +11,19 @@ import QuartzCore
 /// so a helper can build the whole window while it is still warming up.
 ///
 /// Layers, back to front: `root` > `contentLayer` (the Capture's size in points, scaled to
-/// fit and centred) > `imageLayer` (the Capture), then `annotationLayer` on top. A tool adds
-/// its layers to `annotationLayer`, whose geometry is flipped: positions are image points,
-/// origin at the top left, the same coordinates the tool receives from the pointer.
+/// fit and centred) > `imageLayer` (the Capture), then `annotationLayer` (clipped to the
+/// Capture) and `selectionLayer` on top. `annotationLayers` keeps one layer per Annotation in
+/// `annotationLayer`; both layers' geometry is flipped: positions are image points, origin at
+/// the top left, the same coordinates a tool receives from the pointer.
 @MainActor
 final class CanvasView: NSView {
     /// The Capture's size in points, scaled to fit the view.
     let contentLayer = CALayer()
-    /// Where tools put their layers, in image points, origin at the top left.
+    /// Where the Annotations' layers are, in image points, origin at the top left.
     let annotationLayer = CALayer()
+    /// The selected Annotation's outline and handles, above the Annotations and not clipped.
+    let selectionLayer = CALayer()
+    private(set) var annotationLayers: AnnotationLayers!
     private let root = CALayer()
     private let imageLayer = CALayer()
     private var pointSize = CGSize(width: 1, height: 1)
@@ -38,8 +42,12 @@ final class CanvasView: NSView {
         imageLayer.minificationFilter = .trilinear
         imageLayer.magnificationFilter = .nearest
         annotationLayer.isGeometryFlipped = true
+        annotationLayer.masksToBounds = true
+        selectionLayer.isGeometryFlipped = true
         contentLayer.addSublayer(imageLayer)
         contentLayer.addSublayer(annotationLayer)
+        contentLayer.addSublayer(selectionLayer)
+        annotationLayers = AnnotationLayers(host: annotationLayer, selectionHost: selectionLayer)
         root.addSublayer(contentLayer)
     }
 
@@ -52,6 +60,7 @@ final class CanvasView: NSView {
         CATransaction.setDisableActions(true)
         contentLayer.bounds = CGRect(origin: .zero, size: self.pointSize)
         annotationLayer.frame = contentLayer.bounds
+        selectionLayer.frame = contentLayer.bounds
         imageLayer.frame = contentLayer.bounds
         imageLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         imageLayer.contents = image
@@ -81,6 +90,20 @@ final class CanvasView: NSView {
         contentLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
         contentLayer.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
         CATransaction.commit()
+        annotationLayers.relayoutSelection(zoom: zoom)
+    }
+
+    /// Shows the Annotations, with `selected` outlined.
+    func showAnnotations(_ annotations: [Annotation], selected: Annotation?) {
+        annotationLayers.show(annotations, selected: selected, zoom: zoom)
+    }
+
+    /// A point of the Capture (origin at its top left), as a point in the view.
+    func viewPoint(fromImagePoint point: CGPoint) -> CGPoint {
+        let zoom = zoom
+        let originX = bounds.midX - pointSize.width * zoom / 2
+        let originY = bounds.midY + pointSize.height * zoom / 2
+        return CGPoint(x: originX + point.x * zoom, y: originY - point.y * zoom)
     }
 
     /// A point in the view, as a point of the Capture (origin at its top left).
@@ -94,10 +117,16 @@ final class CanvasView: NSView {
     /// Lets go of the Capture's pixels. The mapping is unmapped once nothing else holds them.
     func tearDown() {
         imageLayer.contents = nil
+        annotationLayers.tearDown()
         annotationLayer.sublayers = nil
         contentLayer.sublayers = nil
         root.sublayers = nil
         layer = nil
+    }
+
+    override func resetCursorRects() {
+        guard let cursor = session?.currentTool.cursor else { return }
+        addCursorRect(bounds, cursor: cursor)
     }
 
     override func mouseDown(with event: NSEvent) {

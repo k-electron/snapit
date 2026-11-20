@@ -75,6 +75,12 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
+| `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a pointer event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The event goes through the canvas's own handlers, so the zoom mapping and the active tool are exercised |
+| `editor-keystroke <N> undo\|redo\|delete\|<character>` | ⌘Z, ⇧⌘Z, ⌫ or a plain key (a tool's key) as the window receives it |
+| `editor-style <N> fill outline\|solid`, `width <points>`, `color <RRGGBB>` | what the style controls do: the selected Annotation and the next ones, remembered through `AppDefaults.store` |
+| `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=` |
+| `editor-menu-keys` | the key equivalent each Edit menu item shows: `<title> key=<hex codes> modifiers=<mask>` |
+| `editor-first-click <N>` | one line per control host in the window, `<name> yes\|no`: whether the first click on a background Editor reaches it |
 
 `editor-facts` reports `canvas=layer-hosted` only when the canvas's layer is not delegated to the
 view (a layer-backed view would report `layer-backed`).
@@ -94,14 +100,18 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `90-` Editor helper and Quit, which must stay last).
+into the Editor and Copy, `30-` the Editor, `35-` the Editor's tools, `90-` Editor helper and Quit, which must stay last).
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
 `expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
 `EDITOR_N` and `HELPER_PID`; `copy_closes_editor`, `app_type <pid>` for Foreground (Dock icon)
 versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variables `APP_SOCK`,
 `EDITOR_SOCK`, `RUN_ROOT`, `APP_PID`, `INSPECT` (the `png-inspect` tool, which also lists a
-process's windows: `png-inspect windows <pid>`).
+process's windows: `png-inspect windows <pid>`, reads one pixel: `png-inspect pixel <file> <x> <y>`, and
+compares a PNG with the fixture: `png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]` prints how
+many pixels changed, their bounding box and how many lie inside and outside a rectangle). A flow that draws in
+the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`,
+`fixture_diff`, `fixture_pixel`, ...; `35-editor-tools.sh` is the model).
 
 1. Pick the fixture: `send "$APP_SOCK" "fixture-display 2 301 187"`.
 2. Drive the app through a command, never the real system. A Capture opens an Editor in the helper:
@@ -145,6 +155,8 @@ adding an entry in the same place get a one-line merge conflict, and the fix is 
 | an Annotation tool on the left toolbar | `Tools/<Name>Tool.swift` (`EditorTool`: `id`, `order`, `title`, `symbol`, `key`, pointer hooks in image points) | `Tools/ToolRegistry.swift` |
 | a control in the top toolbar, a key equivalent or a menu item | `Toolbar/<Name>ToolbarItem.swift` (`EditorToolbarItem`: `id`, `slot`, `order`, `symbol`, `tooltip`, `perform`, and optionally `keyEquivalent` and `menu`; slot `.menuOnly` for an item with no button) | `Toolbar/ToolbarRegistry.swift` |
 | an Export pipeline step | `Export/<Name>Stage.swift` (`ExportStage`: `id`, `order`, `apply`) | `Export/ExportPipeline.swift` |
+| a kind of Annotation (its look, hit test, handles and Export drawing) | `Annotations/<Name>AnnotationKind.swift` (`AnnotationKind`: `id`, `paint(for:)`, and what differs from the defaults; its `static let` name goes in an `extension AnnotationKindID`) | `Annotations/AnnotationKinds.swift` |
+| a tool that drags out one kind of Annotation | `Tools/<Name>Tool.swift` (`AnnotationDrawingTool`: only names its `annotationKind`) | `Tools/ToolRegistry.swift` |
 | an Editor action | `EditorSession+<Name>.swift` (an extension of `EditorSession`, run by a toolbar item's `perform`) | nothing: the item that runs it is in `ToolbarRegistry` |
 | a helper socket command | `Commands/<Name>Commands.swift` with a `register…Commands()` | `Commands/HelperCommands.swift` |
 
@@ -167,6 +179,26 @@ and `attach(_:)` gives it the Capture: a warming-up helper calls `EditorSessions
 time. The helper's windows all go through `HelperLifecycle`: call `windowWillShow()` before showing
 a window (it makes the helper a regular app) and `windowDidShow()` after. The helper quits when its
 last window closes.
+
+### Annotations
+
+An `Annotation` is a `Codable` value (`id`, a kind name, `start` and `end` in image points, a
+style); the document keeps them in an `AnnotationHistory`, which is also `Codable` and holds the
+snapshot Undo and Redo steps (100 each, oldest dropped) and the revision. A change is a gesture
+(`begin`, `mutate`, `end`: one Undo step, only if the state differs) or one `change`; all of it goes
+through `EditorDocument.edit`, which tells the canvas. A field added to a stored type is decoded
+with `decodeIfPresent` and a default (as `AnnotationStyle` does), so what an older snapit stored
+still opens.
+
+A kind's `paint(for:)` (path, fill, stroke) feeds both the canvas's `CAShapeLayer` and the Export's
+Core Graphics drawing, so the preview is the Export. Hit tests are exact (the inside of a filled
+Annotation, the stroke of an outline). `AnnotationStage` draws every Annotation whose kind has
+`drawnByAnnotationStage` true, in document order, onto the Export's owned buffer; a stage of another
+feature filters `job.annotations` by `kind` (Redaction's `RedactionStage` takes its own kind and
+sets `drawnByAnnotationStage` false). Selection, the style the next Annotation gets and the gesture
+in progress live on the `EditorSession` (`EditorSession+Annotations.swift`), never in a tool: tools
+are shared by every open Editor. The Annotation color, width and fill used last are remembered in
+`AnnotationSettings` (`annotationColor` as `RRGGBB`, `annotationWidth`, `annotationFilled`).
 
 ## Adding a Shortcut
 

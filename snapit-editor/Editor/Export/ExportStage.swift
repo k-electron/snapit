@@ -38,6 +38,8 @@ nonisolated struct ExportJob: Sendable {
     let level: PNGLevel
     /// "Export at standard resolution" (1x) was on when the Export started.
     let standardResolution: Bool
+    /// The Annotations, in the order they are drawn, in the Capture's image points.
+    var annotations: [Annotation] = []
 }
 
 /// One step of the Export pipeline.

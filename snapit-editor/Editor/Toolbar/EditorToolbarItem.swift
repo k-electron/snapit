@@ -26,6 +26,16 @@ struct EditorKeyEquivalent: Equatable {
         EditorKeyEquivalent(key: key, modifiers: .command)
     }
 
+    static func commandShift(_ key: String) -> EditorKeyEquivalent {
+        EditorKeyEquivalent(key: key, modifiers: [.command, .shift])
+    }
+
+    /// ⌫ on its own. The key event reports it as DEL (U+007F).
+    static let delete = EditorKeyEquivalent(key: "\u{7F}", modifiers: [])
+
+    /// The character a menu item uses for this key: a menu knows ⌫ as backspace (U+0008).
+    var menuKey: String { key == "\u{7F}" ? "\u{8}" : key }
+
     func matches(_ event: NSEvent) -> Bool {
         event.modifierFlags.intersection(.deviceIndependentFlagsMask) == modifiers
             && event.charactersIgnoringModifiers?.lowercased() == key
