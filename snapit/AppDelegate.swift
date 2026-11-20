@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ExportFiles.removeAll()
             // Only the copy that owns the menu bar listens for Shortcuts.
             ShortcutBindings.registerAll()
+            SaveFailureNotice.register()
             SocketOwnership.adopt(server)
             // Where this copy runs from: a mounted disk image or a translocated path needs a move.
             Task {
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// through `DispatchQueue.main.async` never runs when `terminate` was called from inside a main
     /// queue block (which is how the socket `quit` calls it).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        SaveFailureNotice.isQuitting = true
         let wait = SaveService.shared.waitForSavesBeforeQuit {
             let mainLoop = CFRunLoopGetMain()
             CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {

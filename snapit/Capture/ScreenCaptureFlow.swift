@@ -9,7 +9,7 @@ enum ScreenCaptureFlow {
     enum Outcome: Equatable {
         /// Capture N is showing in the Editor.
         case opened(number: Int)
-        /// Screen Recording is not granted; macOS was asked to show its prompt.
+        /// Screen Recording is not granted: nothing was captured and the Permission guide shows.
         case permissionNeeded
         /// Another Capture is still running.
         case busy
@@ -19,15 +19,16 @@ enum ScreenCaptureFlow {
     @discardableResult
     static func run() async -> Outcome {
         guard CaptureGate.enter() else { return .busy }
-        defer { CaptureGate.leave() }
-        return await capture()
+        let outcome = await capture()
+        CaptureGate.leave()
+        // After the gate opens: the guide's window may take a moment to appear, and a second press
+        // meanwhile must reach the same check, not a silent `.busy`.
+        if outcome == .permissionNeeded { await OnboardingLauncher.screenRecordingMissing() }
+        return outcome
     }
 
     private static func capture() async -> Outcome {
-        guard ScreenRecordingPermission.current.isGranted else {
-            ScreenRecordingPermission.current.request()
-            return .permissionNeeded
-        }
+        guard ScreenRecordingPermission.current.isGranted else { return .permissionNeeded }
         // The Capture has started: the Editor helper warms up while the pixels are taken.
         EditorWarmUp.begin()
         do {

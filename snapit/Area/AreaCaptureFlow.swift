@@ -19,7 +19,7 @@ enum AreaCaptureFlow {
     enum StartOutcome: Equatable {
         /// The overlay is showing.
         case overlayShown
-        /// Screen Recording is not granted; macOS was asked to show its prompt.
+        /// Screen Recording is not granted: nothing was captured and the Permission guide shows.
         case permissionNeeded
         /// Another Capture is still running.
         case busy
@@ -34,7 +34,7 @@ enum AreaCaptureFlow {
         /// The Color picker copied this `#RRGGBB`.
         case pickedColor(String)
         case cancelled
-        /// Screen Recording is not granted; macOS was asked to show its prompt.
+        /// Screen Recording is not granted: nothing was captured and the Permission guide shows.
         case permissionNeeded
         case failed(String)
     }
@@ -63,8 +63,9 @@ enum AreaCaptureFlow {
         result = nil
         previousApp = TestMode.isActive ? nil : NSWorkspace.shared.frontmostApplication
         guard ScreenRecordingPermission.current.isGranted else {
-            ScreenRecordingPermission.current.request()
             conclude(.permissionNeeded)
+            // After `conclude` has given the user's app its focus back, so the guide comes forward last.
+            await OnboardingLauncher.screenRecordingMissing()
             return .permissionNeeded
         }
         // The Capture has started: the Editor helper warms up while the displays are frozen and

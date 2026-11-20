@@ -80,7 +80,7 @@ The first-run walkthrough that gets the permissions and shortcuts snapit needs i
 _Avoid_: OOBE, setup wizard, welcome flow
 
 **Permission guide**:
-A screen that shows, with a short animation, how to grant one permission snapit needs. It is a step of Onboarding, and it also appears on its own whenever that permission later goes missing. Not the same thing as a permission prompt, which is macOS's own dialog.
+A screen that shows, with a short animation, how to grant one permission snapit needs. It is a step of Onboarding (Screen Recording), and it also appears on its own whenever that permission later goes missing, and, as the folder guide, when a Save cannot write to the **Save location**. Not the same thing as a permission prompt, which is macOS's own dialog.
 _Avoid_: Permission screen, permission prompt, setup step
 
 **User Guide**:
