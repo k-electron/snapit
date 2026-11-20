@@ -69,11 +69,9 @@ private struct ReopenNoticeView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button(action: onClose) {
                 Text("OK")
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
                     .frame(minWidth: 120)
             }
-            .buttonStyle(ChromeButtonStyle(look: .prominent, radius: 12))
+            .windowButton(prominent: true)
             .help("Close this message")
             .keyboardShortcut(.defaultAction)
         }

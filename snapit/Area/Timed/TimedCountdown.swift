@@ -117,7 +117,7 @@ final class TimedCountdown {
         let view = TimedBadgeView(scale: CGFloat(target.scale), seconds: remaining)
         view.onCancel = { [weak self] in self?.onCancel?() }
         view.onCrossHover = { [weak self] over in self?.crossHover(over) }
-        badge.contentView = view
+        badge.hostOnGlass(view)
         badge.setFrame(global(badgeRect), display: false)
         badge.orderFrontRegardless()
         self.badge = badge

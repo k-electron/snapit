@@ -41,6 +41,19 @@ final class TimedPanel: NSPanel {
     }
 }
 
+extension TimedPanel {
+    /// Shows `view` on a Liquid Glass capsule that fills the panel.
+    func hostOnGlass(_ view: NSView) {
+        let glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: frame.size))
+        glass.style = .regular
+        glass.cornerRadius = frame.height / 2
+        glass.appearance = NSAppearance(named: .darkAqua)
+        view.frame = glass.bounds
+        glass.contentView = view
+        contentView = glass
+    }
+}
+
 /// The countdown badge: the seconds left, and a ✕ on its right that cancels. Persistent layers,
 /// changed inside a transaction with actions disabled. The ✕ fires on mouse-up, and only when the
 /// press began on it too.
@@ -63,10 +76,8 @@ final class TimedBadgeView: NSView {
         let size = TimedBadgePlacement.size
         super.init(frame: CGRect(origin: .zero, size: size))
         root.bounds = CGRect(origin: .zero, size: size)
-        root.backgroundColor = CGColor(gray: 0.08, alpha: 0.94)
+        // No fill or edge: the badge sits on Liquid Glass (`TimedPanel.hostOnGlass`).
         root.cornerRadius = size.height / 2
-        root.borderColor = CGColor(gray: 1, alpha: 0.35)
-        root.borderWidth = 1
 
         let font = NSFont.monospacedSystemFont(ofSize: 15, weight: .semibold)
         let line = ceil(font.boundingRectForFont.height)

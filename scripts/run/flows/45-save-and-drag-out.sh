@@ -242,10 +242,10 @@ if awk -v a="$SAVE_AFTER" -v b="$SAVE_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX
 else
   fail "memory grew from ${SAVE_BASELINE} MB to ${SAVE_AFTER} MB over five 5K Saves (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
 fi
-if awk -v a="$SAVE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+if awk -v a="$SAVE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
   pass "the menu bar app is back near its at-rest footprint after the Saves (${AT_REST} MB at rest, ${SAVE_AFTER} MB after)"
 else
-  fail "the menu bar app is at ${SAVE_AFTER} MB after the Saves, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+  fail "the menu bar app is at ${SAVE_AFTER} MB after the Saves, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
 fi
 BIG_FILE="$(saved_pngs | head -1)"
 BIG_INFO="$("$INSPECT" info "$SAVE/$BIG_FILE")"
