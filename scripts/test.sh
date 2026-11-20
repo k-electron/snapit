@@ -38,6 +38,9 @@ fi
 grep -qx '/target/' .gitignore || { echo "error: .gitignore does not ignore /target/" >&2; exit 1; }
 echo "ok"
 
+stage "network use only in Check for Updates"
+scripts/check-network.sh
+
 stage "cargo fmt"
 "$CARGO" fmt --all --check
 
