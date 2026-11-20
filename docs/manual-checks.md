@@ -28,3 +28,14 @@ Clean up:
 - Eject the DMG if it is still mounted, and delete the downloaded file.
 - `tccutil reset ScreenCapture dev.snapit.snapit`
 - `lsregister -u /Applications/snapit.app` (before moving it to the Trash), with `lsregister` from `/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/`.
+
+## Area overlay on real displays (#18)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/`. The scripted run drives the overlay over fixture displays; only a real screen shows ScreenCaptureKit's frames, Retina scaling and several displays.
+
+1. Press ⌃⌥⌘4 on a Retina display. The overlay appears at once (well under a blink), the frozen frame looks identical to the live screen (no color shift, no scale jump), the crosshair spans the display and the loupe follows the pointer.
+2. Hover over a few windows. The window under the pointer is highlighted, the front one when they overlap.
+3. Drag an Area and let go. The Editor opens on exactly that Area at native pixels. Paste it somewhere and zoom in: the edges are where the selection's edges were.
+4. Click a highlighted window without dragging: that window is captured. Press ⌃⌥⌘4 again and press Esc: the overlay goes and nothing opens.
+5. With two displays (ideally one Retina, one not), start a drag on one and move the pointer onto the other: the selection stops at the edge of the display it started on. Repeat starting on the other display.
+6. In Activity Monitor (or `footprint <pid>`), the memory of snapit with the overlay up is its resting footprint plus roughly one frame, and returns to the resting footprint a moment after the Capture or Esc.
