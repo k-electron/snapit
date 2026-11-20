@@ -7,6 +7,8 @@ protocol ActionBarHost: AnyObject {
     var selectedArea: AreaSelection? { get }
     /// Ends the overlay.
     func finish(with outcome: AreaOverlayOutcome)
+    /// Opens the Color picker over the Area now selected.
+    func beginPickingColor()
 }
 
 /// What a control needs to build its layers.

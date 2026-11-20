@@ -1,15 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Quit snapit, last in the menu.
+/// A separator, then Quit snapit, last in the menu.
 struct QuitMenu: MenuSection {
     var entries: [MenuEntry] {
-        [.action(id: "quit", "Quit snapit", shortcut: KeyboardShortcut("q")) {
-            // An Editor with unexported edits is brought forward and the user asked first; Cancel
-            // keeps snapit running.
-            guard await EditorHelperQuitCheck.allowsQuit() else { return }
-            NSApplication.shared.terminate(nil)
-        }]
+        [
+            .separator(id: "quit.separator"),
+            .action(id: "quit", "Quit snapit", shortcut: KeyboardShortcut("q")) {
+                // An Editor with unexported edits is brought forward and the user asked first;
+                // Cancel keeps snapit running.
+                guard await EditorHelperQuitCheck.allowsQuit() else { return }
+                NSApplication.shared.terminate(nil)
+            },
+        ]
     }
 }
 
