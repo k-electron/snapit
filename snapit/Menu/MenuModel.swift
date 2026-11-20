@@ -11,7 +11,9 @@ final class MenuModel {
     var sections: [any MenuSection] = [
         CaptureMenu(),
         LastCaptureMenu(),
-        EngineVersionMenu(),
+        SettingsMenu(),
+        // The spec's order: Settings…, User Guide, Check for Updates…, Quit snapit. User Guide goes above this line.
+        CheckForUpdatesMenu(),
         QuitMenu(),
     ]
 

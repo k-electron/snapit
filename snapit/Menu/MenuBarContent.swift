@@ -7,8 +7,6 @@ struct MenuBarContent: View {
     var body: some View {
         ForEach(model.entries) { entry in
             switch entry.kind {
-            case .info:
-                Text(entry.title ?? "")
             case .action:
                 Button(entry.title ?? "") { Task { await entry.run?() } }
                     .keyboardShortcut(entry.shortcut)

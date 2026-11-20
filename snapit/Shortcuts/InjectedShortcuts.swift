@@ -1,29 +1,33 @@
 import Carbon.HIToolbox
 import SwiftUI
 
-/// Test mode's registrar: keeps the handlers and combos in dictionaries and runs a handler
-/// when the scripted run "presses" the Shortcut (`press-shortcut`). No hot key is registered
-/// with the system and KeyboardShortcuts (which writes `UserDefaults.standard`) is never touched.
+/// Test mode's registrar: keeps the handlers in a dictionary and runs a handler when the scripted
+/// run "presses" the Shortcut (`press-shortcut`). The key combinations are kept in the run's
+/// defaults, so a recorded Shortcut survives a relaunch of the menu bar app as it does through
+/// KeyboardShortcuts. No hot key is registered with the system and KeyboardShortcuts (which
+/// writes `UserDefaults.standard`) is never touched.
 @MainActor
 final class InjectedShortcuts: ShortcutRegistrar {
     static let shared = InjectedShortcuts()
 
     private var handlers: [String: @MainActor () async -> Void] = [:]
-    private var combos: [String: ShortcutCombo?] = [:]
     private var bound: [String: AppShortcut] = [:]
+
+    private func key(_ shortcut: AppShortcut) -> String { "test.shortcut.\(shortcut.id)" }
 
     func register(_ shortcut: AppShortcut, handler: @escaping @MainActor () async -> Void) {
         handlers[shortcut.id] = handler
         bound[shortcut.id] = shortcut
-        if combos[shortcut.id] == nil { combos[shortcut.id] = .some(shortcut.defaultCombo) }
     }
 
     func combo(for shortcut: AppShortcut) -> ShortcutCombo? {
-        combos[shortcut.id] ?? shortcut.defaultCombo
+        guard let text = AppDefaults.store.string(forKey: key(shortcut)), let stored = ShortcutCombo.parse(wire: text)
+        else { return shortcut.defaultCombo }
+        return stored
     }
 
     func setCombo(_ combo: ShortcutCombo?, for shortcut: AppShortcut) {
-        combos[shortcut.id] = .some(combo)
+        AppDefaults.store.set(ShortcutCombo.wire(combo), forKey: key(shortcut))
     }
 
     func menuShortcut(for shortcut: AppShortcut) -> KeyboardShortcut? {

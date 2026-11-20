@@ -27,8 +27,13 @@ the real system is replaced:
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` | granted, never prompts | `Shared/Edges/ScreenRecordingPermission.swift` |
 | pasteboard | `NSPasteboard.general` | private pasteboard `dev.snapit.test.<run>` | `Shared/Edges/AppPasteboard.swift` |
 | Save location | `~/Downloads` | `<root>/save` | `Shared/Edges/SaveLocation.swift` |
-| defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist` | `Shared/Edges/AppDefaults.swift` |
+| defaults | the menu bar app's bundle ID domain, in both processes | `<root>/defaults.plist`, read and written straight through under a file lock (`FileBackedDefaults`): both processes see each other's writes at once | `Shared/Edges/AppDefaults.swift` |
+| Open at Login | `SMAppService.mainApp` (menu bar app) | a status kept in the run's defaults (so it survives a relaunch as the real one does), starting `notFound` like a fresh install; a copy that runs from an Applications folder registers it on launch (on by default); the real login items are never touched | `snapit/Settings/LoginItem.swift` |
+| macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5 | `Shared/Edges/SystemShortcutClashes.swift` |
+| System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
+| Check for Updates' HTTP request (snapit's only network call) | one GET of GitHub's latest-release endpoint on an ephemeral session, in `GitHubReleaseEndpoint.swift`, the one file allowed to open a connection (`scripts/check-network.sh`) | a script (`update-script`) answers with a status and a body or a failure, never goes online; each request it is asked to send is logged to `<root>/update-requests` (method, address, every header); unscripted it answers as offline | `snapit/Updates/ReleaseEndpoint.swift`, `FixtureReleaseEndpoint.swift` |
+| browser (the Download button, a link in release notes) | `NSWorkspace.open` of an `https` link | appends the link to `<root>/browser-links` | `Shared/Edges/BrowserLinks.swift` |
 | color panel (the Editor's color wheel button) | `NSColorPanel.shared`, which keeps its mode and swatches in the helper's own preferences | a fixture with no window and no preferences (`editor-color-panel`) | `snapit-editor/Editor/Color/ColorPanelEdge.swift`, `FixtureColorPanel.swift` |
 | install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
@@ -48,7 +53,8 @@ through `AppDefaults.store`, and sends a socket command; the menu bar app then a
 `Shortcuts.current.setCombo(_:for:)`. `ShortcutRegistrar` also has `combo(for:)` and
 `menuShortcut(for:)` (the menu item's glyph follows the current Shortcut). A Shortcut that is
 unassigned by default, like Pick Color, has `defaultKeyCode: nil`. Test mode never touches
-KeyboardShortcuts: `InjectedShortcuts` keeps the combos in a dictionary.
+KeyboardShortcuts: `InjectedShortcuts` keeps the handlers in a dictionary and the combos in the run's
+defaults, so a recorded Shortcut survives a relaunch of the menu bar app.
 
 Test mode adds socket commands (they exist only while test mode is on). The scripted run sends them
 to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper), one line each:
@@ -72,18 +78,24 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
+| `login-item-status`, `login-item-set on\|off`, `login-item-simulate <status>`, `login-item-default` | the (fake) login item Settings drives: read its status, register or unregister it, set the status as System Settings would (`enabled`, `notRegistered`, `requiresApproval`, `notFound`) |
+| `apply-shortcut <id> none\|<key code> [<modifier>,...]`, `shortcut-combos` | what the helper's recorder sends: rebinds a Shortcut of `ShortcutCatalog` (and the menu glyph follows); and what Settings asks when it opens: one `<id> <combo>` line per Shortcut, from the registrar |
 | `menu-enabled <id>` | `yes` or `no`: whether a menu item is enabled now (Reopen Last Capture is `no` while there is no Last Capture) |
 | `last-capture` | the Last Capture's number, or `none` |
 | `capture-folder-race` | the next Capture file finds its (empty) folder removed between the folder being made and the file being created, as a Delete Capture can do; the write makes the folder again |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
-| `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
-| `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-key escape\|enter\|left\|right\|up\|down\|<letter>\|<key code> [shift]` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does; `shift` adds the Shift modifier) |
+| `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `picked #RRGGBB` (the Color picker copied that hex), `cancelled` or `failed <why>` |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
 | `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
+| `overlay-picker` | the Color picker: `display`, `pixel=<x>,<y>` (device pixels of that display's frame), `hex`, `origin` (`bar` or `entry`), `frame` (the frame's size in pixels), `loupe` (its frame in display points, or `none`), `outlined` and `swatch` (the centres of the outlined cell and the swatch, in display points, to read back from an `overlay-snapshot`); `none` when the picker is not up |
+| `color-toast` | the text of the "Copied #…" toast showing now, or `none` |
+| `pasteboard-string` | the plain text on the private pasteboard, or `none` |
 | `timed-facts` | a Timed Capture: `state` (`counting` or `none`), `seconds`, `remaining`, `ticking` (a tick is scheduled: only while counting), `area`, `border` and `badge` (display points from the display's top-left corner), `border-panels`, `border-click-through` and `badge-click-through` (what each panel is meant to do with clicks: the border lets them through, the badge takes them; a scripted run makes every panel ignore the real mouse, so this reports the intent), `tooltip` (the ✕'s, once the pointer has rested on it); then the fresh Capture at zero: `fresh-captures` (how many so far), `fresh-after` (seconds from the countdown's start to it) and `fresh-excluded` (how many windows of snapit's were excluded). While a countdown runs the overlay is gone (`overlay-facts` replies `none`) and `png-inspect overlay-windows` lists the border's panels and the badge |
 | `timed-mouse move\|down\|up cross\|body\|away` | a real mouse `NSEvent` sent to the countdown badge: over its ✕, over its seconds, or away from it (`up away` after `down cross` is a press let go elsewhere) |
 | `timed-seconds-store <integer>\|<text>` | stores that raw value under the timer's key: an integer as the slider does (however far out of range) or text that is not a number, to see how the Action bar reads it |
 | `fixture-fresh-ignores-exclusions on\|off` | the fixture's fresh Capture paints snapit's windows whatever is excluded, so a run can see that a Capture which let them through would show them |
+| `overlay-window-count` | how many windows the app has ordered in at the overlay's level; `overlay_panels` (flow 40) reads `png-inspect overlay-windows` until the window server's list has that many, because the list lags `orderFront` and `orderOut` when the machine is busy |
 | `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 | `save-hold`, `save-release` | hold every Save's write (the encode into the Save location) until released, so the run can quit the helper while a Save is still being written |
@@ -91,6 +103,11 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
 | `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
 | `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
+| `update-script release <tag> <html_url> <notes> [draft\|prerelease]`, `update-script raw <status> [<body>]`, `update-script offline\|timeout`, `update-script hold on\|off` | what the fixture HTTP endpoint answers to Check for Updates (arguments are percent-encoded: notes may hold spaces and lines); `hold on` keeps a request waiting so a run sees a check in progress |
+| `update-requests` | how many requests Check for Updates has sent |
+| `update-redirect <url>` | whether the real endpoint would follow a redirect of its request to that address: `follow` or `refuse` |
+| `update-installed-version <x.y.z>\|reset` | pretend another bundle version, or read the bundle's again |
+| `update-compare <a> <b>` | the version comparison, `ReleaseVersion`, as a table check: `newer`, `same`, `older`, `invalid a` or `invalid b` |
 | `install-detect <path>` | detection with the real `statfs` and `/Volumes`, same reply as `install-location` |
 
 Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/Commands/EditorTestCommands.swift`):
@@ -121,6 +138,11 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-click <N> tool <id>`, `item <id>`, `canvas <x> <y>` | a click (press and release through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture. With `editor-background` first, it is the first click on a background Editor: the window refuses it for Delete Capture and accepts it everywhere else |
 | `editor-preview <N> [overlay]` | renders the canvas's own layers (no selection) at the pixel size of what the canvas shows (the Capture, or what an applied crop keeps), writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export (`max_diff=0` for Redactions). `overlay` keeps the selection's and the crop rectangle's shade and handles in the picture |
 | `editor-inject-effect <N> <x1> <y1> <x2> <y2>` | adds an Annotation of a test kind that Export's Annotations stage does not draw (as Redaction will not), to check it lies beneath the others in the canvas and in hit testing |
+| `settings-facts` | the Settings window: `window`, `title`, `activation`, then per section a `section <title>` line and one `control <id>\|<kind>\|<title>\|<value>\|<tooltip>` line per control (`display <id>\|<glyphs>` and `note <id>\|<text>` follow a Shortcut that has a combination or a flag) |
+| `settings-press <control id> [<value>]` | what clicking a control does: flips a switch, picks an option (`after-selecting-area captureOnRelease`), starts a recorder (`shortcut.<id>`), clears one (`shortcut-clear.<id>`), presses a button |
+| `settings-key <key code> [<modifier>,...]` | a key press sent through the application's event dispatch, as a recorder that is waiting receives it; replies `ok` once the menu bar app has been told |
+| `settings-choose-save-location <folder>` | what choosing a folder in the chooser does (the folder must be inside the root) |
+| `settings-snapshot <png>`, `settings-close` | render the page to a PNG inside the root; press the close button (the helper then quits) |
 | `last-capture-writes` | `written=<n> dropped=<n>`: state files this helper has written, and queued writes it dropped as stale |
 | `last-capture-hold on\|off` | holds every state write in front of the serial queue until released, so a run can make a queued write stale (a Capture opened meanwhile waits for the queue: run it in the background and release the hold) |
 | `last-capture-roundtrip` | stores a history with one Annotation of every kind in `AnnotationKinds.all` (iterated), a kind no snapit knows, a crop and more Undo steps than the cap through the state file's encoder and decoder; `ok kinds=<ids>` or `error <what differed>` |
@@ -134,6 +156,9 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-drop <N> taken\|refused` | ends the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
 | `editor-key <N> close-button` | presses the title bar's close button (`performClose`, which asks the window's delegate) |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
+| `update-facts` | the update window: `window`, `title`, `activation`, `state` (`checking`, `newer`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`, `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`, one `notes-block <kind>\|<text>` line per rendered block of the release notes and one `button <id>\|<title>\|<tooltip>` line per button |
+| `update-press download\|close` | what pressing the window's button does (Download opens the release page through the browser edge and closes the window) |
+| `update-snapshot <png>` | renders the window to a PNG inside the root |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -226,7 +251,7 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `47-` the Color picker (before the Last Capture flow and Settings, which relaunch the menu bar app), `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `56-` Check for Updates, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -314,6 +339,35 @@ The scripted run holds the bar to its budget: flow 42 takes the footprint before
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
 at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured about 0.4 MB, the tiles using the overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
 was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
+
+### The Color picker
+
+The Color picker is a state of the Area overlay (`State.pickingColor`), not a second overlay system:
+the same frozen frames, panels and key monitor. It opens from the Action bar (`PickColorActionBarItem`:
+the button and P; Esc goes back to the bar with the selection kept), and from the menu's Pick Color
+and the `pick-color` Shortcut (`AreaCaptureFlow.startPickingColor()`: the overlay starts in the picker,
+Esc ends it, and no Editor is warmed up because no Capture opens). `ColorPickerSession` is the sampled
+device pixel as a plain value: the pointer aims it with `AreaGeometry.pixel(of:scale:...)` (display-local
+points, `floor(point * scale)`), the arrow keys nudge it by one device pixel (Shift: ten) and clamp it
+to the frame, so a nudge at 2x is half a point and the pointer does not move. A press picks when it is
+let go, wherever it was dragged to; the second click of a double-click on the Pick Color button within
+`NSEvent.doubleClickInterval` of the picker opening is that button's and picks nothing.
+
+The hex is the frozen frame's pixel as stored, in the display's own color space, never converted to
+sRGB: `PixelSampler` crops the one pixel out of the `CGImage` and draws it into a 1 x 1 context in the
+image's own color space, so a Display P3 display gives Display P3 values (the same numbers the Capture
+file and the Editor hold for that pixel) and any pixel layout reads alike. The loupe (`PickLoupe`)
+shows 15 x 15 device pixels at 16x with the sampled pixel outlined, and its swatch is filled in the
+frame's color space too. The dim and the crosshair are off while picking. On a pick the flow copies the
+uppercase hex through `AppPasteboard.current` and `ColorToast` shows "Copied #RRGGBB" in a small
+non-activating panel of its own (the overlay has closed): its fade and its removal are one-shot delays,
+and a new toast replaces the old one.
+
+`47-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
+frame's corners, on a second display at negative coordinates (left and above), with a BGRX frame,
+under either "After selecting an Area" setting, reads the outlined cell and the swatch back from
+`overlay-snapshot`, and holds memory, CPU, the toast's lifetime and the missing warm-up to the budget.
+`SNAPIT_FLOWS="10 20 40 42 47"` runs just those flows (each builds on the helpers of the ones before it).
 
 ## The Window Capture
 
@@ -488,8 +542,90 @@ Redo and Esc (which cancels a pending crop first) follow the document's state.
 
 ## Adding a Shortcut
 
-Add an `AppShortcut` in its own file (`snapit/Shortcuts/AppShortcut.swift` shows the shape), bind
-it with one line in `ShortcutBindings`, and press it in a flow with `press-shortcut <id>`.
+Add an `AppShortcut` in its own file (`Shared/Shortcuts/AppShortcut.swift` shows the shape; the
+type is shared because Settings in the helper lists the Shortcuts), bind it with one line in
+`ShortcutBindings`, and press it in a flow with `press-shortcut <id>`. A Shortcut the user may
+record in Settings is also an `Entry` in `Shared/Shortcuts/ShortcutCatalog.swift` (`AppShortcut.window`
+and `AppShortcut.pickColor` are in their own files beside `AppShortcut.swift`). `Shortcuts.current` is an `ObservedShortcuts`: a menu
+section that reads `menuShortcut(for:)` follows `setCombo`, so a rebound Shortcut's glyph changes
+with no code of its own.
+
+## Settings
+
+Settings is one window in the Editor helper (`snapit-editor/Settings/`): `SettingsWindow` (one
+instance; a second request brings it forward and reads Open at Login again), `SettingsView` (a
+single `Form`, one `Section` per `SettingsSection`) and `SettingsModel` (what it shows; every
+change is written through `AppDefaults.store` at once, and the Editor, the Area flow and Save read
+their key when they need it, so nothing waits for a relaunch). `SettingsControls.swift` holds each
+control's id, title and tooltip, which the view and `settings-facts` both read. The About section is
+a list: a row is one file (`VersionAboutRow.swift`: its `SettingsControl` and an `AboutRow`, text or
+button) and one line in `AboutRows.all`; the view and `settings-facts` draw from the list.
+
+| To add | Do |
+|---|---|
+| a setting | a key and a reader in `Shared/Settings/<Name>Settings.swift` (the reader falls back to the default); a `SettingsControl` in `SettingsControls.swift`; a setter in `SettingsModel`; a row in `SettingsView`; a line in `SettingsFacts.describe()` and a case in `SettingsFacts.press` |
+| something Settings needs from the menu bar app | a `SocketCommand` in `Shared/Commands/SettingsCommands.swift` and its handler in `snapit/Settings/SettingsAppCommands.swift` (Open at Login and applying a Shortcut do this) |
+| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…; User Guide and Check for Updates… are each a `MenuSection` file and one line in `MenuModel.sections` after it (`QuitMenu` brings the separator before Quit snapit). The order in `MenuModel.sections` is `SettingsMenu`, then the User Guide's section, then `CheckForUpdatesMenu`, then `QuitMenu`: a User Guide section goes between `SettingsMenu` and `CheckForUpdatesMenu`, never after it |
+
+Open at Login lives in the menu bar app (`LoginItem.current`: `SMAppService.mainApp`, or the fake
+in test mode); the helper sends `login-item-status` (and `shortcut-combos`) when Settings opens or
+comes forward and `login-item-set` when the switch is flipped. Nothing polls. `LoginItemDefault`
+registers the login item on the launch of a copy that runs from an Applications folder with no
+move or fix pending (`InstallCheck.plan() == .stay`), and records the flag `openAtLoginDefaultApplied`
+only once registering worked, so a later Off survives relaunches (`login-item-default` runs it with
+the install location the run pretends; flows 52 and 80 use it). The Shortcut recorders use
+`ShortcutRecorder`, a local key monitor that exists only while one waits. It refuses what every app
+depends on (⌘ alone with a letter or number, ⌥ or ⌥⇧ alone, ⇧ alone) with a hint and a beep, and ignores
+key repeats; the result goes to the menu bar app with `apply-shortcut`. The menu bar app's registrar
+is the only copy of a combination: Settings asks `shortcut-combos` when it opens (Onboarding does the
+same). Two Shortcuts never share keys: recording a combination another Shortcut has removes it
+from that one ("Removed from Area."). A combination macOS also uses (`SystemShortcuts.current`)
+carries a note under its recorder; it is still accepted.
+
+While developing one flow, `SNAPIT_FLOWS="20 40 45 52" scripts/check-run.sh <app>` runs only
+those flows (`52-settings.sh` uses helpers of 20, 40 and 45). The flow `52-settings.sh` is the model for driving a helper window: read `settings-facts`, act with
+`settings-press` and `settings-key`, and assert on what the rest of snapit does.
+
+## Check for Updates
+
+Check for Updates… (the menu, and Settings › About) is snapit's only network call. The menu bar
+app makes it; the Editor helper shows the update window and never touches a network.
+
+- **One click, one request.** `CheckForUpdatesMenu` asks the helper to show the update window
+  (`show-update-check`); the window (`UpdateWindow.showAndCheck()`, which the About row's button
+  calls too) says it is checking and sends `check-for-updates` to the menu bar app, which makes
+  the request and replies with an `UpdateAnswer` (`Shared/Updates/UpdateAnswer.swift`, the wire form
+  is in its comment). A click while a check runs joins it, in both processes. Nothing asks GitHub at
+  launch, on a timer or in the background.
+- **The mapping** from GitHub's reply to an answer is one table in `snapit/Updates/UpdateAnswers.swift`
+  (`ReleaseVersion` compares three integers, tolerates a leading `v` and rejects everything else).
+  A reply row is a case of `56-check-for-updates.sh`: add the row and the case together.
+- **The edge** is `ReleaseEndpoints.current`. Product code never builds a request: it hands a
+  `ReleaseRequest` (address, headers, timeout) to the endpoint. `GitHubReleaseEndpoint.swift` is
+  the one file that may contain `URLSession`, `URLRequest`, `NWConnection` and the like;
+  `scripts/check-network.sh` (run by `scripts/test.sh` and the scripted run) fails when any other file
+  has them, or the other ways code gets online (sockets, `AsyncImage`, HTML in an attributed string,
+  a shell tool such as curl, an `http(s)://` address outside the two files that name GitHub's, a
+  network entitlement or App Transport Security setting); when that file stops matching; when
+  `import WebKit` appears (a web view can load anything: the User Guide's file goes in the script's
+  `WEBKIT_ALLOWED` list once its navigation refuses everything but bundle file URLs); when the engine
+  uses a socket or an HTTP library; and when `Cargo.lock` or `Package.resolved` has a crate or
+  package that is not on the script's reviewed lists (a new dependency fails until someone has read it).
+  Never write those names, even in a comment, anywhere else. Flow 56 adds the runtime check:
+  `lsof -a -i` finds no internet socket in the menu bar app or the helper, whatever API would open one.
+  The real `URLSession`/CFNetwork/TLS path (footprint and idle CPU after a real check, redirects,
+  the headers the HTTP client adds itself) is covered by manual check 9 and 8 in `docs/manual-checks.md` only.
+- **The window** is `snapit-editor/Updates/`: `UpdateModel` (every word and tooltip, once),
+  `UpdateWindow` (window and view), `ReleaseNotesBlocks` (the notes' Markdown as headings, bullets and
+  paragraphs, inline Markdown applied, an image shown as its alternative text and never fetched; parsed
+  once), `UpdateHelperCommands`. Notes are cut at 300 lines and 20,000 bytes. A link in the notes and
+  the Download button open through `BrowserLinks`, which opens `https` links only. The Download button's
+  page is built from the tag (`https://github.com/k-electron/snapit/releases/tag/<tag>`); the `html_url`
+  in GitHub's reply is never used. The real request sets `User-Agent`, `Accept` and a fixed
+  `Accept-Language: en`, and follows a redirect only within `api.github.com`
+  (`ReleaseRequest.allowsRedirect`, checked with `update-redirect <url>`).
+- **Real network** (the real endpoint, a private repository answering 404, a proxy, no connection)
+  is in `docs/manual-checks.md`.
 
 ## Engine tests
 

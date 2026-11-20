@@ -10,7 +10,20 @@
 area_start() { send_slow "$APP_SOCK" "$1"; }
 mouse() { send "$APP_SOCK" "overlay-mouse $*"; }
 fact() { send "$APP_SOCK" overlay-facts | sed -n "s/^$1=//p"; }
-overlay_panels() { "$INSPECT" overlay-windows "$APP_PID"; }
+# overlay_panels: the window server's list of the app's windows at the overlay's level. The list lags
+# AppKit's orderFront and orderOut when the machine is busy (a panel still there after the overlay
+# ended, not yet there after a Shortcut returned), so this reads it until it agrees with how many
+# such windows the app itself has ordered in.
+overlay_panels() {
+  local want lines deadline=$((SECONDS + 5))
+  while :; do
+    want="$(send "$APP_SOCK" overlay-window-count)"
+    lines="$("$INSPECT" overlay-windows "$APP_PID")"
+    [[ "$(printf '%s' "$lines" | grep -c .)" == "$want" || SECONDS -ge deadline ]] && break
+    sleep 0.05
+  done
+  [[ -z "$lines" ]] || printf '%s\n' "$lines"
+}
 
 # Drags from (x1, y1) to (x2, y2) on one display, in points from its top-left corner, in a few
 # steps, and lets go.
