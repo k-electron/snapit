@@ -38,7 +38,6 @@ press_tile() {
   mouse up 0 "$x" "$y" >/dev/null
 }
 precise_mb() { footprint -f bytes -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "Footprint:") { printf "%.2f", $(i+1) / 1048576; exit } }'; }
-BAR_FIRST_USE_MB_MAX="${SNAPIT_BAR_FIRST_USE_MB_MAX:-1}"
 # The footprint before the first Action bar of this run (flow 40 shows overlays, never a bar).
 BAR_FIRST_BEFORE="$(precise_mb "$APP_PID")"
 area_cancel() {
@@ -485,15 +484,15 @@ wait_until 10 area_no_helper
 # The flows after this one see the process as flow 20 measured it at rest, plus what is allowed.
 sleep 1
 BAR_END="$(footprint_mb "$APP_PID")"
-if awk -v a="$BAR_END" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
+if awk -v a="$BAR_END" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
   pass "memory is back near the at-rest footprint after the Action bar flow (${AT_REST} MB at rest, ${BAR_END} MB after)"
 else
-  fail "memory is ${BAR_END} MB after the Action bar flow, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
+  fail "memory is ${BAR_END} MB after the Action bar flow, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
 fi
-if awk -v a="$BAR_END" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
-  pass "memory is under the ${FOOTPRINT_MB_MAX} MB ceiling after the Action bar flow (${BAR_END} MB)"
+if awk -v a="$BAR_END" -v max="$FOOTPRINT_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
+  pass "memory is under the ${FOOTPRINT_AFTER_BAR_MB_MAX} MB ceiling after the Action bar flow (${BAR_END} MB)"
 else
-  fail "memory is ${BAR_END} MB after the Action bar flow (ceiling ${FOOTPRINT_MB_MAX} MB)"
+  fail "memory is ${BAR_END} MB after the Action bar flow (ceiling ${FOOTPRINT_AFTER_BAR_MB_MAX} MB)"
 fi
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

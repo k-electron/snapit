@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 
 /// The content view of one display's panel. The scene view (layer-hosting) fills it. The Action
-/// bar sits above it as two small views: a blur (`ActionBarBackdropView`) and a layer-hosting view
+/// bar sits above it as two small views: Liquid Glass (`ActionBarBackdropView`) and a layer-hosting view
 /// of the bar's tiles (`ActionBarTileView`). Neither takes a click: the container hands every
 /// event to the scene view, whose controller hit-tests the tiles.
 ///

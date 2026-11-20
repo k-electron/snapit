@@ -320,25 +320,31 @@ coordinates). The fixture frames are
 IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
 
-The Action bar is drawn in layers, like the rest of the overlay. AppKit controls and SwiftUI cost
+The Action bar is drawn in layers on Liquid Glass. AppKit controls and SwiftUI cost
 memory that never comes back (a bar of `NSButton`s +2.4 MB, of SwiftUI buttons +2.7 MB, of
 SwiftUI on glass +4.2 MB, a bare `NSGlassEffectView` +1.7 MB; each once per process), a layer
-bar about 1 MB. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
+bar about 1 MB; so the bar is layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
 `AreaOverlayView` (the scene) fills it and, once a selection is being adjusted, the bar sits above it as
-two small views, `ActionBarBackdropView` (an `NSVisualEffectView`, `.hudWindow`, the blur) and
+two small views, `ActionBarBackdropView` (an `NSGlassEffectView`, the Liquid Glass capsule) and
 `ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
 container (it hands everything to the scene view): every click reaches `AreaOverlayView`, whose
 controller finds the tile under the pointer from `ActionBar.control(at:)` and calls its pointer hooks.
 A tile is a full-size hit area. Tooltips are `CATextLayer` pills in the scene, shown after the pointer
 rests 0.5 s on a tile (a one-shot `DispatchWorkItem`, cancelled when the pointer leaves): AppKit
-tooltips sit below the overlay's window level. Making `ActionBarBackdropView` an `NSGlassEffectView`
-is a one-line swap that costs about 2 MB more, once. The container draws nothing (`wantsUpdateLayer`), so
+tooltips sit below the overlay's window level. The glass costs about 1.3 to 1.5 MB more than the
+`NSVisualEffectView` it replaced (which cost +0.4 to +0.55 MB in all), once per process. The container draws nothing (`wantsUpdateLayer`), so
 no full-screen backing store exists.
 
 The scripted run holds the bar to its budget: flow 42 takes the footprint before the first bar of the
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
-at most 1 MB higher (`BAR_FIRST_USE_MB_MAX`; measured about 0.4 MB, the tiles using the overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
-was, and at the end of the flow it is within the usual margin of flow 20's resting footprint.
+at most 2.5 MB higher (`BAR_FIRST_USE_MB_MAX`, set in `scripts/check-run.sh`; measured +1.6 to +1.8 MB
+after it is cancelled and +1.8 to +2.1 MB after five Captures, nearly all of it the glass, the tiles using the
+overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
+was. From flow 42 on the process holds that glass for good, so what flows 42, 45, 50 and 80 compare
+with flow 20's resting footprint gets the same 2.5 MB on top (`FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX`, 7.5 MB
+instead of 5, and `FOOTPRINT_AFTER_BAR_MB_MAX`, 22.5 MB instead of 20 after flow 42); a process that has not shown a bar
+(the launch check, a relaunched copy) keeps the plain ceilings. The Color picker toast and the countdown
+badge are glass too and share that one cost: once the bar has loaded it a second glass view is nearly free.
 
 ### The Color picker
 

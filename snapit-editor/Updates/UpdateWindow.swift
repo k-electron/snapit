@@ -84,12 +84,12 @@ struct UpdateView: View {
                 ForEach(model.buttons, id: \.id) { spec in
                     if spec.id == model.downloadButton.id {
                         Button(action: { model.download() }) { label(spec.title) }
-                            .buttonStyle(ChromeButtonStyle(look: .prominent, radius: 12))
+                            .windowButton(prominent: true)
                             .help(spec.tooltip)
                             .keyboardShortcut(.defaultAction)
                     } else {
                         Button(action: { model.close() }) { label(spec.title) }
-                            .buttonStyle(ChromeButtonStyle(look: .plain, radius: 12))
+                            .windowButton(prominent: false)
                             .help(spec.tooltip)
                             .keyboardShortcut(.cancelAction)
                     }
@@ -104,8 +104,6 @@ struct UpdateView: View {
 
     private func label(_ title: String) -> some View {
         Text(title)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
             .frame(minWidth: 110)
     }
 }
@@ -137,7 +135,7 @@ private struct NotesView: View {
             .textSelection(.enabled)
         }
         .frame(maxHeight: 240)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .chromeGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .environment(
             \.openURL,
             OpenURLAction { url in

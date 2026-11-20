@@ -31,7 +31,7 @@ extension SocketCommandRegistry {
         register(.timedFacts) { _ in AreaCaptureFlow.timedFacts().joined(separator: "\n") }
         register(.timedMouse) { request in
             guard let timed = AreaCaptureFlow.countdown, let badge = timed.badge,
-                let view = badge.contentView as? TimedBadgeView
+                let view = (badge.contentView as? NSGlassEffectView)?.contentView as? TimedBadgeView
             else { return "error no countdown" }
             let arguments = request.arguments
             guard arguments.count == 2, ["move", "down", "up"].contains(arguments[0]) else {
