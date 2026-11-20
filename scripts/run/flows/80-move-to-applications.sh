@@ -145,6 +145,13 @@ else
   fail "the relaunched menu bar app footprint is '${FOOTPRINT}' MB (ceiling ${FOOTPRINT_MB_MAX} MB)"
 fi
 
+# Translocated with an original that carries no quarantine: there is nothing to strip, so
+# snapit stays put instead of relaunching on every launch.
+fake_translocation "$DEST"
+expect_equal "a translocated copy with no quarantine to strip stays running" "none" "$(send "$APP_SOCK" install-check)"
+sleep 1
+if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "snapit does not relaunch when there is no quarantine to strip"; else fail "snapit relaunched with nothing to strip"; fi
+
 # 5. Translocated with its original in Applications and approved: strip quarantine from that
 #    copy and relaunch in place, with no Move screen and no eject.
 approve_quarantine "$DEST"
