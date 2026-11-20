@@ -70,6 +70,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
+| `menu-enabled <id>` | `yes` or `no`: whether a menu item is enabled now (Reopen Last Capture is `no` while there is no Last Capture) |
+| `last-capture` | the Last Capture's number, or `none` |
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y>` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display) |
 | `overlay-key escape\|enter\|<key code>` | sends the overlay a key event through the application's event dispatch |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
@@ -111,6 +113,13 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-click <N> tool <id>`, `item <id>`, `canvas <x> <y>` | a click (press and release through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture. With `editor-background` first, it is the first click on a background Editor: the window refuses it for Delete Capture and accepts it everywhere else |
 | `editor-preview <N>` | renders the canvas's own layers (no selection) at the Capture's pixel size, writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export |
 | `editor-inject-effect <N> <x1> <y1> <x2> <y2>` | adds an Annotation of a test kind that Export's Annotations stage does not draw (as Redaction will not), to check it lies beneath the others in the canvas and in hit testing |
+| `last-capture-writes` | `written=<n> dropped=<n>`: state files this helper has written, and queued writes it dropped as stale |
+| `last-capture-hold on\|off` | holds every state write in front of the serial queue until released, so a run can make a queued write stale (a Capture opened meanwhile waits for the queue: run it in the background and release the hold) |
+| `last-capture-roundtrip` | stores a history with one Annotation of every kind in `AnnotationKinds.all` (iterated), a kind no snapit knows, a crop and more Undo steps than the cap through the state file's encoder and decoder; `ok kinds=<ids>` or `error <what differed>` |
+| `annotation-kinds` | the ids in `AnnotationKinds.all`, one per line |
+| `editor-inject-kinds <N>` | one Annotation of every kind in `AnnotationKinds.all` added to Editor N, each its own Undo step (a ticket that adds a kind is covered by the Reopen flow with no edit) |
+| `editor-state-crop <N> get\|set <x> <y> <w> <h>` | Editor N's crop in image points (`none` for the whole Capture); `set` is one Undo step. Stands in for the Crop tool, to check the crop is stored |
+| `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -135,6 +144,35 @@ bar app and quits without building anything.
 The menu bar app tells the helper to open a Capture with `open-capture <N>`; the pixels reach it
 through the Capture file `<root>/captures/capture-<N>.pixels` (memory-mapped, never the socket).
 
+## The Last Capture store
+
+The newest Capture is the Last Capture. Its files are in `<cache>/captures/` (mode 0700, files 0600):
+`capture-<N>.pixels` (written by the menu bar app when the Capture is taken) and, once the Capture has
+a change, `capture-<N>.state` (JSON: `version`, `revision`, `exported`, `history`). A flow reads them
+from `$RUN_ROOT/captures` with `plutil -extract <key> raw -o - <file>` (a scalar, or the count of an
+array: `history.state.annotations`, `history.undoSteps`). Nothing else reaches into the store.
+
+- **Who writes what.** Only the Last Capture's Editor writes the state, through the existing `Codable` types
+  (`AnnotationHistory`, so a kind or a field another ticket adds is stored with no edit here). It hands
+  `LastCaptureStore` a snapshot about 0.5 s after the first change (one-shot, never a repeating timer;
+  later changes ride along) and once more, synchronously, when it closes; a snapshot is skipped when
+  the revision and the exported flag are those of the last one written. Every other Editor keeps its Capture in memory.
+- **Stale writes.** The store has one serial queue and a generation number, bumped on the main thread when a
+  new Capture becomes the Last Capture, at Delete Capture and when the helper is told to quit. A write
+  queued under an older generation is dropped when it runs, and checked again just before its rename.
+  The helper replies to `open-capture` and `quit`, and sends `delete-capture`, only after `fence()` (the
+  queue has drained), and the menu bar app removes files only after that.
+- **Removal.** `CaptureFiles.remove(number:)` and `removeAll()` delete only `capture-<N>.pixels`, `.state` and their
+  `.partial` files, then try `rmdir` (it fails while anything else is in the folder). The menu bar app does it
+  at a new Capture, Delete Capture, a damaged Reopen, quit and launch.
+- **Reopen.** The menu item sends `reopen-capture <N>`. The helper maps the pixels as they are and reads the state:
+  no state file is an untouched Capture, an unreadable one (or a pixel file that is cut short) is damage. Damage
+  shows `ReopenNotice` ("That Capture couldn't be reopened."), answers `error could-not-reopen` and the menu bar
+  app drops the Last Capture, so the item greys out. `LastCapture` (observable) is what the menu item reads.
+
+`scripts/run/flows/50-last-capture.sh` is the model. To work on one flow, `SNAPIT_FLOWS="10 20 50" scripts/check-run.sh <app>`
+runs only the flows whose numbers are listed (a flow that needs `AT_REST` needs flow `20`).
+
 ## The fixture image
 
 `FixtureCaptureSource` returns a deterministic image. At `w` x `h` pixels, pixel `(x, y)` is
@@ -147,7 +185,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture, `45-` Save and drag-out, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `40-` Area Capture, `45-` Save and drag-out, `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.

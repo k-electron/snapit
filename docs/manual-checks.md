@@ -96,3 +96,13 @@ Run after changing Save, the Export pipeline, the drag-out thumbnail or the Save
 5. **Quit during a Save.** Capture a large display, press ⌘S, then choose Quit snapit at once. snapit exits only after the file is written, and the PNG opens.
 
 Clean up: delete the files you saved or dragged, put the Save location back to Downloads, and `tccutil reset SystemPolicyDocumentsFolder dev.snapit.snapit` (and Desktop) afterwards.
+
+## Last Capture and Reopen Last Capture (#27)
+
+Run after changing the Last Capture store, the Editor's state file or the menu. The scripted run reads the files in the private cache and what the Editor shows and exports; it cannot look at the real menu bar menu's greyed item or at the real cache folder.
+
+1. **The real menu.** With no Capture since launch, open the menu bar menu: "Reopen Last Capture" is greyed out. Take a Capture and close its Editor: the item is enabled the next time the menu opens. Choose it: the Editor comes back with its Annotations and Undo history. Delete Capture in that Editor, then open the menu: the item is greyed out again.
+2. **The real cache.** While a Last Capture exists, `ls -la ~/Library/Caches/dev.snapit.snapit/captures` shows `capture-<N>.pixels` and, after an edit, `capture-<N>.state` (mode 600) in a folder of mode 700. Choose Quit snapit: the folder and both files are gone.
+3. **A real Retina Screen Capture.** Close its Editor and reopen it from the menu: the pixels, colors and size match the first Editor, and no pause longer than a blink shows (nothing is decoded).
+
+Clean up: quit snapit, so the cache folder's `captures` folder is removed.

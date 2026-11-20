@@ -34,7 +34,11 @@ final class EditorSessions {
         warm = nil
     }
 
-    /// Opens Capture N in an Editor, or brings its Editor forward when it is already open.
+    /// The Editor of the Last Capture, when it is open.
+    private(set) var lastCaptureSession: EditorSession?
+
+    /// Opens Capture N, just taken, in an Editor, or brings its Editor forward when it is already
+    /// open. It becomes the Last Capture: the Editor before it keeps its Capture in memory only.
     func open(captureNumber: Int) throws {
         ExportFiles.removeStaleDragOut()
         if let existing = sessions[captureNumber] {
@@ -42,11 +46,40 @@ final class EditorSessions {
             return
         }
         let capture = try CaptureFiles.open(number: captureNumber)
-        let session = warm ?? EditorSession()
+        show(
+            EditorDocument(captureNumber: captureNumber, capture: capture), in: warm ?? EditorSession())
         warm = nil
-        session.onClosed = { [weak self] _ in self?.sessions[captureNumber] = nil }
-        session.attach(EditorDocument(captureNumber: captureNumber, capture: capture))
-        sessions[captureNumber] = session
+    }
+
+    /// Reopens the Last Capture, Capture N: its pixels from the Capture file, mapped as they are,
+    /// and its Annotations, crop and Undo history from the state file. An Editor already open for
+    /// it comes forward. Throws when the stored Capture is damaged.
+    func reopen(captureNumber: Int) throws {
+        ExportFiles.removeStaleDragOut()
+        if let existing = sessions[captureNumber] {
+            existing.bringForward()
+            return
+        }
+        let capture = try CaptureFiles.open(number: captureNumber)
+        // No state file is not damage: the Editor writes one only after the first change.
+        let stored = try LastCaptureStateFile.read(number: captureNumber)
+        let document = EditorDocument(
+            captureNumber: captureNumber, capture: capture, history: stored?.history ?? AnnotationHistory(),
+            exported: stored?.exported ?? false)
+        show(document, in: EditorSession())
+    }
+
+    private func show(_ document: EditorDocument, in session: EditorSession) {
+        let number = document.captureNumber
+        lastCaptureSession?.stopBeingLastCapture()
+        session.onClosed = { [weak self] closed in
+            self?.sessions[number] = nil
+            if self?.lastCaptureSession === closed { self?.lastCaptureSession = nil }
+        }
+        session.attach(document)
+        session.becomeLastCapture()
+        sessions[number] = session
+        lastCaptureSession = session
 
         HelperLifecycle.windowWillShow()
         session.show()
