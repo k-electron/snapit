@@ -90,6 +90,14 @@ final class AnnotationLayers {
         layoutSelection()
     }
 
+    /// Hides or shows the layer of an Annotation (a Text hides its own while it is being typed).
+    func setHidden(_ hidden: Bool, id: Int) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entries[id]?.layer.isHidden = hidden
+        CATransaction.commit()
+    }
+
     /// The canvas's zoom or Capture changed (the window was resized): the layers that depend on
     /// it are updated and the selection is drawn again.
     func contextChanged(_ context: AnnotationRenderContext) {

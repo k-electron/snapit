@@ -8,12 +8,17 @@ import AppKit
 enum ToolbarRegistry {
     static let all: [any EditorToolbarItem] = [
         CloseToolbarItem(),
+        ColorSwatchesToolbarItem(),
+        ColorWheelToolbarItem(),
         CopyToolbarItem(),
         DeleteAnnotationToolbarItem(),
         DeleteCaptureToolbarItem(),
+        EyedropperToolbarItem(),
         RedoToolbarItem(),
         ShapeFillToolbarItem(),
+        TextSizeToolbarItem(),
         UndoToolbarItem(),
+        WidthToolbarItem(),
     ]
 
     /// The items of one slot, in order.

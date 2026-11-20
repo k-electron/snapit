@@ -15,6 +15,15 @@ final class NoFirstMouseHost<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// Holds the text view of a text being typed, over the canvas. It takes no click itself: a click
+/// on the canvas under it reaches the canvas, and only the text view is hit.
+final class TextHostView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+}
+
 /// Lays its children out itself and lets a drag on its empty parts move the window.
 final class EditorContentView: NSView {
     var onLayout: (() -> Void)?
@@ -31,12 +40,14 @@ final class EditorContentView: NSView {
 final class EditorChrome {
     static let margin: CGFloat = 12
     static let canvasPadding: CGFloat = 6
-    static let minimumContent = NSSize(width: 560, height: 320)
+    /// The smallest the window's content gets: wide enough that the top toolbar's pills never overlap.
+    private(set) var minimumContent = NSSize(width: 560, height: 320)
 
     let window: EditorWindow
     let canvas: CanvasView
     private let content = EditorContentView(frame: .zero)
     private let rail: NSView
+    private let textHost = TextHostView(frame: .zero)
     private let topLeading: NSView?
     private let topTrailing: NSView?
     private let topDestructive: NSView?
@@ -45,6 +56,7 @@ final class EditorChrome {
         canvas = CanvasView(frame: .zero)
         canvas.padding = Self.canvasPadding
         canvas.session = session
+        canvas.textHost = textHost
 
         func host<V: View>(_ view: V, firstMouse: Bool = true) -> NSView {
             let host: NSHostingView<V> = firstMouse ? FirstMouseHost(rootView: view) : NoFirstMouseHost(rootView: view)
@@ -62,8 +74,12 @@ final class EditorChrome {
         topTrailing = hostIfAny([.history, .export])
         topDestructive = hostIfAny([.destructive], firstMouse: false)
 
+        // The top toolbar's pills side by side, after the traffic lights, must fit.
+        let pillsWidth = [topLeading, topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
+        minimumContent.width = max(minimumContent.width, 92 + pillsWidth)
+
         window = EditorWindow(
-            contentRect: NSRect(origin: .zero, size: Self.minimumContent),
+            contentRect: NSRect(origin: .zero, size: minimumContent),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.session = session
@@ -78,9 +94,9 @@ final class EditorChrome {
         let toolbar = NSToolbar(identifier: "snapit.editor")
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        window.contentMinSize = Self.minimumContent
+        window.contentMinSize = minimumContent
         window.contentView = content
-        for view in [canvas, rail, topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
+        for view in [canvas, textHost, rail, topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
             content.addSubview(view)
         }
         content.onLayout = { [weak self] in self?.layoutAll() }
@@ -113,13 +129,13 @@ final class EditorChrome {
         let top = topTrailing?.frame.height ?? topLeading?.frame.height ?? 62
         let extra = NSSize(
             width: rail + Self.margin + 2 * Self.canvasPadding, height: top + Self.margin + 2 * Self.canvasPadding)
-        let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: Self.minimumContent)).size
-        let maxWidth = visible.width * 0.8 - (chrome.width - Self.minimumContent.width)
-        let maxHeight = visible.height * 0.8 - (chrome.height - Self.minimumContent.height)
+        let chrome = window.frameRect(forContentRect: NSRect(origin: .zero, size: minimumContent)).size
+        let maxWidth = visible.width * 0.8 - (chrome.width - minimumContent.width)
+        let maxHeight = visible.height * 0.8 - (chrome.height - minimumContent.height)
         window.setContentSize(
             NSSize(
-                width: max(Self.minimumContent.width, min(capture.width + extra.width, maxWidth)),
-                height: max(Self.minimumContent.height, min(capture.height + extra.height, maxHeight))))
+                width: max(minimumContent.width, min(capture.width + extra.width, maxWidth)),
+                height: max(minimumContent.height, min(capture.height + extra.height, maxHeight))))
         let others = NSApp.windows.filter { $0 is EditorWindow && $0.isVisible }.count
         let step = CGFloat(others % 12) * 28
         var origin = NSPoint(
@@ -164,6 +180,7 @@ final class EditorChrome {
             x: canvasX, y: Self.margin, width: max(1, bounds.width - canvasX - Self.margin),
             height: max(1, canvasTop - Self.margin))
         if canvas.frame != frame { canvas.frame = frame }
+        if textHost.frame != frame { textHost.frame = frame }
     }
 
     private func place(_ view: NSView, x: CGFloat, y: CGFloat) {

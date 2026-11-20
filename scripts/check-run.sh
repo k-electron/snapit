@@ -14,7 +14,8 @@
 # Optional: SNAPIT_IDLE_SECONDS (default 15) sets the idle window; SNAPIT_FOOTPRINT_MB_MAX
 # (default 20) the menu bar app's footprint ceiling; SNAPIT_FOOTPRINT_GROWTH_MB_MAX (default 4)
 # how far its footprint may grow over repeated Captures once warmed up;
-# SNAPIT_FOOTPRINT_FROM_REST_MB_MAX (default 5) how far above its at-rest footprint it may end up.
+# SNAPIT_FOOTPRINT_FROM_REST_MB_MAX (default 5) how far above its at-rest footprint it may end up;
+# SNAPIT_FLOWS (a regex, default every flow) runs only the flows whose file name matches.
 set -uo pipefail
 
 APP="${1:?usage: check-run.sh path/to/snapit.app}"
@@ -72,6 +73,8 @@ if wait_until 10 answers "$APP_SOCK"; then pass "menu bar app starts and answers
 APP_PID="$(pid_of "$APP_EXE")"
 
 for flow in "$ROOT_DIR"/scripts/run/flows/*.sh; do
+  # SNAPIT_FLOWS=<regex> runs only the flows whose file name matches (while writing one).
+  if [[ -n "${SNAPIT_FLOWS:-}" && ! "$(basename "$flow")" =~ $SNAPIT_FLOWS ]]; then continue; fi
   echo "--- $(basename "$flow" .sh)"
   # shellcheck source=/dev/null
   source "$flow"

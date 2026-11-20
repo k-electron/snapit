@@ -20,6 +20,13 @@ struct AnnotationToolbarState: Equatable {
     var selectionSupportsFill: Bool?
     /// The selected Annotation's fill is solid.
     var selectionFilled = false
+    /// The selected Annotation's color, width and text size, and which controls apply to its
+    /// kind; nil with no selection. The color, width and size controls show these.
+    var selectionColor: AnnotationColor?
+    var selectionWidth: CGFloat?
+    var selectionWidthChoice: WidthChoice?
+    var selectionTextSize: CGFloat?
+    var selectionUsesTextSize: Bool?
 }
 
 /// The Annotation actions: drawing, selecting, moving, resizing, deleting, Undo, Redo and the
@@ -58,6 +65,11 @@ extension EditorSession {
             state.canDelete = idle
             state.selectionSupportsFill = AnnotationKinds.kind(selected.kind)?.supportsFill ?? false
             state.selectionFilled = selected.style.filled
+            state.selectionColor = selected.style.color
+            state.selectionWidth = selected.style.width
+            state.selectionWidthChoice = AnnotationKinds.kind(selected.kind)?.widthChoice ?? WidthChoice.none
+            state.selectionTextSize = selected.style.textSize
+            state.selectionUsesTextSize = AnnotationKinds.kind(selected.kind)?.usesTextSize ?? false
         }
         if state != toolbarState { toolbarState = state }
     }
@@ -67,8 +79,10 @@ extension EditorSession {
     /// Starts a new Annotation of this kind at `point`, in the style used last.
     func beginDrawing(_ kindID: AnnotationKindID, at point: CGPoint) {
         guard let document, annotationGesture == nil, let kind = AnnotationKinds.kind(kindID) else { return }
+        endColorGesture()
         var style = annotationStyle
         style.filled = style.filled && kind.supportsFill
+        if kind.widthChoice == .highlighter { style.width = highlighterWidth }
         var id = 0
         document.edit { history in
             history.begin()
@@ -125,6 +139,7 @@ extension EditorSession {
     /// starts a move (and becomes selected), empty canvas deselects.
     func beginSelecting(at point: CGPoint) {
         guard document != nil, annotationGesture == nil else { return }
+        endColorGesture()
         if let selected = selectedAnnotation, let handle = handleIndex(of: selected, at: point),
             let center = AnnotationKinds.kind(selected.kind)?.handles(of: selected)[handle]
         {
@@ -200,8 +215,9 @@ extension EditorSession {
     // MARK: Delete, Undo, Redo
 
     var canDeleteAnnotation: Bool { toolbarState.canDelete }
-    var canUndo: Bool { toolbarState.canUndo }
-    var canRedo: Bool { toolbarState.canRedo }
+    /// While a text is being typed, Undo takes back its typing first.
+    var canUndo: Bool { toolbarState.canUndo || textEditingCanUndo }
+    var canRedo: Bool { toolbarState.canRedo || textEditingCanRedo }
 
     /// Delete Annotation (⌫): removes the selected Annotation.
     func deleteSelectedAnnotation() {
@@ -211,12 +227,17 @@ extension EditorSession {
         }
     }
 
+    /// Undo (⌘Z): the typing of a text being edited first, then the Annotations.
     func undo() {
+        if undoTextEditing() { return }
+        endColorGesture()
         guard annotationGesture == nil, document?.canUndo == true else { return }
         document?.edit { $0.undo() }
     }
 
     func redo() {
+        if redoTextEditing() { return }
+        endColorGesture()
         guard annotationGesture == nil, document?.canRedo == true else { return }
         document?.edit { $0.redo() }
     }
@@ -240,17 +261,26 @@ extension EditorSession {
     func setAnnotationFilled(_ filled: Bool) {
         annotationStyle.filled = filled
         AnnotationSettings.filled = filled
-        restyleSelection(onlyIfFillable: true) { $0.filled = filled }
+        restyleSelection(where: { $0.supportsFill }) { $0.filled = filled }
     }
 
-    /// The line width in points, for the selected Annotation and for the next ones. Each call
-    /// records one Undo step for the selected Annotation: a control that changes it
-    /// continuously (a slider) brackets the changes with `document.edit { $0.begin() }` and
-    /// `$0.end()`.
+    /// The width in points, for the selected Annotation and for the next ones of its group: the
+    /// line width (Arrow, Rectangle, Oval) or the Highlighter's thickness, each remembered
+    /// apart. Each call records one Undo step for the selected Annotation: a control that
+    /// changes it continuously (a slider) brackets the changes with `document.edit { $0.begin() }`
+    /// and `$0.end()`.
     func setAnnotationWidth(_ width: CGFloat) {
-        annotationStyle.width = width
-        AnnotationSettings.width = width
-        restyleSelection { $0.width = width }
+        let choice = activeWidthChoice
+        switch choice {
+        case .none: return
+        case .line:
+            annotationStyle.width = width
+            AnnotationSettings.width = width
+        case .highlighter:
+            highlighterWidth = width
+            AnnotationSettings.highlighterWidth = width
+        }
+        restyleSelection(where: { $0.widthChoice == choice }) { $0.width = width }
     }
 
     /// The Annotation color, for the selected Annotation and for the next ones. One Undo step
@@ -258,14 +288,25 @@ extension EditorSession {
     func setAnnotationColor(_ color: AnnotationColor) {
         annotationStyle.color = color
         AnnotationSettings.color = color
+        if restyleTextBeingEdited({ $0.color = color }) { return }
         restyleSelection { $0.color = color }
     }
 
+    /// The Text size in points, for the selected Text and for the next ones.
+    func setAnnotationTextSize(_ size: CGFloat) {
+        annotationStyle.textSize = size
+        AnnotationSettings.textSize = size
+        if restyleTextBeingEdited({ $0.textSize = size }) { return }
+        restyleSelection(where: { $0.usesTextSize }) { $0.textSize = size }
+    }
+
     /// Changes the selected Annotation's style as one Undo step (or as part of the gesture a
-    /// caller has open).
-    private func restyleSelection(onlyIfFillable: Bool = false, _ change: (inout AnnotationStyle) -> Void) {
+    /// caller has open), when its kind passes `applies`.
+    func restyleSelection(
+        where applies: (any AnnotationKind) -> Bool = { _ in true }, _ change: (inout AnnotationStyle) -> Void
+    ) {
         guard annotationGesture == nil, let selected = selectedAnnotation,
-            let kind = AnnotationKinds.kind(selected.kind), !onlyIfFillable || kind.supportsFill
+            let kind = AnnotationKinds.kind(selected.kind), applies(kind)
         else { return }
         var updated = selected
         change(&updated.style)

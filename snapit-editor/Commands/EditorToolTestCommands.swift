@@ -26,7 +26,7 @@ nonisolated extension SocketCommand {
     /// `editor-background <N>`: makes another Editor's window the key window, so Editor N is a
     /// background Editor. Replies `ok key=yes|no` (whether N is still key). Test mode only.
     static let editorBackground = SocketCommand("editor-background")
-    /// `editor-click <N> tool <id>`, `item <id>` or `canvas <x> <y>`: a left click (press and release,
+    /// `editor-click <N> tool <id>`, `item <id>`, `control <tooltip>` or `canvas <x> <y>`: a left click (press and release,
     /// through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture.
     /// Replies `ok key-before=yes|no key-after=yes|no`. Test mode only.
     static let editorClick = SocketCommand("editor-click")
@@ -185,13 +185,17 @@ extension SocketCommandRegistry {
         register(.editorClick) { request in
             let arguments = request.arguments
             guard let session = Self.session(arguments), let window = session.window, arguments.count >= 3 else {
-                return "error editor-click <N> tool <id> | item <id> | canvas <x> <y>"
+                return "error editor-click <N> tool <id> | item <id> | control <tooltip> | canvas <x> <y>"
             }
             let target: CGPoint
             switch arguments[1] {
-            case "tool", "item":
-                let tooltip = arguments[1] == "tool"
-                    ? ToolRegistry.tool(id: arguments[2])?.tooltip : ToolbarRegistry.item(id: arguments[2])?.tooltip
+            case "tool", "item", "control":
+                // `control <tooltip>` is one control of an item that has several (a swatch, a width).
+                let tooltip = switch arguments[1] {
+                case "tool": ToolRegistry.tool(id: arguments[2])?.tooltip
+                case "item": ToolbarRegistry.item(id: arguments[2])?.tooltip
+                default: arguments[2]
+                }
                 guard let tooltip else { return "error no \(arguments[1]) \(arguments[2])" }
                 guard let control = Self.controls(in: window).first(where: { $0.tooltip == tooltip }) else {
                     return "error no control with the tooltip \(tooltip)"
@@ -225,7 +229,7 @@ extension SocketCommandRegistry {
         }
     }
 
-    private enum Phase { case down, drag, up }
+    enum Phase { case down, drag, up }
 
     private static func phase(_ name: String) -> Phase? {
         switch name {
@@ -236,21 +240,21 @@ extension SocketCommandRegistry {
         }
     }
 
-    private static func session(_ arguments: [String]) -> EditorSession? {
+    static func session(_ arguments: [String]) -> EditorSession? {
         arguments.first.flatMap(Int.init).flatMap { EditorSessions.shared.session(captureNumber: $0) }
     }
 
     /// Where a point of the Capture is in the window, found by asking the layer tree (the
     /// Annotation layer's own coordinates, flipped and scaled by the canvas) rather than the
     /// canvas's own arithmetic.
-    private static func windowPoint(forImagePoint imagePoint: CGPoint, in session: EditorSession) -> CGPoint? {
+    static func windowPoint(forImagePoint imagePoint: CGPoint, in session: EditorSession) -> CGPoint? {
         guard let canvas = session.canvas, let root = canvas.layer else { return nil }
         let inView = root.convert(imagePoint, from: canvas.annotationLayer)
         return canvas.convert(inView, to: nil)
     }
 
     /// Hands the window a mouse event at a point of the window, as AppKit would on a click.
-    private static func deliver(_ phase: Phase, at windowPoint: CGPoint, in window: NSWindow) {
+    static func deliver(_ phase: Phase, at windowPoint: CGPoint, in window: NSWindow) {
         let type: NSEvent.EventType = switch phase {
         case .down: .leftMouseDown
         case .drag: .leftMouseDragged
@@ -273,7 +277,7 @@ extension SocketCommandRegistry {
 
     /// The controls of the window's toolbars: tooltip and centre in window coordinates, from the
     /// marker views test mode puts behind each control (`ControlMarker`).
-    private static func controls(in window: NSWindow) -> [(tooltip: String, center: CGPoint)] {
+    static func controls(in window: NSWindow) -> [(tooltip: String, center: CGPoint)] {
         var found: [(tooltip: String, center: CGPoint)] = []
         func visit(_ view: NSView) {
             if let marker = view as? ControlMarkerView {

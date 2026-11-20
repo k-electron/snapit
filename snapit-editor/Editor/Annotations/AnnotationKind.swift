@@ -40,6 +40,10 @@ nonisolated protocol AnnotationKind: Sendable {
     var drawnByAnnotationStage: Bool { get }
     /// True when the kind comes as an outline or a solid fill (Rectangle, Oval).
     var supportsFill: Bool { get }
+    /// Which width control the kind answers to: the line width, the Highlighter's thickness, or none.
+    var widthChoice: WidthChoice { get }
+    /// True when the kind has a text size (Text).
+    var usesTextSize: Bool { get }
     func paint(for annotation: Annotation) -> AnnotationPaint
     /// Whether a click at `point` (image points) is on the Annotation. Exact: the inside of a
     /// filled Annotation only, the stroke of an outline. `minimumWidth` makes a thin line
@@ -64,9 +68,26 @@ nonisolated protocol AnnotationKind: Sendable {
     @MainActor func update(_ layer: CALayer, for annotation: Annotation, in context: AnnotationRenderContext)
 }
 
+/// A width control and its presets: lines (Arrow, Rectangle, Oval outlines) and the Highlighter
+/// each have their own, and each is remembered separately.
+nonisolated enum WidthChoice: Sendable {
+    case none, line, highlighter
+
+    /// The widths the control offers, in points.
+    var presets: [CGFloat] {
+        switch self {
+        case .none: []
+        case .line: [3, 5, 8]
+        case .highlighter: [14, 22, 34]
+        }
+    }
+}
+
 nonisolated extension AnnotationKind {
     var drawnByAnnotationStage: Bool { true }
     var supportsFill: Bool { false }
+    var widthChoice: WidthChoice { .line }
+    var usesTextSize: Bool { false }
 
     /// A box at least `AnnotationLimits.smallestSize` points each way.
     func isLargeEnough(_ annotation: Annotation) -> Bool {
