@@ -7,5 +7,8 @@ enum ShortcutBindings {
         Shortcuts.current.register(.area) { await OnboardingLauncher.whenSetUp { await AreaCaptureFlow.start() } }
         Shortcuts.current.register(.window) { await OnboardingLauncher.whenSetUp { await WindowCaptureFlow.start() } }
         Shortcuts.current.register(.screen) { await OnboardingLauncher.whenSetUp { await ScreenCaptureFlow.run() } }
+        Shortcuts.current.register(.pickColor) {
+            await OnboardingLauncher.whenSetUp { await AreaCaptureFlow.start(mode: .pickColor) }
+        }
     }
 }

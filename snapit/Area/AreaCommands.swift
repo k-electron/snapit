@@ -21,11 +21,16 @@ nonisolated extension SocketCommand {
     /// display's top-left corner. A real `NSEvent`, delivered to the display's panel, with that
     /// click count (1 when omitted; a double-click is a `down` with 2). Replies `ok`.
     static let overlayMouse = SocketCommand("overlay-mouse")
-    /// `overlay-key escape|enter|<letter>|<key code>`: sends the overlay a key event through the
-    /// application's event dispatch. Replies `ok`.
+    /// `overlay-key escape|enter|left|right|up|down|<letter>|<key code> [shift]`: sends the overlay a
+    /// key event through the application's event dispatch. Replies `ok`.
     static let overlayKey = SocketCommand("overlay-key")
     /// What the overlay shows now, as `key=value` lines. Replies `none` when no overlay is up.
     static let overlayFacts = SocketCommand("overlay-facts")
+    /// How many windows the app has ordered in at the overlay's level (the overlay's panels, the
+    /// Color picker's toast, a Timed Capture's border and badge): what the window server's list
+    /// (`png-inspect overlay-windows`) shows once it has caught up. The scripted run waits for the
+    /// two to agree, because the list lags AppKit's `orderFront` and `orderOut` when the machine is busy.
+    static let overlayWindowCount = SocketCommand("overlay-window-count")
     /// `overlay-snapshot <display> <path>`: renders that display's layers to a PNG inside the
     /// run's root, as the panel would show them. Replies `ok`.
     static let overlaySnapshot = SocketCommand("overlay-snapshot")
@@ -36,6 +41,7 @@ extension SocketCommandRegistry {
     func registerAreaTestCommands() {
         guard TestMode.isActive else { return }
         registerActionBarTestCommands()
+        registerPickColorTestCommands()
         registerTimedCaptureTestCommands()
 
         register(.fixtureExtraDisplay) { request in
@@ -71,6 +77,7 @@ extension SocketCommandRegistry {
         register(.overlayWait) { _ in
             switch await AreaCaptureFlow.waitForResult() {
             case .opened(let number): "opened \(number)"
+            case .pickedColor(let hex): "picked \(hex)"
             case .cancelled: "cancelled"
             case .permissionNeeded: "permission-needed"
             case .failed(let why): "failed \(why)"
@@ -98,18 +105,25 @@ extension SocketCommandRegistry {
                 "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38,
                 "k": 40, "n": 45, "m": 46,
             ]
-            let keyCodes = ["escape": 53, "enter": 36].merging(letters) { $1 }
-            guard let name = request.arguments.first, let keyCode = keyCodes[name] ?? Int(name) else {
-                return "error overlay-key escape|enter|<letter>|<key code>"
+            let keyCodes = ["escape": 53, "enter": 36, "left": 123, "right": 124, "down": 125, "up": 126]
+                .merging(letters) { $1 }
+            guard let name = request.arguments.first, let keyCode = keyCodes[name] ?? Int(name),
+                request.arguments.dropFirst().allSatisfy({ $0 == "shift" })
+            else {
+                return "error overlay-key escape|enter|left|right|up|down|<letter>|<key code> [shift]"
             }
             let characters = letters[name] == nil ? "" : name
             let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                with: .keyDown, location: .zero, modifierFlags: request.arguments.count > 1 ? [.shift] : [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: panel.windowNumber, context: nil, characters: characters,
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(keyCode))
             guard let event else { return "error no key event" }
             NSApp.sendEvent(event)
             return "ok"
+        }
+        register(.overlayWindowCount) { _ in
+            String(NSApp.windows.filter { $0.isVisible && $0.level == .screenSaver }.count)
         }
         register(.overlayFacts) { _ in
             guard let controller = AreaCaptureFlow.activeOverlay else { return "none" }
@@ -167,7 +181,7 @@ extension AreaOverlayController {
             && containers.allSatisfy { $0.wantsUpdateLayer && $0.subviews.first === $0.sceneView }
         return [
             "displays=\(displays.count)",
-            "mode=\(mode == .window ? "window" : "area")",
+            "mode=\(mode)",
             "state=\(state.rawValue)",
             "display=\(activeIndex)",
             "display-ids=\(displays.map { String($0.displayID) }.joined(separator: ","))",
