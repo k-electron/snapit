@@ -109,8 +109,9 @@ final class FolderGuideModel: GuideContent {
     let openSystemSettingsButton = HelperButton(
         id: "open-system-settings", title: "Open System Settings",
         tooltip: "Open System Settings at Privacy & Security › Files & Folders")
+    static let chooseFolderID = "choose-folder"
     let chooseFolderButton = HelperButton(
-        id: "choose-folder", title: "Choose another folder", tooltip: "Choose a different folder for Save")
+        id: FolderGuideModel.chooseFolderID, title: "Choose another folder", tooltip: "Choose a different folder for Save")
     let retryButton = HelperButton(
         id: "retry", title: "Try again", tooltip: "Save the Capture again, from the Editor that is still open")
     let replayButton = HelperButton(id: "replay", title: "Replay", tooltip: "Play the animation again")
@@ -147,6 +148,12 @@ final class FolderGuideModel: GuideContent {
     /// Makes `url` the Save location and, when the Editor is still open, saves the Capture there.
     func useFolder(_ url: URL) async {
         SaveLocationChooser.set(url)
+        // Nothing to save again (the Capture was handed over, or its Editor is gone): the choice is all
+        // there is to do, so the guide has finished.
+        guard canRetry else {
+            onFinished?()
+            return
+        }
         await retry()
     }
 
