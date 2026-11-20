@@ -73,7 +73,7 @@ Read where snapit runs from at any time with
 
 ## Area overlay on real displays (#18)
 
-Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/`. The scripted run drives the overlay over fixture displays; only a real screen shows ScreenCaptureKit's frames, Retina scaling and several displays.
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/`. The scripted run drives the overlay over fixture displays; only a real screen shows ScreenCaptureKit's frames, Retina scaling and several displays. Steps 3 and 4 assume "After selecting an Area" is at Capture on release; until the Settings window exists, set it with `defaults write dev.snapit.snapit afterSelectingArea captureOnRelease` (and go back to the default with `defaults delete dev.snapit.snapit afterSelectingArea`).
 
 1. Press ⌃⌥⌘4 on a Retina display. The overlay appears at once (well under a blink), the frozen frame looks identical to the live screen (no color shift, no scale jump), the crosshair spans the display and the loupe follows the pointer.
 2. Hover over a few windows. The window under the pointer is highlighted, the front one when they overlap.
@@ -84,3 +84,16 @@ Run on a real install, with Screen Recording granted, before a release and after
 7. Start the overlay on a display showing a full-screen app in its own Space (the menu bar and the notch are covered): the overlay covers the whole display, menu bar and notch included, and Esc and a drag both work.
 8. With another app frontmost, press ⌃⌥⌘4 and then Esc: the overlay goes and that app is frontmost again, with the keyboard.
 9. Plug in or unplug a display (or change the arrangement) while the overlay is up: the overlay ends.
+
+## Action bar on a real screen (#19)
+
+Run on a real install, with Screen Recording granted, before a release and after changing anything in `snapit/Area/` (`ActionBar/` especially). The scripted run drives the Action bar through test commands; only a real screen and a real mouse show its glass look, its hover tooltips and its buttons under a real click. Start from the default ("After selecting an Area" at Show Action bar: `defaults delete dev.snapit.snapit afterSelectingArea`).
+
+1. Press ⌃⌥⌘4 and drag an Area. Letting go keeps the selection: eight square handles, the size label above the top-left corner, and the Action bar (Capture, Cancel) below the selection on a glass pill that shows the dimmed screen through it. The pointer over the bar is an arrow; over a handle it is a resize cursor; inside the selection it is a hand; elsewhere the crosshair.
+2. Rest the pointer on Capture and on Cancel without moving. A tooltip appears for each ("Capture this Area (Return)", "Cancel (Esc)") and is visible above the overlay. Click each button near its corner, away from its glyph and title: it must act (the whole tile is the button).
+3. Drag each handle, including past the opposite edge, and drag inside the selection. The selection and the bar follow; the bar never leaves the screen. Put selections against each corner and each edge of the display, and make one that covers the whole display: the bar stays fully visible (below, above or inside the selection).
+4. Press Return, or double-click inside the selection: the Editor opens on exactly that Area. Make a selection, double-click inside it with a slightly unsteady hand: the Capture is the selection as it was.
+5. Click a highlighted window: it becomes the selection with its handles and the bar. Press Return: the window's frame is captured.
+6. With another app frontmost, press ⌃⌥⌘4, drag an Area and press Esc (and again with the Cancel button): the overlay goes, that app is frontmost with the keyboard, and ⌃⌥⌘4 works again at once.
+7. With two displays, make a selection on one and drag a handle toward the other: the selection stops at its own display's edge, and the bar is on that display.
+8. Memory, with `footprint <pid>`: after the first Action bar the footprint is about 3 MB above its earlier resting value (SwiftUI and the glass renderer stay loaded) and then stays flat over repeated Captures. Idle CPU is 0% with the bar showing.

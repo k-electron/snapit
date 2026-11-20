@@ -70,10 +70,12 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `shortcut-combo <id>`, `shortcut-set <id> none` or `<key code> [<modifier>...]` | read or change a Shortcut's key combination |
 | `menu-shortcut <id>` | the key equivalent a menu item shows now, or `none` |
 | `menu-click <id>` | runs a menu item's action; replies `ok` when it has finished |
-| `overlay-mouse move\|down\|drag\|up <display> <x> <y>` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display) |
-| `overlay-key escape\|enter\|<key code>` | sends the overlay a key event through the application's event dispatch |
+| `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
+| `overlay-key escape\|enter\|<letter>\|<key code>` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state`, `display`, `cursor`, `hover`, `selection`, `view` (`layer-hosted` when no view draws), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `selection`, `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points |
+| `overlay-press <item id>` | runs an Action bar item's action, as its button does (the item's tile is checked through its frame in `overlay-actionbar`) |
 | `overlay-snapshot <display> <path>` | renders that display's layers to a PNG inside the root; the run reads pixels back with `png-inspect pixel` to check the dim and the cutout |
 | `pasteboard-types`, `pasteboard-dump-png <path>`, `pasteboard-clear` | read or empty the private pasteboard (`<path>` must be inside the root) |
 | `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
@@ -130,7 +132,7 @@ points: an odd width, so engine rows are padded (never assume a stride is tight)
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `40-` Area Capture, `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `40-` Area Capture with Capture on release, `45-` Area Capture with the Action bar, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -143,7 +145,7 @@ versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variab
 process's windows: `png-inspect windows <pid>`, and the Area overlay's panels:
 `png-inspect overlay-windows <pid>`).
 
-The Area flow (`40-area-capture.sh`) shows how to drive an overlay: `press-shortcut capture-area`
+The Area flows (`40-area-capture.sh`, `45-action-bar.sh`; the second uses the first's helpers) show how to drive an overlay. "After selecting an Area" is the default (Show Action bar) unless a flow writes `defaults-set afterSelectingArea captureOnRelease`, as flow 40 does at its top, so a flow that drives the overlay sets the one it needs. In a flow: `press-shortcut capture-area`
 shows it, `overlay-mouse` and `overlay-key` are the user's hand, `overlay-wait` returns when the
 Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w> <h> <full w>
 <full h> <x> <y>` checks a crop of the fixture pixel by pixel.
@@ -193,6 +195,28 @@ to aim a hover at, and two that cross its left and top edges (for a second displ
 coordinates). The fixture frames are
 IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
+
+The Action bar is real views, which a layer-hosting view cannot hold: each panel's content view is an
+`AreaOverlayContainerView` with the layer-hosting `AreaOverlayView` (the scene) filling it and, once
+a selection is being adjusted, an `ActionBarHostingView` (SwiftUI, macOS 26 glass) sized exactly to
+the bar beside it. The container draws nothing (`wantsUpdateLayer`), so no full-screen backing store
+exists. The first Action bar loads SwiftUI's glass renderer, which keeps the footprint about 3 MB
+higher from then on; it does not grow with repeated Captures.
+
+## Adding to the Area overlay
+
+| To add | Add a file in `snapit/Area/` | And |
+|---|---|---|
+| a button or control on the Action bar | `ActionBar/<Name>ActionBarItem.swift` (`ActionBarItem`: `id`, `order`, `title`, `symbol`, `look`, `tooltip`, optionally `keyEquivalent`, `perform(on:)`, and `makeView(host:)` for a control that is not a plain button, such as a slider) | one line in `ActionBar/ActionBarRegistry.swift` |
+| a key that runs an Action bar item (the Color picker's P) | nothing: the item's `keyEquivalent` | the key monitor in `AreaOverlayController.handle` asks the registry |
+| a new way out of the overlay (Timed Capture) | a case in `Overlay/AreaOverlayOutcome.swift`, produced by the item through `host.finish(with:)`, and its handling in `AreaCaptureFlow+<Name>.swift` | one arm in `AreaCaptureFlow.finish` |
+| an overlay mode (the Color picker's pointer mode) | a case in `AreaOverlayController.State` and the handling of its pointer and key events | `AreaSceneState` for what it draws |
+| a test command about the Action bar | `ActionBar/ActionBarCommands.swift` (`registerActionBarTestCommands()`) | nothing |
+
+An item's tile is its hit area, and its tooltip is `.help(tooltip)`: the standard `makeView` does both.
+`ActionBarView` puts `onGeometryChange` around every item, so `overlay-actionbar` reports each item's
+frame whatever its view is. `FrozenDisplay.displayID` is the display's `CGDirectDisplayID` for a
+feature that needs to know which display a selection is on (Timed Capture's fresh Capture).
 
 ## Adding to the Editor
 

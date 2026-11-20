@@ -4,8 +4,10 @@ import AppKit
 /// frozen frame in the engine, open the Editor.
 ///
 /// The Shortcut and the "Capture Area" menu item both call `start()`, which returns as soon as
-/// the overlay is up. What happens next is the user's: a drag released (or a click on the
-/// highlighted window) takes the Capture, Esc cancels. The pixels go to the Editor helper through
+/// the overlay is up. What happens next is the user's: with "After selecting an Area" at Capture on
+/// release, a drag released (or a click on the highlighted window) takes the Capture; with Show
+/// Action bar, the selection stays and the Action bar, Return or a double-click takes it. Esc
+/// cancels. The pixels go to the Editor helper through
 /// a Capture file (`CaptureHandoff`); this process keeps nothing afterwards, and every frozen
 /// frame is gone when the overlay closes.
 @MainActor
@@ -59,7 +61,7 @@ enum AreaCaptureFlow {
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
 
             let controller = AreaOverlayController(displays: displays, windows: windows, pointer: source.pointerLocation)
-            controller.onFinish = { selection in finish(selection) }
+            controller.onFinish = { outcome in finish(outcome) }
             overlay = controller
             controller.show(takesFocus: !TestMode.isActive)
             lastShownMilliseconds = milliseconds(since: began)
@@ -80,19 +82,22 @@ enum AreaCaptureFlow {
     /// The overlay that is showing now, if any.
     static var activeOverlay: AreaOverlayController? { overlay }
 
-    private static func finish(_ selection: AreaSelection?) {
+    /// What the overlay's outcome sets going. Every outcome closes the overlay first, which lets go
+    /// of the frozen frames; a new outcome adds its arm here.
+    private static func finish(_ outcome: AreaOverlayOutcome) {
         guard let controller = overlay else { return }
         overlay = nil
-        let frozen = selection.map { controller.displays[$0.displayIndex] }
-        controller.teardown()
-
-        guard let selection, let frozen else {
+        switch outcome {
+        case .capture(let selection):
+            let frozen = controller.displays[selection.displayIndex]
+            controller.teardown()
+            Task {
+                conclude(await capture(frozen, area: selection.pixels))
+            }
+        case .cancel:
+            controller.teardown()
             // Cancelled: the Shortcut works again at once.
             conclude(.cancelled)
-            return
-        }
-        Task {
-            conclude(await capture(frozen, area: selection.pixels))
         }
     }
 
