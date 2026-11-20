@@ -38,7 +38,8 @@ nonisolated extension SocketCommand {
 
     /// The same for a Permission guide that has its own window: `guide-facts` (`window`, `title`,
     /// `activation`, then the guide's lines), `guide-press <button id>`, `guide-activate`,
-    /// `guide-hide`, `guide-unhide`, `guide-close`, `guide-snapshot <png path>`. Test mode only.
+    /// `guide-hide`, `guide-unhide`, `guide-close`, `guide-snapshot <png path>`. Each takes the guide's
+    /// kind first (`folder`; the Screen Recording guide when none is named). Test mode only.
     static let guideFacts = SocketCommand("guide-facts")
     static let guidePress = SocketCommand("guide-press")
     static let guideActivate = SocketCommand("guide-activate")
@@ -46,6 +47,9 @@ nonisolated extension SocketCommand {
     static let guideUnhide = SocketCommand("guide-unhide")
     static let guideClose = SocketCommand("guide-close")
     static let guideSnapshot = SocketCommand("guide-snapshot")
+    /// `guide-choose-folder <folder>`: what choosing a folder in the folder guide's chooser does (inside
+    /// the run's root): it becomes the Save location and the Capture is saved there. Test mode only.
+    static let guideChooseFolder = SocketCommand("guide-choose-folder")
 }
 
 extension SocketCommandRegistry {
@@ -57,11 +61,17 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.helperOwner) { _ in WarmHelper.launchPID.map { String($0) } ?? "none" }
+        FolderGuide.register()
         register(.showPermissionGuide) { request in
             guard let kind = request.arguments.first.flatMap(PermissionGuideKind.init(rawValue:)) else {
-                return "error show-permission-guide screen-recording"
+                return "error show-permission-guide screen-recording|folder"
             }
-            PermissionGuideWindow.show(kind)
+            switch kind {
+            case .screenRecording: PermissionGuideWindow.showScreenRecording()
+            case .folder:
+                let reply = FolderGuide.show(arguments: Array(request.arguments.dropFirst()))
+                guard reply == "ok" else { return reply }
+            }
             CATransaction.flush()
             return "ok"
         }
@@ -152,24 +162,46 @@ extension SocketCommandRegistry {
     }
 
     private func registerPermissionGuideTestCommands() {
-        register(.guideFacts) { _ in
-            guard let guide = PermissionGuideWindow.shared, let window = guide.window else { return "window=none" }
-            return (WindowTesting.facts(window) + guide.model.facts()).joined(separator: "\n")
+        register(.guideFacts) { request in
+            let (guide, _) = Self.guideWindow(request)
+            guard let guide, let window = guide.window else { return "window=none" }
+            return (WindowTesting.facts(window) + guide.content.facts()).joined(separator: "\n")
         }
         register(.guidePress) { request in
-            guard let guide = PermissionGuideWindow.shared, let id = request.arguments.first else { return "error no guide window" }
-            return await guide.model.press(id) ? "ok" : "error no button \(id)"
+            let (guide, rest) = Self.guideWindow(request)
+            guard let guide, let id = rest.first else { return "error no guide window" }
+            return await guide.content.press(id) ? "ok" : "error no button \(id)"
         }
-        register(.guideActivate) { _ in
-            guard let guide = PermissionGuideWindow.shared else { return "error no guide window" }
-            guide.model.windowResigned()
-            await guide.model.windowBecameActive()
+        register(.guideActivate) { request in
+            guard let guide = Self.guideWindow(request).0 else { return "error no guide window" }
+            guide.content.windowResigned()
+            await guide.content.windowBecameActive()
             return "ok"
         }
-        register(.guideHide) { _ in WindowTesting.hide(PermissionGuideWindow.shared?.window) }
-        register(.guideUnhide) { _ in WindowTesting.unhide(PermissionGuideWindow.shared?.window) }
-        register(.guideClose) { _ in WindowTesting.close(PermissionGuideWindow.shared?.window) }
-        register(.guideSnapshot) { request in WindowTesting.snapshot(PermissionGuideWindow.shared?.window, request.arguments) }
+        register(.guideHide) { request in WindowTesting.hide(Self.guideWindow(request).0?.window) }
+        register(.guideUnhide) { request in WindowTesting.unhide(Self.guideWindow(request).0?.window) }
+        register(.guideClose) { request in WindowTesting.close(Self.guideWindow(request).0?.window) }
+        register(.guideSnapshot) { request in
+            let (guide, rest) = Self.guideWindow(request)
+            return WindowTesting.snapshot(guide?.window, rest)
+        }
+        register(.guideChooseFolder) { request in
+            guard let model = PermissionGuideWindow.current(.folder)?.content as? FolderGuideModel,
+                let path = request.arguments.first
+            else { return "error no folder guide window" }
+            guard WindowTesting.isInsideRoot(path) else { return "error folder must be inside the test root" }
+            await model.useFolder(URL(fileURLWithPath: path, isDirectory: true))
+            return "ok"
+        }
+    }
+
+    /// The guide window a test command names with its first argument (`folder`), the Screen Recording
+    /// guide's when it names none, and the arguments after the kind.
+    private static func guideWindow(_ request: SocketRequest) -> (PermissionGuideWindow?, [String]) {
+        if let first = request.arguments.first, let kind = PermissionGuideKind(rawValue: first) {
+            return (PermissionGuideWindow.current(kind), Array(request.arguments.dropFirst()))
+        }
+        return (PermissionGuideWindow.current(.screenRecording), request.arguments)
     }
 }
 

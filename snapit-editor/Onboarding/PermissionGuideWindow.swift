@@ -1,25 +1,36 @@
 import AppKit
 import SwiftUI
 
-/// A Permission guide in a window of its own: after an update that took Screen Recording away, and
-/// whenever a permission later goes missing. One window for the helper, like Settings: asking for a
-/// guide while it is open brings it forward and looks at the permission again.
+/// A Permission guide in a window of its own: after an update that took Screen Recording away, when
+/// a Capture finds it missing, and when a Save finds its folder closed. One window per kind of
+/// guide, like Settings has one: asking for a guide while its window is open brings it forward and
+/// has it look again. The helper is a regular app while any of them shows, and quits with the last.
 @MainActor
 final class PermissionGuideWindow: NSObject, NSWindowDelegate {
-    static var shared: PermissionGuideWindow?
+    private static var open: [PermissionGuideKind: PermissionGuideWindow] = [:]
 
-    let model: PermissionGuideModel
+    /// The window of this kind of guide, if it is open.
+    static func current(_ kind: PermissionGuideKind) -> PermissionGuideWindow? { open[kind] }
+
+    let content: any GuideContent
     private(set) var window: NSWindow?
 
-    private init(kind: PermissionGuideKind) {
-        model = PermissionGuideModel(kind: kind)
+    private init(content: any GuideContent) {
+        self.content = content
         super.init()
     }
 
-    static func show(_ kind: PermissionGuideKind) {
-        let guide = shared ?? PermissionGuideWindow(kind: kind)
-        shared = guide
+    /// Shows the guide of `kind`, built by `makeContent` when none is open for that kind.
+    @discardableResult
+    static func show(_ kind: PermissionGuideKind, makeContent: () -> any GuideContent) -> PermissionGuideWindow {
+        let guide = open[kind] ?? PermissionGuideWindow(content: makeContent())
+        open[kind] = guide
         guide.present()
+        return guide
+    }
+
+    static func showScreenRecording() {
+        show(.screenRecording) { PermissionGuideModel(kind: .screenRecording) }
     }
 
     private func present() {
@@ -27,16 +38,16 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
             HelperLifecycle.windowWillShow()
             window.makeKeyAndOrderFront(nil)
             HelperLifecycle.windowDidShow()
-            model.windowResigned()
-            Task { await model.windowBecameActive() }
+            content.windowResigned()
+            Task { await content.windowBecameActive() }
             return
         }
-        let hosting = NSHostingView(
-            rootView: PermissionGuideWindowView(model: model, close: { [weak self] in self?.window?.close() }))
+        content.onFinished = { [weak self] in self?.window?.close() }
+        let hosting = NSHostingView(rootView: PermissionGuideWindowView(content: content, close: { [weak self] in self?.window?.close() }))
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 520, height: 560)),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
-        window.title = "Screen Recording"
+        window.title = content.windowTitle
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
@@ -49,23 +60,23 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
         HelperLifecycle.windowWillShow()
         window.makeKeyAndOrderFront(nil)
         HelperLifecycle.windowDidShow()
-        model.isShown = true
-        model.isVisible = window.isSeenByUser
-        Task { await model.windowBecameActive() }
+        content.isShown = true
+        content.isVisible = window.isSeenByUser
+        Task { await content.windowBecameActive() }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        Task { await model.windowBecameActive() }
+        Task { await content.windowBecameActive() }
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        model.windowResigned()
+        content.windowResigned()
     }
 
     /// On screen: not minimised, and not covered by other windows.
     private func updateVisibility() {
         guard let window else { return }
-        model.isVisible = window.isSeenByUser
+        content.isVisible = window.isSeenByUser
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) { updateVisibility() }
@@ -73,27 +84,28 @@ final class PermissionGuideWindow: NSObject, NSWindowDelegate {
     func windowDidDeminiaturize(_ notification: Notification) { updateVisibility() }
 
     func windowWillClose(_ notification: Notification) {
-        model.isShown = false
+        content.isShown = false
+        content.onFinished = nil
         window = nil
-        if PermissionGuideWindow.shared === self { PermissionGuideWindow.shared = nil }
+        if Self.open[content.kind] === self { Self.open[content.kind] = nil }
     }
 }
 
 struct PermissionGuideWindowView: View {
-    let model: PermissionGuideModel
+    let content: any GuideContent
     let close: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
-            PermissionGuideView(model: model)
+            content.makeView()
             Button(action: close) {
-                Text(model.isGranted ? "Done" : "Close")
+                Text(content.isResolved ? "Done" : "Close")
                     .padding(.horizontal, 18)
                     .padding(.vertical, 8)
                     .frame(minWidth: 90)
             }
-            .buttonStyle(ChromeButtonStyle(look: model.isGranted ? .prominent : .plain, radius: 12))
-            .help(model.isGranted ? "Close this window" : "Close this window; snapit cannot take Captures until Screen Recording is on")
+            .buttonStyle(ChromeButtonStyle(look: content.isResolved ? .prominent : .plain, radius: 12))
+            .help(content.closeTooltip)
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 32)

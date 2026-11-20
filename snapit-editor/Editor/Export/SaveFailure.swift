@@ -43,11 +43,18 @@ enum SaveFailureSignal {
     typealias Observer = @MainActor (SaveFailure, EditorSession) -> Void
 
     private static var observers: [Observer] = []
+    private static var handedOverObservers: [@MainActor (EditorSession) -> Void] = []
     private static var outcomes: [Int: SaveOutcome] = [:]
 
     /// Calls `observer` every time a Save fails, in every Editor.
     static func observe(_ observer: @escaping Observer) {
         observers.append(observer)
+    }
+
+    /// Calls `observer` every time a Save is handed over to the menu bar app, in every Editor: the
+    /// problem a guide was explaining is gone.
+    static func observeHandedOver(_ observer: @escaping @MainActor (EditorSession) -> Void) {
+        handedOverObservers.append(observer)
     }
 
     /// The latest outcome of a Save in the Editor of Capture `number`.
@@ -61,7 +68,10 @@ enum SaveFailureSignal {
 
     static func record(_ outcome: SaveOutcome, captureNumber number: Int, session: EditorSession) {
         outcomes[number] = outcome
-        guard case .failed(let failure) = outcome else { return }
+        guard case .failed(let failure) = outcome else {
+            for observer in handedOverObservers { observer(session) }
+            return
+        }
         for observer in observers { observer(failure, session) }
     }
 }

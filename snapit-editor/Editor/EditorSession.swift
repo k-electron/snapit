@@ -52,7 +52,8 @@ final class EditorSession: NSObject, NSWindowDelegate {
     @ObservationIgnored var lastCapture: LastCapturePersistence?
     @ObservationIgnored private(set) var chrome: EditorChrome?
     @ObservationIgnored var onClosed: ((EditorSession) -> Void)?
-    @ObservationIgnored private var isClosing = false
+    /// True once the window is closing: a guide that would Save from it has nothing to Save.
+    @ObservationIgnored private(set) var isClosing = false
 
     override init() {
         super.init()

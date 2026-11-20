@@ -34,8 +34,23 @@ enum OnboardingLauncher {
 
     /// Shows one Permission guide on its own: after an update, and when a Shortcut is pressed
     /// without the permission.
-    static func showPermissionGuide(_ kind: PermissionGuideKind) async {
-        await HelperWindowLauncher.show(.showPermissionGuide, arguments: [kind.rawValue])
+    static func showPermissionGuide(_ kind: PermissionGuideKind, details: [String] = []) async {
+        await HelperWindowLauncher.show(.showPermissionGuide, arguments: [kind.rawValue] + details)
+    }
+
+    /// A Capture found Screen Recording missing (a Shortcut or a menu item started it). Nothing is
+    /// captured and nothing is asked of macOS here: the window that shows asks, because after an update
+    /// only the guide's ask resets snapit's own entry first (a bare `request()` does nothing then).
+    ///
+    /// The order: Onboarding unfinished, its own Screen Recording step is the guide, so Onboarding
+    /// shows; finished, the Screen Recording guide shows alone. Never both, so two windows never
+    /// ask macOS at once.
+    static func screenRecordingMissing() async {
+        if OnboardingProgress.isFinished {
+            await showPermissionGuide(.screenRecording)
+        } else {
+            await showOnboarding()
+        }
     }
 
     /// Runs a Shortcut's action once Onboarding is finished. A Shortcut pressed before that opens

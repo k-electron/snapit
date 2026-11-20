@@ -13,13 +13,15 @@ enum SystemSettingsLinks {
         case loginItems = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
         /// Privacy & Security › Screen Recording, where snapit's switch is.
         case screenRecording = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        /// Privacy & Security › Files and Folders, where a folder snapit was denied is turned on.
+        case filesAndFolders = "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
     }
 
     static func open(_ page: Page) {
         guard let root = TestMode.root else {
             switch page {
             case .loginItems: SMAppService.openSystemSettingsLoginItems()
-            case .screenshotShortcuts, .screenRecording: if let url = URL(string: page.rawValue) { NSWorkspace.shared.open(url) }
+            case .screenshotShortcuts, .screenRecording, .filesAndFolders: if let url = URL(string: page.rawValue) { NSWorkspace.shared.open(url) }
             }
             return
         }

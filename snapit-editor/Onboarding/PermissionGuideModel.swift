@@ -21,7 +21,7 @@ struct HelperButton {
 /// switch looks on and does nothing, so snapit clears its own old entry first.
 @MainActor
 @Observable
-final class PermissionGuideModel {
+final class PermissionGuideModel: GuideContent {
     /// Which drawing plays.
     enum Variant: String {
         /// macOS's own message, then System Settings.
@@ -51,6 +51,8 @@ final class PermissionGuideModel {
     /// The window is on screen: not hidden, minimised or fully covered.
     var isVisible = false { didSet { updateAnimation() } }
 
+    /// Not used: the Screen Recording guide leaves its window to the user.
+    @ObservationIgnored var onFinished: (() -> Void)?
     @ObservationIgnored private var needsCheck = true
     @ObservationIgnored private var isChecking = false
     @ObservationIgnored private var hasAsked = false
@@ -58,6 +60,9 @@ final class PermissionGuideModel {
     init(kind: PermissionGuideKind = .screenRecording) { self.kind = kind }
 
     var isGranted: Bool { state == .granted }
+    var isResolved: Bool { isGranted }
+    var windowTitle: String { "Screen Recording" }
+    var closeTooltip: String { isGranted ? "Close this window" : "Close this window; snapit cannot take Captures until Screen Recording is on" }
     /// Granted, but macOS applies it from snapit's next launch on.
     var needsRelaunch: Bool { state == .grantedNeedsRelaunch }
 
