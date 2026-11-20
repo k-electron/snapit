@@ -276,6 +276,7 @@ expect_equal "and it is adjustable" "adjusting" "$(fact state)"
 expect_equal "with its eight handles on the new selection" "8" "$(fact handles)"
 mouse move 0 10 10 >/dev/null
 # Moving the pointer while adjusting changes nothing on screen: no layer work.
+wait_until 10 scene_updates_quiet
 UPDATES_BEFORE="$(fact scene-updates)"
 for i in $(seq 1 50); do mouse move 0 $((20 + i * 5)) $((20 + i * 3)) >/dev/null; done
 expect_equal "pointer moves while adjusting redraw nothing" "$UPDATES_BEFORE" "$(fact scene-updates)"
