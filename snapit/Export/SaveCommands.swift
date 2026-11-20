@@ -18,7 +18,7 @@ extension SocketCommandRegistry {
             let path = request.arguments[0]
             let downscale = request.arguments[1] == "1"
             // The writability check can wait on a folder prompt: never on the main thread.
-            return await Self.begin(exportPath: path, downscale: downscale, folder: SaveLocation.folder).line
+                        return await Self.begin(exportPath: path, downscale: downscale, folder: SaveLocation.folder).line
         }
         guard TestMode.isActive else { return }
         register(.saveHold) { _ in
@@ -34,8 +34,15 @@ extension SocketCommandRegistry {
         }
     }
 
-    @concurrent
+    /// Runs the check on a queue of its own, not a cooperative-pool thread: a folder prompt blocks
+    /// the thread until the user answers.
     private static func begin(exportPath: String, downscale: Bool, folder: URL) async -> SaveReply {
-        SaveService.shared.begin(exportPath: exportPath, downscale: downscale, folder: folder)
+        await withCheckedContinuation { continuation in
+            checkQueue.async {
+                continuation.resume(returning: SaveService.shared.begin(exportPath: exportPath, downscale: downscale, folder: folder))
+            }
+        }
     }
+
+    private static let checkQueue = DispatchQueue(label: "snapit.save.check", qos: .userInitiated, attributes: .concurrent)
 }

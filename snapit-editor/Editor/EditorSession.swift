@@ -120,7 +120,7 @@ final class EditorSession: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
         isClosing = true
-        if let number = document?.captureNumber { ExportFiles.removeDragOut(captureNumber: number) }
+        if let number = document?.captureNumber { SaveFailureSignal.forget(captureNumber: number) }
         onClosed?(self)
         // A button's own action may be what closed the window: free everything one run-loop
         // turn later, once that action has returned.

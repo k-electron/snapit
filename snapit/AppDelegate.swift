@@ -30,12 +30,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A Save the user already made still lands when they quit: quitting waits for the write.
+    ///
+    /// The reply is queued on the main run loop in the common modes. `reply(toApplicationShouldTerminate:)`
+    /// through `DispatchQueue.main.async` never runs when `terminate` was called from inside a main
+    /// queue block (which is how the socket `quit` calls it).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard SaveService.shared.pendingCount > 0 else { return .terminateNow }
-        SaveService.shared.whenIdle {
-            DispatchQueue.main.async { NSApplication.shared.reply(toApplicationShouldTerminate: true) }
+        let wait = SaveService.shared.waitForSavesBeforeQuit {
+            let mainLoop = CFRunLoopGetMain()
+            CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
+                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+            }
+            CFRunLoopWakeUp(mainLoop)
         }
-        return .terminateLater
+        return wait ? .terminateLater : .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {

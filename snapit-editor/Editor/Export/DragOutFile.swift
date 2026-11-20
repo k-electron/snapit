@@ -6,12 +6,16 @@ import Foundation
 /// drop, copies the file.
 ///
 /// The encode starts when the mouse goes down on the thumbnail and runs in the background, so by
-/// the time the pointer has moved far enough to start the drag the file is usually there.
+/// the time the pointer has moved far enough to start the drag the file is usually there; the drag
+/// starts the moment it is (`notify`), and the main thread never waits for it. The file is written
+/// next to its final name and renamed into place (`PixelBuffer.writePNG(to:)`), so an app that is
+/// still reading an earlier drag's file is not disturbed.
 nonisolated final class PendingDragFile: @unchecked Sendable {
     let url: URL
     private let done = DispatchSemaphore(value: 0)
     private let lock = NSLock()
-    private var outcome: Result<URL, Error>?
+    private var finished: Result<URL, Error>?
+    private var callback: (@Sendable (Result<URL, Error>) -> Void)?
 
     /// Starts the Fast encode for `job`. `captureTime` gives the file its name.
     @MainActor
@@ -31,15 +35,33 @@ nonisolated final class PendingDragFile: @unchecked Sendable {
     }
 
     private func finish(_ result: Result<URL, Error>) {
-        lock.withLock { outcome = result }
+        let waiting: (@Sendable (Result<URL, Error>) -> Void)? = lock.withLock {
+            finished = result
+            defer { callback = nil }
+            return callback
+        }
         done.signal()
+        waiting?(result)
+    }
+
+    /// How the encode ended; nil while it is still running.
+    var outcome: Result<URL, Error>? { lock.withLock { finished } }
+
+    /// Calls `body` with the outcome, on whichever thread finishes the encode, or at once (on the
+    /// caller's thread) when it has finished already.
+    func notify(_ body: @escaping @Sendable (Result<URL, Error>) -> Void) {
+        let ready: Result<URL, Error>? = lock.withLock {
+            if finished == nil { callback = body }
+            return finished
+        }
+        if let ready { body(ready) }
     }
 
     /// Waits for the encode (blocking the caller) and returns the file, or throws what failed.
-    /// Safe to call more than once.
+    /// Safe to call more than once. For tests and callers that are not on the main thread.
     func wait() throws -> URL {
         done.wait()
         done.signal()
-        return try lock.withLock { try outcome!.get() }
+        return try lock.withLock { try finished!.get() }
     }
 }

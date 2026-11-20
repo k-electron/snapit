@@ -13,6 +13,11 @@ extension EditorSession {
         copyTask = Task { await save() }
     }
 
+    /// How long the helper waits for the menu bar app to answer a Save request. The reply can wait on
+    /// a folder prompt for as long as the user takes, and the menu bar app writes the file whenever
+    /// it answers `ok`, so this is long enough that a Save never happens without the Editor knowing.
+    private static var saveReplyTimeoutSeconds: Int { 3600 }
+
     private func save() async {
         defer { isExporting = false }
         guard let document else { return }
@@ -25,7 +30,7 @@ extension EditorSession {
             // A real folder prompt can hold the menu bar app's reply for as long as the user takes.
             let line = try await CommandSocketClient.send(
                 .saveExport, arguments: [shared.url.path, shared.downscale ? "1" : "0"],
-                to: AppIdentity.appSocketPath, timeoutSeconds: 300)
+                to: AppIdentity.appSocketPath, timeoutSeconds: Self.saveReplyTimeoutSeconds)
             switch SaveReply(line: line) {
             case .accepted:
                 SaveFailureSignal.record(.handedOver, captureNumber: number, session: self)

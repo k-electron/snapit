@@ -20,6 +20,9 @@ struct AnnotationToolbarState: Equatable {
     var selectionSupportsFill: Bool?
     /// The selected Annotation's fill is solid.
     var selectionFilled = false
+    /// The document's revision after the last finished change: what the drag-out thumbnail is
+    /// made again for. It does not move while a gesture is in progress.
+    var revision = 0
 }
 
 /// The Annotation actions: drawing, selecting, moving, resizing, deleting, Undo, Redo and the
@@ -52,6 +55,7 @@ extension EditorSession {
     func refreshToolbarState() {
         var state = AnnotationToolbarState()
         let idle = annotationGesture == nil
+        state.revision = idle ? (document?.revision ?? 0) : toolbarState.revision
         state.canUndo = idle && document?.canUndo == true
         state.canRedo = idle && document?.canRedo == true
         if let selected = selectedAnnotation {
