@@ -24,11 +24,11 @@ enum EditorPromptKind: Equatable {
     var message: String {
         switch self {
         case .close:
-            "Its Annotations haven't been exported (copied, saved or dragged out), and this Capture can't be reopened once its Editor closes."
+            "Its edits haven't been Exported (copied, saved or dragged out), and this Capture can't be reopened once its Editor closes."
         case .quit(let count):
             count == 1
-                ? "This Capture has Annotations you haven't exported. Quitting discards it."
-                : "\(count) Captures have Annotations you haven't exported. Quitting discards them."
+                ? "This Capture has edits you haven't Exported. Quitting discards it."
+                : "\(count) Captures have edits you haven't Exported. Quitting discards them."
         }
     }
 
@@ -42,7 +42,7 @@ enum EditorPromptKind: Equatable {
     var discardTooltip: String {
         switch self {
         case .close: "Discard this Capture and close its Editor"
-        case .quit: "Discard the Captures you haven't exported and quit snapit"
+        case .quit: "Discard the Captures you haven't Exported and quit snapit"
         }
     }
 

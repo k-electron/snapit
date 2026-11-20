@@ -27,14 +27,33 @@ enum QuitPreparation {
     static var confirmations: [@MainActor () async -> Bool] = []
     /// True once the steps have run: the quit is decided and nothing may be asked any more.
     private(set) static var hasRun = false
+    /// True once the user agreed to a quit (or it needs no asking): the menu item's pre-quit check
+    /// said yes, or an internal path (a relaunch) quits on purpose.
+    private(set) static var hasConsented = false
+    /// The confirmation being asked now, shared by everyone who asks meanwhile.
+    private static var pending: Task<Bool, Never>?
 
-    /// False when any confirmation says the user wants to keep the app open.
+    /// True when nobody needs to ask the user any more.
+    static var isDecided: Bool { hasRun || hasConsented }
+
+    static func markConsented() { hasConsented = true }
+
+    /// False when any confirmation says the user wants to keep the app open. Asks once: while a
+    /// question is showing, every other asker (the menu bar app's pre-quit check, the system's
+    /// logout, a relaunch) waits for that same answer.
     static func confirm() async -> Bool {
-        for confirmation in confirmations {
-            let agreed = await confirmation()
-            if !agreed { return false }
+        if let pending { return await pending.value }
+        let task = Task { @MainActor () -> Bool in
+            for confirmation in confirmations {
+                let agreed = await confirmation()
+                if !agreed { return false }
+            }
+            return true
         }
-        return true
+        pending = task
+        let answer = await task.value
+        pending = nil
+        return answer
     }
 
     static func run() async {

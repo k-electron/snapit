@@ -106,7 +106,7 @@ final class DragOutView: NSView, NSDraggingSource {
         didBeginDrag = false
         wantsDrag = false
         lastDragEvent = nil
-        pending = session?.startDragOutFile()
+        beginPendingFile()
         pending?.notify { [weak self] _ in
             DispatchQueue.main.async { self?.beginDragIfReady() }
         }
@@ -155,7 +155,12 @@ final class DragOutView: NSView, NSDraggingSource {
     /// The drag session ended: a drop that was taken counts as an Export (the Editor stays open,
     /// asking nothing on close); one nobody took does not.
     func finishDrag(operation: NSDragOperation) {
-        if operation != [] { session?.didDragOut() }
+        if operation != [], let pending { session?.didDragOut(pending) }
         pending = nil
+    }
+
+    /// What pressing the mouse on the thumbnail does: the file is made from the Capture as it is now.
+    func beginPendingFile() {
+        pending = session?.startDragOutFile()
     }
 }

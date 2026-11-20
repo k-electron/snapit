@@ -26,8 +26,10 @@ extension EditorSession {
         var export: SharedExport?
         do {
             let job = document.makeExportJob(level: .balanced)
+            let snapshot = document.history.state
             let shared = try await ExportPipeline.flattenIntoSharedFile(job, captureTime: document.capture.info.captureTime)
             export = shared
+            await ExportTestGate.shared.wait()
             // A real folder prompt can hold the menu bar app's reply for as long as the user takes.
             let line = try await CommandSocketClient.send(
                 .saveExport, arguments: [shared.url.path, shared.downscale ? "1" : "0"],
@@ -35,7 +37,7 @@ extension EditorSession {
             switch SaveReply(line: line) {
             case .accepted:
                 SaveFailureSignal.record(.handedOver, captureNumber: number, session: self)
-                document.markExported()
+                document.markExported(snapshot)
                 if EditorSettings.closeAfterSave { close() }
             case .folderNotWritable(let folder, let code):
                 fail(.folderNotWritable(folder: folder, code: code), number: number)

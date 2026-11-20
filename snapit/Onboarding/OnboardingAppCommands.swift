@@ -90,9 +90,8 @@ enum SnapitRelaunch {
     static func run() async -> String {
         // The Editor helper goes first, so the relaunched copy starts a helper of its own (it shows
         // Onboarding again at the step it was on) instead of meeting this one on its way out. Its `quit`
-        // runs `QuitPreparation`. The Quit prompt for Editors with unexported edits belongs here as well:
-        // the ticket that builds it (#28) puts its check before this line, so a relaunch asks as Quit
-        // snapit does. Until then a relaunch closes open Editors without asking.
+        // runs `QuitPreparation`. The question about Editors with unexported edits is asked by the
+        // Permission guide in the helper before it sends `relaunch-snapit`, so by now the user agreed.
         await HelperWindowLauncher.quitRunningHelper()
         SocketOwnership.release()
         do {

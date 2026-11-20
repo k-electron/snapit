@@ -9,9 +9,16 @@ nonisolated extension SocketCommand {
     /// is pressed as a click does, Esc and ⌘D reach the sheet as key events. Replies `ok`, or
     /// `none` when no prompt shows. Test mode only.
     static let editorPromptAnswer = SocketCommand("editor-prompt-answer")
-    /// `editor-drop <N> taken|refused`: ends the thumbnail's drag session as the system does when
-    /// a drop was taken (an Export) or nobody took it. Test mode only.
+    /// `editor-drop <N> begin|taken|refused`: `begin` does what pressing the mouse on the thumbnail does
+    /// (the drag's file is made from the Capture as it is now); `taken` or `refused` ends the drag
+    /// session as the system does when a drop was taken (an Export) or nobody took it. Test mode only.
     static let editorDrop = SocketCommand("editor-drop")
+    /// `export-hold on|off`: holds every Copy and Save after it took its snapshot, until released, so
+    /// the Capture can be edited while an Export is still running. Test mode only.
+    static let exportHold = SocketCommand("export-hold")
+    /// `editor-first-mouse <N> item <id>`: the view under the centre of a toolbar item's control:
+    /// `hit=<class> accepts-first-mouse=yes|no`, or `hit=none` when nothing is there. Test mode only.
+    static let editorFirstMouse = SocketCommand("editor-first-mouse")
 }
 
 extension SocketCommandRegistry {
@@ -49,15 +56,32 @@ extension SocketCommandRegistry {
             }
             return "ok"
         }
+        register(.exportHold) { request in
+            guard let mode = request.arguments.first, ["on", "off"].contains(mode) else { return "error export-hold on|off" }
+            ExportTestGate.shared.setHeld(mode == "on")
+            return "ok"
+        }
+        register(.editorFirstMouse) { request in
+            guard request.arguments.count == 3, request.arguments[1] == "item",
+                let number = request.arguments.first.flatMap(Int.init),
+                let session = EditorSessions.shared.session(captureNumber: number), let window = session.window,
+                let tooltip = ToolbarRegistry.item(id: request.arguments[2])?.tooltip,
+                let control = Self.controls(in: window).first(where: { $0.tooltip == tooltip }),
+                let frameView = window.contentView?.superview
+            else { return "error editor-first-mouse <N> item <id>" }
+            guard let hit = frameView.hitTest(frameView.convert(control.center, from: nil)) else { return "hit=none" }
+            return "hit=\(type(of: hit)) accepts-first-mouse=\(hit.acceptsFirstMouse(for: nil) ? "yes" : "no")"
+        }
         register(.editorDrop) { request in
             guard let number = request.arguments.first.flatMap(Int.init),
                 let session = EditorSessions.shared.session(captureNumber: number),
                 let view = Self.dragOutView(in: session), request.arguments.count == 2
-            else { return "error editor-drop <N> taken|refused" }
+            else { return "error editor-drop <N> begin|taken|refused" }
             switch request.arguments[1] {
+            case "begin": view.beginPendingFile()
             case "taken": view.finishDrag(operation: .copy)
             case "refused": view.finishDrag(operation: [])
-            default: return "error editor-drop <N> taken|refused"
+            default: return "error editor-drop <N> begin|taken|refused"
             }
             return "ok"
         }

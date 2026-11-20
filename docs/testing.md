@@ -161,7 +161,10 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
 | `editor-prompt` | `none`, or `shown close\|quit editor=<N> title=… message=… buttons=Cancel,Discard escape=Cancel command-d=Discard tooltips=…\|…`: the question an Editor is waiting on |
 | `editor-prompt-answer discard\|cancel\|escape\|command-d` | answers it: a button is pressed as a click does; Esc and ⌘D reach the sheet as key events. `none` when nothing is asked |
-| `editor-drop <N> taken\|refused` | ends the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
+| `editor-drop <N> begin\|taken\|refused` | `begin` makes the drag's file from the Capture as it is now (pressing the thumbnail); the others end the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
+| `export-hold on\|off` | holds every Copy and Save after it took its snapshot, until released, so the Capture can be edited while an Export is still running |
+| `editor-first-mouse <N> item <id>` | the view under the centre of that toolbar item's control: `hit=<class> accepts-first-mouse=yes\|no` (Delete Capture's is `no`, every other control's `yes`) |
+| `quit-event` | (both processes) sends this process the quit AppleEvent, as logout or `osascript` does, and replies `ok` at once |
 | `editor-key <N> close-button` | presses the title bar's close button (`performClose`, which asks the window's delegate) |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
 | `onboarding-facts` | the Onboarding window: `window`, `title`, `activation`, `occlusion-visible` and `miniaturized` (as macOS reports them; test mode ignores occlusion), `step`, `step-number`, `step-title`, `stored-step` (what a relaunch resumes at), `heading`, `text`, `try-it`, `user-guide` (`available` once the User Guide window sets its hook), the step's own lines (`save-location`, `shortcut <id>\|<combo>\|<glyphs>\|<flag>`, `login`, and at Screen Recording the guide's `guide-…` lines: `guide-state`, `guide-variant` (`prompt` or `systemSettings`), `guide-update`, `guide-checks`, `guide-animation` (`playing`, `stopped` or `idle`), `guide-loops`, `guide-loop-seconds`, `guide-plays`, `guide-headline`, `guide-message`, `guide-reset-failure`, `guide-turned-off`) and one `button <id>\|<title>\|<tooltip>` line per button |
@@ -231,12 +234,17 @@ array: `history.state.annotations`, `history.undoSteps`). Nothing else reaches i
   generation and drains the queue. A feature that must act before quitting appends a step; **never register a second
   handler for `quit`** (`SocketCommandRegistry.register` asserts a command is registered once).
 - **The Quit prompt.** A step cannot cancel, so `QuitPreparation.confirmations` (each returns whether to go on) run
-  first, only for a quit the user starts: the menu bar app's "Quit snapit" (`EditorHelperQuitCheck` sends the helper
-  `confirm-quit` and quits on `ok`, stays on `cancel`), the helper's own "Quit snapit", and the Dock's Quit of the
-  helper. The `quit` command never asks (the user was asked before it was sent; a scripted run's clean-up sends it), so
-  a flow quits through `menu-click quit` or `editor-menu-quit` to see the prompt. The helper's confirmation brings the
-  first Editor with unexported edits forward and asks once (`EditorSessions.confirmQuit`). Only `ok` lets the menu bar
-  app quit: no answer (the prompt left up past the time limit) keeps snapit running while the helper is alive.
+  first, for every quit nobody has been asked about, and `QuitPreparation.confirm()` shares one question between
+  everyone who asks while it shows (at logout both processes ask at once). The menu bar app asks the helper
+  (`confirm-quit`: `ok` to quit, `cancel` to stay; anything else stays while the helper is alive) from the Quit snapit
+  menu item (`EditorHelperQuitCheck`, which then calls `QuitPreparation.markConsented()`), and from
+  `AppDelegate.applicationShouldTerminate` for a quit the system or an AppleEvent starts (on a background queue,
+  replying with `terminateLater`). The helper's own "Quit snapit", its AppleEvent quits (the Dock) and the Permission
+  guide's "Relaunch snapit" ask through `confirm()` too. The `quit` command and a relaunch's own quit never ask
+  (`QuitPreparation.isDecided`), so a scripted run's clean-up still quits at once; a flow reaches the prompt with
+  `menu-click quit`, `editor-menu-quit` or `quit-event`. The helper's confirmation brings the first Editor with
+  unexported edits forward and asks once (`EditorSessions.confirmQuit`). A prompt answered after the 3600 s time limit
+  quits nothing: the menu bar app gave up waiting and stayed.
 - **When a close asks.** `EditorSession.requestClose()` (the close button, ⌘W, Esc) asks when
   `closeWouldLoseWork`: not the Last Capture's Editor, and `EditorDocument.hasUnexportedEdits` (it has Annotations or a
   crop, and the revision differs from the last Copy, Save or taken drop). `close()` never asks (Delete Capture, Copy
