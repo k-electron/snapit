@@ -40,9 +40,24 @@ nonisolated enum CaptureFiles {
 
     static func url(number: Int) -> URL { folder.appendingPathComponent("capture-\(number).pixels") }
 
+    /// The Last Capture's state file (Annotations, crop, Undo history), beside its pixels. The
+    /// Editor helper writes it (`LastCaptureStateFile`); the menu bar app only removes it.
+    static func stateURL(number: Int) -> URL { folder.appendingPathComponent("capture-\(number)\(stateSuffix)") }
+
     private static let prefix = "capture-"
     private static let suffix = ".pixels"
+    private static let stateSuffix = ".state"
     private static let partialSuffix = ".partial"
+
+    /// True for the names of snapit's own files in the folder: a Capture's pixels or state, and
+    /// the partial file either is built under before it is renamed into place.
+    private static func isKnownName(_ name: String) -> Bool {
+        guard name.hasPrefix(prefix) else { return false }
+        return [suffix, stateSuffix].contains { name.hasSuffix($0) || name.hasSuffix($0 + partialSuffix) }
+    }
+
+    /// The partial name a file in this folder is built under before it is renamed into place.
+    static func partialURL(for url: URL) -> URL { URL(fileURLWithPath: url.path + partialSuffix) }
 
     /// Creates a Capture file at `url` for a `width` x `height` image and returns its pixels,
     /// mapped writable and zeroed. The file already has its header and ICC profile; whatever the
@@ -163,15 +178,20 @@ nonisolated enum CaptureFiles {
         }
     }
 
+    /// Removes Capture N's files (pixels and state, and any partial file of either), then the
+    /// folder when nothing else is in it.
     static func remove(number: Int) {
-        unlink(url(number: number).path)
+        let pixels = url(number: number)
+        let state = stateURL(number: number)
+        for url in [pixels, partialURL(for: pixels), state, partialURL(for: state)] { unlink(url.path) }
+        rmdir(folder.path)
     }
 
     /// Removes every Capture file, then the folder. Only snapit's own files are touched, never
     /// anything else in the cache folder.
     static func removeAll() {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        for name in names where name.hasPrefix(prefix) && (name.hasSuffix(suffix) || name.hasSuffix(suffix + partialSuffix)) {
+        for name in names where isKnownName(name) {
             unlink(folder.appendingPathComponent(name).path)
         }
         rmdir(folder.path)
