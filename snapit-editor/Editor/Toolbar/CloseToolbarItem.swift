@@ -10,6 +10,6 @@ struct CloseToolbarItem: EditorToolbarItem {
     let menu: EditorMenu? = .window
 
     func perform(in session: EditorSession) {
-        session.close()
+        session.requestClose()
     }
 }

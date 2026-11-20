@@ -11,9 +11,11 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     /// "Quit snapit" in the helper's menu quits snapit, not just the helper: to the user there
     /// is one app. The menu bar app quits the helper with it.
     @objc func quitSnapit(_ sender: Any?) {
-        // The same preparation the `quit` command makes (the Last Capture stops writing its state)
-        // goes first; the menu bar app then removes the files and quits the helper.
+        // An Editor with unexported edits is asked about first (the user may keep snapit open). The
+        // same preparation the `quit` command makes (the Last Capture stops writing its state) goes
+        // next; the menu bar app then removes the files and quits the helper.
         Task {
+            guard await QuitPreparation.confirm() else { return }
             await QuitPreparation.run()
             CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
             NSApplication.shared.terminate(nil)
@@ -50,6 +52,27 @@ final class HelperDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A quit that nobody has been asked about (the Dock's Quit, a logout, an AppleEvent) with
+        // Editors holding unexported edits is "Quit snapit": the same question, the same preparation,
+        // and the menu bar app quits with the helper. The system waits for the answer, so a logout
+        // the user cancels is cancelled. The helper's own quits (the last window closed, a warm-up
+        // cancelled, the `quit` command) have asked already or have nothing to ask about.
+        if !QuitPreparation.hasRun, !EditorSessions.shared.editorsAtRisk().isEmpty {
+            Task {
+                let agreed = await QuitPreparation.confirm()
+                if agreed {
+                    await QuitPreparation.run()
+                    stopServing()
+                    CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.appSocketPath)
+                }
+                let mainLoop = CFRunLoopGetMain()
+                CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
+                    NSApplication.shared.reply(toApplicationShouldTerminate: agreed)
+                }
+                CFRunLoopWakeUp(mainLoop)
+            }
+            return .terminateLater
+        }
         // Stop answering first: a menu bar app that sends a Capture from here on starts a
         // new helper instead of handing it to this dying one.
         stopServing()
