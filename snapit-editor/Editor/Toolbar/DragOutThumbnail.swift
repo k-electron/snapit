@@ -149,6 +149,12 @@ final class DragOutView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ draggingSession: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        finishDrag(operation: operation)
+    }
+
+    /// The drag session ended: a drop that was taken counts as an Export (the Editor stays open,
+    /// asking nothing on close); one nobody took does not.
+    func finishDrag(operation: NSDragOperation) {
         if operation != [] { session?.didDragOut() }
         pending = nil
     }

@@ -6,6 +6,7 @@ extension SocketCommandRegistry {
     func registerHelperCommands() {
         registerEditorCommands()
         registerLastCaptureCommands()
+        registerPromptCommands()
         registerWarmUpCommands()
         registerEditorTestCommands()
         registerExportTestCommands()

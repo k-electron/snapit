@@ -109,3 +109,12 @@ Run after changing the Last Capture store, the Editor's state file or the menu. 
 4. **The message in front.** In a normal build (not test mode), take a Capture, close its Editor, damage its state file (`echo '{' > ~/Library/Caches/dev.snapit.snapit/captures/capture-<N>.state`), make another app frontmost, and choose Reopen Last Capture. "That Capture couldn't be reopened." shows in front of that app, and the menu item is greyed out afterwards.
 
 Clean up: quit snapit, so the cache folder's `captures` folder is removed.
+
+## Delete Capture, several Editors and the prompts (#28)
+
+Run on a real install after changing the Editor's close path, the Quit menu or the prompt. The scripted run answers the sheet with test commands and clicks with synthetic events; only a real mouse, keyboard and screen show the sheet's look, the Dock and the real first click.
+
+1. **The first click.** Take two Captures. Click the older Editor's trash button while the newer Editor is in front: the older window comes forward and nothing is deleted. Click the trash button again: the Editor closes at once with no question, and "Reopen Last Capture" stays enabled (it is the newer one's).
+2. **The close prompt.** In the older Editor, draw an Annotation and click the red close button: a sheet slides down from that Editor's title bar, "Discard this Capture?", with Cancel and Discard; Esc cancels, and Tab then Space reaches each button. Cancel keeps the Editor. Copy, then close: no question. Draw another Annotation and press ⌘W: the question returns. The newer (Last Capture) Editor closes with no question however much it holds.
+3. **The Quit prompt.** With the older Editor holding an unexported Annotation and the newer one in front, choose Quit snapit in the menu bar: the older Editor comes forward with "Quit snapit?" on it. Cancel keeps snapit running. Choose it again and press "Discard and Quit": snapit and the Dock icon go. Repeat with ⌘Q from the Editor's own menu.
+4. **The Dock.** While any Editor is open snapit shows in the Dock and Cmd-Tab; it goes when the last Editor closes. Open three, close the middle one, take another: the new window does not sit exactly on another's.

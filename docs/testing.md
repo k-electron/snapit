@@ -123,6 +123,10 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-state-crop <N> get\|set <x> <y> <w> <h>` | Editor N's crop in image points (`none` for the whole Capture); `set` is one Undo step. Stands in for the Crop tool, to check the crop is stored |
 | `editor-menu-quit` | chooses "Quit snapit" in the helper's own menu (replies at once, the quit goes on in the background) |
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
+| `editor-prompt` | `none`, or `shown close\|quit editor=<N> title=… message=… buttons=Cancel,Discard escape=Cancel tooltips=…\|…`: the question an Editor is waiting on |
+| `editor-prompt-answer discard\|cancel\|escape` | answers it: a button is pressed as a click does; Esc reaches the sheet as a key event. `none` when nothing is asked |
+| `editor-drop <N> taken\|refused` | ends the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
+| `editor-key <N> close-button` | presses the title bar's close button (`performClose`, which asks the window's delegate) |
 | `reopen-notice`, `reopen-notice-close` | `shown <message>` while "That Capture couldn't be reopened." is on screen (else `none`); press its OK button |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
@@ -179,8 +183,19 @@ array: `history.state.annotations`, `history.undoSteps`). Nothing else reaches i
 - **Quit.** The built-in `quit` command awaits `QuitPreparation.steps` (`Shared/Commands/QuitPreparation.swift`) before it
   replies, and the helper's own "Quit snapit" runs the same steps first. The Last Capture's step supersedes the
   generation and drains the queue. A feature that must act before quitting appends a step; **never register a second
-  handler for `quit`** (`SocketCommandRegistry.register` asserts a command is registered once). #28's Quit prompt is
-  its own command or its own step, never a second `quit`.
+  handler for `quit`** (`SocketCommandRegistry.register` asserts a command is registered once).
+- **The Quit prompt.** A step cannot cancel, so `QuitPreparation.confirmations` (each returns whether to go on) run
+  first, only for a quit the user starts: the menu bar app's "Quit snapit" (`EditorHelperQuitCheck` sends the helper
+  `confirm-quit` and quits on `ok`, stays on `cancel`), the helper's own "Quit snapit", and the Dock's Quit of the
+  helper. The `quit` command never asks (the user was asked before it was sent; a scripted run's clean-up sends it), so
+  a flow quits through `menu-click quit` or `editor-menu-quit` to see the prompt. The helper's confirmation brings the
+  first Editor with unexported edits forward and asks once (`EditorSessions.confirmQuit`).
+- **When a close asks.** `EditorSession.requestClose()` (the close button, ⌘W, Esc) asks when
+  `closeWouldLoseWork`: not the Last Capture's Editor, and `EditorDocument.hasUnexportedEdits` (it has Annotations or a
+  crop, and the revision differs from the last Copy, Save or taken drop). `close()` never asks (Delete Capture, Copy
+  and Save close this way). Before counting, `commitPendingEdits()` finishes anything still being typed.
+- **The prompt** is a real sheet (`EditorPrompts`) with Cancel (Esc) and Discard. A run
+  answers it with `editor-prompt-answer`, so nothing waits on a modal.
 - **Kinds with fields.** `AnnotationKind.sampleAnnotation(id:origin:index:)` gives the round-trip one Annotation of
   the kind with every field non-default; the default sets the style. A kind that adds a field to `Annotation` (Text's
   string and size, #25's) overrides it and sets that field to a non-default value, so a field missing from the

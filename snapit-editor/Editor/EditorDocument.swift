@@ -53,6 +53,13 @@ final class EditorDocument {
     /// True when the user changed the document since its last Export.
     var hasUnexportedChanges: Bool { revision != exportedRevision }
 
+    /// True when closing this Editor would lose something the user made and never Exported: there
+    /// is something to lose (Annotations or a crop) and it differs from what was last Exported.
+    /// A Capture left as it was taken, or Undone back to that, loses nothing.
+    var hasUnexportedEdits: Bool {
+        hasUnexportedChanges && (!annotations.isEmpty || history.state.crop != nil)
+    }
+
     func markExported() {
         exportedRevision = revision
         onPersistableChange?()
