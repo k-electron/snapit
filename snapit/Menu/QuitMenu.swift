@@ -1,9 +1,11 @@
 import AppKit
+import SwiftUI
 
 /// Quit snapit, last in the menu.
-@MainActor
-enum QuitMenu {
-    static var entries: [MenuEntry] {
-        [.action(title: "Quit snapit", shortcut: "q") { NSApplication.shared.terminate(nil) }]
+struct QuitMenu: MenuSection {
+    var entries: [MenuEntry] {
+        [.action(id: "quit", "Quit snapit", shortcut: KeyboardShortcut("q")) {
+            NSApplication.shared.terminate(nil)
+        }]
     }
 }

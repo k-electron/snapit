@@ -24,7 +24,7 @@ generate() {
 if [[ "${1:-}" == "--check" ]]; then
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
-  generate "$TMP/snapit_engine.h" 2>/dev/null
+  generate "$TMP/snapit_engine.h"
   if ! diff -u "$HEADER" "$TMP/snapit_engine.h"; then
     echo "error: engine/include/snapit_engine.h does not match the engine. Run scripts/generate-header.sh and commit." >&2
     exit 1

@@ -20,9 +20,12 @@ LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Versions/Current/Fr
 stage() { printf '\n==> %s\n' "$1"; }
 
 unregister_built_apps() {
-  # xcodebuild registers every .app it builds with LaunchServices.
-  for app in "$PRODUCTS/snapit.app" "$PRODUCTS/snapit.app/Contents/Helpers/snapit Editor.app" "$PRODUCTS/snapit Editor.app"; do
-    [[ -e "$app" ]] && "$LSREGISTER" -u "$app" 2>/dev/null || true
+  # xcodebuild registers every .app it builds, in every configuration, with LaunchServices.
+  local app
+  for app in "$DERIVED"/Build/Products/*/snapit.app \
+             "$DERIVED"/Build/Products/*/snapit.app/Contents/Helpers/"snapit Editor.app" \
+             "$DERIVED"/Build/Products/*/"snapit Editor.app"; do
+    if [[ -e "$app" ]]; then "$LSREGISTER" -u "$app" 2>/dev/null || true; fi
   done
 }
 trap unregister_built_apps EXIT

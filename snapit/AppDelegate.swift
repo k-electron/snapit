@@ -13,16 +13,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             commandServer = server
+        } catch SocketError.alreadyRunning {
+            // Another snapit owns the menu bar; this copy has nothing to do.
+            NSApplication.shared.terminate(nil)
         } catch {
             NSLog("snapit: command socket failed to start: \(error)")
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // The Editor helper never outlives the menu bar app.
-        if CommandSocketClient.isListening(at: AppIdentity.editorSocketPath) {
-            _ = try? CommandSocketClient.send(.quit, to: AppIdentity.editorSocketPath)
-        }
         commandServer?.stop()
+        // The Editor helper never outlives the menu bar app. The process is ending, so a
+        // short blocking send is fine here.
+        CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
     }
 }

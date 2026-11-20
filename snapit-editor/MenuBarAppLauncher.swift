@@ -14,6 +14,8 @@ enum MenuBarAppLauncher {
         let configuration = NSWorkspace.OpenConfiguration()
         if let root = TestMode.root {
             configuration.environment = [TestMode.rootVariable: root.path]
+            // Parallel scripted runs must never activate another copy of the menu bar app.
+            configuration.createsNewApplicationInstance = true
         }
         NSWorkspace.shared.openApplication(at: menuBarAppURL, configuration: configuration) { _, error in
             if let error { NSLog("snapit Editor: could not start snapit: \(error)") }

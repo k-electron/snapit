@@ -3,59 +3,71 @@
 # on a shell profile (Xcode Run Script phases and CI steps have none), and exports the
 # deployment target Rust objects must match.
 #
-# Lookup order: rustup's proxies in $HOME/.cargo/bin, then a Homebrew rustup, then PATH.
-# With a Homebrew rustup, an installed toolchain whose rustc version equals the pin in
-# rust-toolchain.toml is used as it is (for example a `stable` that is currently that
-# version); the pin is downloaded only when nothing installed matches.
+# It finds rustup in ${CARGO_HOME:-$HOME/.cargo}/bin, then /opt/homebrew/bin, then
+# /opt/homebrew/opt/rustup/bin, and uses an installed toolchain whose rustc version
+# equals the pin in rust-toolchain.toml (for example a `stable` that is currently that
+# version). It never downloads a toolchain: when none matches it prints how to install
+# the pin and exits. Without rustup it falls back to a cargo in CARGO_HOME or on PATH.
 # Needs $ROOT (the repo root) to be set by the caller.
 
-RUSTUP=/opt/homebrew/bin/rustup
+_snapit_cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
 
-# Prints the name of an installed toolchain whose rustc version equals $1, if any.
-# Runs from / on purpose: rustup commands run inside the repo read rust-toolchain.toml
-# and download the pinned toolchain when it is missing, even for `toolchain list`.
-snapit_installed_toolchain_for() {
-  local name version
+_snapit_find_rustup() {
+  local candidate
+  for candidate in "$_snapit_cargo_bin/rustup" /opt/homebrew/bin/rustup /opt/homebrew/opt/rustup/bin/rustup; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return
+    fi
+  done
+}
+
+# Prints the name of an installed toolchain whose rustc version equals $2, if any.
+# Runs from / on purpose: a rustup command run inside the repo reads rust-toolchain.toml
+# and downloads the pinned toolchain when it is missing, even for `toolchain list`.
+_snapit_installed_toolchain_for() {
+  local rustup="$1" name version
   while read -r name _; do
-    version="$(cd / && "$RUSTUP" run "$name" rustc --version 2>/dev/null | awk '{ print $2 }')"
-    if [[ "$version" == "$1" ]]; then
+    version="$(cd / && "$rustup" run "$name" rustc --version 2>/dev/null | awk '{ print $2 }')"
+    if [[ "$version" == "$2" ]]; then
       echo "$name"
       return
     fi
-  done < <(cd / && "$RUSTUP" toolchain list 2>/dev/null)
+  done < <(cd / && "$rustup" toolchain list 2>/dev/null)
 }
 
-snapit_find_cargo() {
-  if [[ -x "$HOME/.cargo/bin/cargo" ]]; then
-    echo "$HOME/.cargo/bin/cargo"
-    return
-  fi
-  if [[ -x "$RUSTUP" ]]; then
-    local channel match
+_snapit_resolve_cargo() {
+  local rustup channel match
+  rustup="$(_snapit_find_rustup)"
+  if [[ -n "$rustup" ]]; then
     channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$ROOT/rust-toolchain.toml")"
     if [[ -z "${RUSTUP_TOOLCHAIN:-}" ]]; then
-      match="$(snapit_installed_toolchain_for "$channel")"
-      if [[ -n "$match" ]]; then
-        export RUSTUP_TOOLCHAIN="$match"
-      else
-        (cd "$ROOT" && "$RUSTUP" toolchain install >&2) || return
+      match="$(_snapit_installed_toolchain_for "$rustup" "$channel")"
+      if [[ -z "$match" ]]; then
+        echo "error: Rust $channel (pinned in rust-toolchain.toml) is not installed. Run: (cd '$ROOT' && rustup toolchain install)" >&2
+        exit 1
       fi
+      export RUSTUP_TOOLCHAIN="$match"
     fi
-    (cd "$ROOT" && "$RUSTUP" which cargo 2>/dev/null) && return
+    (cd / && "$rustup" which cargo)
+    return
   fi
-  command -v cargo || true
+  if [[ -x "$_snapit_cargo_bin/cargo" ]]; then
+    echo "$_snapit_cargo_bin/cargo"
+    return
+  fi
+  command -v cargo
 }
 
-CARGO="$(snapit_find_cargo)"
-if [[ -z "$CARGO" ]]; then
-  echo "error: cargo not found (looked in \$HOME/.cargo/bin, rustup at $RUSTUP, PATH). Install rustup from https://rustup.rs" >&2
+# Not in a subshell, so RUSTUP_TOOLCHAIN reaches this shell and its children.
+_snapit_cargo_out="$(mktemp)"
+if ! _snapit_resolve_cargo >"$_snapit_cargo_out"; then
+  rm -f "$_snapit_cargo_out"
+  echo "error: no usable cargo (looked for rustup in $_snapit_cargo_bin, /opt/homebrew/bin and /opt/homebrew/opt/rustup/bin, then for cargo in CARGO_HOME and PATH). Install rustup from https://rustup.rs" >&2
   exit 1
 fi
-# `export RUSTUP_TOOLCHAIN` inside the $(...) above does not reach this shell.
-if [[ -z "${RUSTUP_TOOLCHAIN:-}" && -x "$RUSTUP" ]]; then
-  _snapit_match="$(snapit_installed_toolchain_for "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$ROOT/rust-toolchain.toml")")"
-  [[ -n "$_snapit_match" ]] && export RUSTUP_TOOLCHAIN="$_snapit_match"
-fi
+CARGO="$(cat "$_snapit_cargo_out")"
+rm -f "$_snapit_cargo_out"
 # cargo, rustfmt and clippy find each other next to the cargo binary.
 export PATH="$(dirname "$CARGO"):$PATH"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
