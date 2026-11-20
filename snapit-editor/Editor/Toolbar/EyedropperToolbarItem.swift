@@ -15,6 +15,8 @@ struct EyedropperToolbarItem: EditorToolbarItem {
         session.toggleEyedropper()
     }
 
+    func isVisible(in session: EditorSession) -> Bool { !session.isCropping }
+
     func makeView(session: EditorSession) -> AnyView {
         AnyView(
             Button {

@@ -28,6 +28,13 @@ struct AnnotationRenderContext {
     let zoom: CGFloat
     /// Backing pixels per view point of the window the canvas is in.
     var backingScale: CGFloat = 2
+    /// The part of the Capture the canvas shows, in Capture pixels, when a crop is applied; nil
+    /// for all of it. A kind that previews from the Capture works on this part, as Export does.
+    var cropPixels: PixelRect?
+    /// True while the pointer is dragging (an Annotation being drawn, moved or resized): a kind
+    /// whose preview is costly may update at most every few milliseconds and catch up when the
+    /// drag ends (`AnnotationLayers.settle`).
+    var isLive = false
 }
 
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in
@@ -46,6 +53,9 @@ nonisolated protocol AnnotationKind: Sendable {
     var widthChoice: WidthChoice { get }
     /// True when the kind has a text size (Text).
     var usesTextSize: Bool { get }
+    /// False when the Annotation color means nothing to the kind (Redaction pixelates), so choosing a
+    /// color leaves a selected one alone instead of recording an Undo step that changes nothing.
+    var usesColor: Bool { get }
     func paint(for annotation: Annotation) -> AnnotationPaint
     /// Whether a click at `point` (image points) is on the Annotation. Exact: the inside of a
     /// filled Annotation only, the stroke of an outline. `minimumWidth` makes a thin line
@@ -90,6 +100,7 @@ nonisolated extension AnnotationKind {
     var supportsFill: Bool { false }
     var widthChoice: WidthChoice { .line }
     var usesTextSize: Bool { false }
+    var usesColor: Bool { true }
 
     /// A box at least `AnnotationLimits.smallestSize` points each way.
     func isLargeEnough(_ annotation: Annotation) -> Bool {

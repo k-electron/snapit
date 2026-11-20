@@ -42,8 +42,13 @@ struct EditorKeyEquivalent: Equatable {
 
     func matches(_ event: NSEvent) -> Bool {
         // Caps Lock is a state, not part of the combination.
-        event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == modifiers
-            && event.charactersIgnoringModifiers?.lowercased() == key
+        var flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
+        // Enter on the numeric keypad is the same as Return; its events carry the keypad flag.
+        let isReturn = key == "\r"
+        if isReturn { flags.subtract([.numericPad, .function]) }
+        guard flags == modifiers else { return false }
+        let typed = event.charactersIgnoringModifiers?.lowercased()
+        return typed == key || (isReturn && typed == "\u{3}")
     }
 }
 
@@ -86,6 +91,9 @@ protocol EditorToolbarItem {
     /// The item's name in the menu.
     var menuTitle: String { get }
     func isEnabled(in session: EditorSession) -> Bool
+    /// Whether the item is in the toolbar now. Most always are; the Crop tool's Apply and Cancel
+    /// take the place of the color and size controls while the Crop tool is active.
+    func isVisible(in session: EditorSession) -> Bool
     func perform(in session: EditorSession)
     func makeView(session: EditorSession) -> AnyView
 }
@@ -97,6 +105,7 @@ extension EditorToolbarItem {
     var menu: EditorMenu? { nil }
     var menuTitle: String { title ?? tooltip }
     func isEnabled(in session: EditorSession) -> Bool { true }
+    func isVisible(in session: EditorSession) -> Bool { true }
     func makeView(session: EditorSession) -> AnyView {
         AnyView(ToolbarButton(item: self, session: session))
     }

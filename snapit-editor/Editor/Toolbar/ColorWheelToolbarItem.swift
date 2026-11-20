@@ -14,6 +14,8 @@ struct ColorWheelToolbarItem: EditorToolbarItem {
         session.openColorPanel()
     }
 
+    func isVisible(in session: EditorSession) -> Bool { !session.isCropping }
+
     func makeView(session: EditorSession) -> AnyView {
         let color = session.shownColor
         return AnyView(

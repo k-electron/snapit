@@ -49,6 +49,7 @@ extension EditorSession {
     func annotationsDidChange() {
         guard let document else { return }
         if let id = selectedAnnotationID, document.history.annotation(id: id) == nil { selectedAnnotationID = nil }
+        syncCropView()
         canvas?.showAnnotations(document.annotations, selected: selectedAnnotation)
         refreshToolbarState()
     }
@@ -63,13 +64,15 @@ extension EditorSession {
         var state = AnnotationToolbarState()
         let idle = annotationGesture == nil
         state.revision = idle ? (document?.revision ?? 0) : toolbarState.revision
-        state.canUndo = idle && document?.canUndo == true
-        state.canRedo = idle && document?.canRedo == true
+        // Undo, Redo and Delete wait while a crop is being drawn: Apply or Cancel it first.
+        let editable = idle && !isCropping
+        state.canUndo = editable && document?.canUndo == true
+        state.canRedo = editable && document?.canRedo == true
         if let selected = selectedAnnotation {
-            state.canDelete = idle
+            state.canDelete = editable
             state.selectionSupportsFill = AnnotationKinds.kind(selected.kind)?.supportsFill ?? false
             state.selectionFilled = selected.style.filled
-            state.selectionColor = selected.style.color
+            state.selectionColor = AnnotationKinds.kind(selected.kind)?.usesColor == false ? nil : selected.style.color
             state.selectionWidth = selected.style.width
             state.selectionWidthChoice = AnnotationKinds.kind(selected.kind)?.widthChoice ?? WidthChoice.none
             state.selectionTextSize = selected.style.textSize
@@ -300,7 +303,7 @@ extension EditorSession {
         annotationStyle.color = color
         AnnotationSettings.color = color
         if restyleTextBeingEdited({ $0.color = color }) { return }
-        restyleSelection { $0.color = color }
+        restyleSelection(where: { $0.usesColor }) { $0.color = color }
     }
 
     /// The Text size in points, for the selected Text and for the next ones.

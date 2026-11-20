@@ -218,6 +218,51 @@ if capture_into_editor "menu-click capture.screen"; then
   wait_until 10 gone "$HELPER_PID"
 fi
 
+# Crop and Redaction. The Crop tool swaps the color and size controls for Apply and Cancel; the
+# eyedropper maps its click through an applied crop and takes the pixelated value, never the original
+# pixel, under a Redaction; a Redaction has no color of its own, so a swatch records no Undo step.
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  W=301
+  H=187
+  has_control() { [[ "$(send "$EDITOR_SOCK" "editor-controls $EDITOR_N")" == *"control ${1} "* ]]; }
+  lacks_control() { ! has_control "$1"; }
+  keystroke c >/dev/null
+  if wait_until 3 has_control "Apply Crop (↩)"; then pass "while cropping, Apply Crop is in the toolbar"; else fail "Apply Crop is not in the toolbar while cropping"; fi
+  if wait_until 3 lacks_control Red; then pass "and the color swatches are not"; else fail "the swatches are still in the toolbar while cropping"; fi
+  expect_equal "no two controls overlap while cropping" "overlapping-controls=0" "$(send "$EDITOR_SOCK" "editor-layout $EDITOR_N" | grep '^overlapping-controls=')"
+  # An applied crop, then the eyedropper: the click is mapped through it.
+  drag 0 0 100 50 >/dev/null
+  drag 301 187 200 120 >/dev/null
+  keystroke enter >/dev/null
+  if wait_until 3 has_control Red; then pass "the swatches come back with the Select tool"; else fail "the swatches did not come back after the crop"; fi
+  send "$EDITOR_SOCK" "editor-press $EDITOR_N eyedropper" >/dev/null
+  click 150.5 80.5 >/dev/null
+  expect_equal "the eyedropper's click on a cropped Capture takes the pixel the user sees under it" "$(rgb_hex $((150 * 255 / 300)) $((80 * 255 / 186)) $((((150 / 8 + 80 / 8) % 2 == 0) ? 40 : 200)))" "$(default_of annotationColor)"
+  keystroke undo >/dev/null  # the crop
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
+if capture_into_editor "menu-click capture.screen"; then
+  # A Redaction (40,30)-(140,90), 100 x 60 pixels: blocks of 20 pixels from its corner. The block that
+  # holds pixel (45,35) is x 40..59, y 30..49; its color is the floored mean of those original pixels.
+  keystroke x >/dev/null
+  drag 40 30 140 90 >/dev/null
+  MEAN="$(awk 'BEGIN { for (x = 40; x < 60; x++) for (y = 30; y < 50; y++) { r += int(x * 255 / 300); g += int(y * 255 / 186); b += (int(x / 8) + int(y / 8)) % 2 == 0 ? 40 : 200 } printf "%02x%02x%02x", int(r / 400), int(g / 400), int(b / 400) }')"
+  STEPS="$(undo_steps)"
+  control Blue >/dev/null
+  expect_equal "a swatch chosen with a Redaction selected records no Undo step: its color means nothing" "$STEPS" "$(undo_steps)"
+  expect_disabled "and the size control is off for a Redaction" annotation-size
+  send "$EDITOR_SOCK" "editor-press $EDITOR_N eyedropper" >/dev/null
+  click 45.5 35.5 >/dev/null
+  expect_equal "the eyedropper under a Redaction takes the block's pixelated color, not the original pixel" "$MEAN" "$(default_of annotationColor)"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+fi
+send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null
+
 # The first click on a background Editor works on every control.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" "defaults-set annotationColor ff3b30" >/dev/null

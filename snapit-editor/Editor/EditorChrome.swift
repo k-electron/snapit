@@ -40,8 +40,10 @@ final class EditorContentView: NSView {
 final class EditorChrome {
     static let margin: CGFloat = 12
     static let canvasPadding: CGFloat = 6
-    /// The smallest the window's content gets: wide enough that the top toolbar's pills never overlap.
-    private(set) var minimumContent = NSSize(width: 560, height: 320)
+    static let baseMinimumContent = NSSize(width: 560, height: 320)
+    /// The smallest content size: wide enough that the toolbars' pills never overlap, however many
+    /// controls the registry puts in them.
+    private(set) var minimumContent = EditorChrome.baseMinimumContent
 
     let window: EditorWindow
     let canvas: CanvasView
@@ -77,13 +79,13 @@ final class EditorChrome {
         topTrailing = hostIfAny([.history, .export])
         topDestructive = hostIfAny([.destructive], firstMouse: false)
 
-        // The top toolbar's pills side by side, after the traffic lights, must fit.
         // On one row the pills sit side by side after the traffic lights; narrower than that the
-        // options pill takes a second row, right of the tool rail.
+        // options pill takes a second row, right of the tool rail. (The traffic lights take the first
+        // 82 points; the pills' shadow margins overlap by 6.)
         let rightWidth = [topTrailing, topDestructive].compactMap { $0?.frame.width }.reduce(0, +)
         let optionsWidth = topLeading?.frame.width ?? 0
-        singleRowWidth = 92 + optionsWidth + rightWidth
-        minimumContent.width = max(minimumContent.width, 92 + rightWidth, rail.frame.maxX + optionsWidth + Self.margin)
+        singleRowWidth = 82 + optionsWidth + rightWidth + 6
+        minimumContent.width = max(Self.baseMinimumContent.width, 82 + rightWidth + 6, rail.frame.maxX + optionsWidth + Self.margin)
 
         window = EditorWindow(
             contentRect: NSRect(origin: .zero, size: minimumContent),
@@ -149,6 +151,23 @@ final class EditorChrome {
         origin.x = max(visible.minX, min(visible.maxX - window.frame.width, origin.x))
         origin.y = max(visible.minY, min(visible.maxY - window.frame.height, origin.y))
         window.setFrameOrigin(origin)
+    }
+
+    /// The toolbar's pills hold other controls now (the Crop tool swaps the color and size controls for
+    /// Apply and Cancel): once SwiftUI has shown them, the hosts take the size of what they hold. Two
+    /// run-loop turns, because the new controls are not there until SwiftUI's own update has run.
+    func refitToolbars() {
+        func refit() {
+            for host in [topLeading, topTrailing, topDestructive].compactMap({ $0 }) {
+                host.layoutSubtreeIfNeeded()
+                if host.frame.size != host.fittingSize { host.frame.size = host.fittingSize }
+            }
+            content.needsLayout = true
+        }
+        DispatchQueue.main.async {
+            refit()
+            DispatchQueue.main.async { refit() }
+        }
     }
 
     /// How much taller the content must be when the options pill has a row of its own.

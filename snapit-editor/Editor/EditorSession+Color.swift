@@ -81,7 +81,9 @@ extension EditorSession {
         let capture = document.capture
         let pixels = capture.pixels
         guard let pixel = CapturePixelSampler.pixel(containing: point, scale: capture.info.scale, in: pixels),
-            let color = CapturePixelSampler.color(atX: pixel.x, y: pixel.y, in: pixels)
+            let color = CapturePixelSampler.shownColor(
+                atX: pixel.x, y: pixel.y, in: pixels, scale: capture.info.scale, window: canvas?.cropPixels,
+                redactions: document.annotations.filter { $0.kind == .redaction })
         else { return }
         isEyedropperActive = false
         refreshCursor()
