@@ -344,5 +344,103 @@ assert_idle_cpu "menu bar app with the overlay showing" "$APP_PID" 4
 send "$APP_SOCK" "overlay-key escape" >/dev/null
 send_slow "$APP_SOCK" overlay-wait >/dev/null
 assert_idle_cpu "menu bar app after the Area Captures" "$APP_PID" 5
+
+# 10. The Editor helper warms up when the Area Shortcut is pressed (the Capture has started), while
+#     the displays are frozen and the Area is chosen. Esc, a failed start and a display change end
+#     the Capture without one and quit the helper; a Capture opens in the warm helper, as quickly as
+#     a Screen Capture does.
+AREA_WARM_OPEN_MS_MAX="${SNAPIT_WARM_OPEN_MS_MAX:-120}"
+area_warm_state() { send "$APP_SOCK" "editor-warm-up state"; }
+area_warm_is() { [[ "$(area_warm_state)" == "$1" ]]; }
+area_helper_count() { pgrep -f "$HELPER_EXE" | wc -l | tr -d ' '; }
+area_no_helper() { [[ "$(area_helper_count)" == "0" ]]; }
+
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+send "$APP_SOCK" "fixture-delay 0" >/dev/null
+expect_equal "no helper process at rest before the Area warm-up checks" "0" "$(area_helper_count)"
+
+# The Shortcut warms the helper up: an agent, hidden, with no window.
+area_start "press-shortcut capture-area" >/dev/null
+if wait_until 10 area_warm_is warm; then pass "the Area Shortcut warms the Editor helper up"; else fail "no warm helper after the Area Shortcut (state '$(area_warm_state)')"; fi
+AREA_WARM_PID="$(helper_pid)"
+expect_equal "the warm helper is an agent: no Dock icon" "UIElement" "$(app_type "$AREA_WARM_PID")"
+expect_equal "the warm helper has no window on screen" "0" "$(onscreen_windows "$AREA_WARM_PID")"
+expect_equal "the warm helper has no panel at the overlay's level either" "" "$("$INSPECT" overlay-windows "$AREA_WARM_PID")"
+expect_equal "the overlay is showing while the helper warms up" "1" "$(overlay_panels | grep -c '^301x187 ')"
+
+# Esc cancels the Capture and the helper that never showed anything goes.
+send "$APP_SOCK" "overlay-key escape" >/dev/null
+expect_equal "Esc cancels with a warm helper" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+if wait_until 10 gone "$AREA_WARM_PID"; then pass "Esc quits the helper that was warming up"; else fail "the warm helper is still running after Esc"; fi
+expect_equal "no helper process at rest after Esc" "0" "$(area_helper_count)"
+expect_equal "Esc leaves the warm-up idle" "idle" "$(area_warm_state)"
+
+# A display change ends the overlay the same way.
+area_start "press-shortcut capture-area" >/dev/null
+wait_until 10 area_warm_is warm
+expect_equal "a display change is delivered to the overlay" "ok" "$(send "$APP_SOCK" overlay-screens-changed)"
+expect_equal "a display change cancels the Capture" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
+expect_equal "the overlay is gone after a display change" "" "$(overlay_panels)"
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+if wait_until 10 area_no_helper; then pass "a display change quits the helper that was warming up"; else fail "the helper is still running after a display change"; fi
+
+# A start that fails (the displays could not be frozen) is a Capture that ends without one.
+send "$APP_SOCK" "fixture-fail on" >/dev/null
+area_start "press-shortcut capture-area" >/dev/null
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+send "$APP_SOCK" "fixture-fail off" >/dev/null
+expect_equal "a failed start shows no overlay" "" "$(overlay_panels)"
+expect_equal "a failed start is reported" "failed" "$(send_slow "$APP_SOCK" overlay-wait | cut -d' ' -f1)"
+if wait_until 10 area_no_helper; then pass "a failed start quits the helper that was warming up"; else fail "the helper is still running after a failed start"; fi
+expect_equal "a failed start leaves the warm-up idle" "idle" "$(area_warm_state)"
+expect_equal "the Shortcut works again after a failed start" "ok" "$(area_start "press-shortcut capture-area")"
+send "$APP_SOCK" "overlay-key escape" >/dev/null
+send_slow "$APP_SOCK" overlay-wait >/dev/null
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+wait_until 10 area_no_helper
+
+# A Capture opens in the warm helper: the Editor was built before the Area was chosen.
+area_start "press-shortcut capture-area" >/dev/null
+wait_until 10 area_warm_is warm
+area_drag 0 50 40 200 150
+if area_result; then
+  expect_contains "the Area Capture opened in a warm helper" "warm=yes" "$(send "$APP_SOCK" capture-timing)"
+  expect_contains "the Editor was built before its Capture" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
+  expect_equal "the warm Editor is on screen once it opened" "1" "$(onscreen_windows "$HELPER_PID")"
+  send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+  wait_until 10 gone "$HELPER_PID"
+else
+  fail "the Area Capture with a warm helper finished with '$AREA_REPLY'"
+fi
+
+# The same open-time ceiling as a Screen Capture, on a 5K display with an Area that covers nearly
+# all of it (so mapping the pixels costs what it does for a Screen Capture). Median of three, each
+# with a helper that was already warm.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
+AREA_SAMPLES=()
+for round in 1 2 3; do
+  area_start "press-shortcut capture-area" >/dev/null
+  if ! wait_until 10 area_warm_is warm; then fail "Area timing round $round: the helper did not warm up"; fi
+  area_drag 0 1 1 2559 1439
+  if area_result; then
+    TIMING="$(send "$APP_SOCK" capture-timing)"
+    expect_contains "Area timing round $round: the Capture opened in a warm helper" "warm=yes" "$TIMING"
+    AREA_SAMPLES+=("$(printf '%s\n' "$TIMING" | sed -n 's/.*capture-to-editor-ms=\([0-9.]*\).*/\1/p')")
+    send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
+    wait_until 10 gone "$HELPER_PID"
+  else
+    fail "Area timing round $round finished with '$AREA_REPLY'"
+  fi
+done
+AREA_MS="$(printf '%s\n' "${AREA_SAMPLES[@]}" | sort -n | sed -n '2p')"
+if [[ -n "$AREA_MS" ]] && awk -v ms="$AREA_MS" -v max="$AREA_WARM_OPEN_MS_MAX" 'BEGIN { exit !(ms > 0 && ms <= max) }'; then
+  pass "Area Capture to the Editor visible takes ${AREA_MS} ms with a warm helper (median of ${AREA_SAMPLES[*]}; ceiling ${AREA_WARM_OPEN_MS_MAX} ms, the Screen Capture's)"
+else
+  fail "Area Capture to the Editor visible took '${AREA_MS}' ms with a warm helper (samples ${AREA_SAMPLES[*]}; ceiling ${AREA_WARM_OPEN_MS_MAX} ms)"
+fi
+expect_equal "no helper process is left after the Area warm-up checks" "0" "$(area_helper_count)"
+send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
+send "$APP_SOCK" pasteboard-clear >/dev/null
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

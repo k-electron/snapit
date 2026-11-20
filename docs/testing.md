@@ -59,6 +59,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
+| `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification); the overlay ends |
 | `fixture-fail on\|off` | makes the fixture Capture fail, so a flow can check what a Capture that ends without a Capture does (it cancels the warm-up) |
 | `capture-timing` | `capture-to-editor-ms=<n> warm=yes\|no` for the last Capture: from its pixels being ready (the Capture itself is not counted) to the Editor window on screen: writing the Capture file, the command to the helper, attaching, showing, and the helper flushing its drawing before it replies. A normal run adds asking macOS to bring the helper forward |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
@@ -110,7 +111,7 @@ process exists at rest; a helper with an Editor open stays. A warm helper also w
 app that started it (its pid is a launch argument and an argument of `warm-up`, so a restarted snapit
 adopts a running helper) and quits when that process exits while the helper has shown nothing. Opening the Capture
 (`EditorHelperLauncher.open`) waits for a warm-up in progress, uses the warm Editor and ends the
-warm-up. A new Capture mode adds those two calls and nothing else; `scripts/run/flows/35-editor-warm-up.sh`
+warm-up. A new Capture mode adds those two calls and nothing else (the Area Capture calls `begin()` in `AreaCaptureFlow.start()` after the permission check and `cancel()` from `conclude` for every outcome but `.opened`; `fixture-delay` and `fixture-fail` apply to its frozen frames too); `scripts/run/flows/35-editor-warm-up.sh`
 shows what to assert. A helper launched without `--started-by-snapit` (a Dock pin) starts the menu
 bar app and quits without building anything.
 

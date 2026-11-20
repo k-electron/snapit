@@ -10,6 +10,9 @@ nonisolated extension SocketCommand {
     /// image. `skip-first` is BGRX from a plain bitmap context, which the engine's in-place crop
     /// does not take, so the Capture is cropped through its fallback. Replies `ok`.
     static let fixturePixelLayout = SocketCommand("fixture-pixel-layout")
+    /// Tells the overlay the displays changed, as macOS does when one is plugged in, unplugged or
+    /// rearranged: the overlay ends. Replies `ok`.
+    static let overlayScreensChanged = SocketCommand("overlay-screens-changed")
     /// Waits until the overlay that is showing has finished, then replies `opened <N>` (Capture N
     /// is in the Editor), `cancelled` or `failed <why>`.
     static let overlayWait = SocketCommand("overlay-wait")
@@ -53,6 +56,11 @@ extension SocketCommandRegistry {
                 return "error fixture-pixel-layout alpha-first|skip-first"
             }
             FixtureCaptureSource.shared.display.skipsAlpha = layout == "skip-first"
+            return "ok"
+        }
+        register(.overlayScreensChanged) { _ in
+            guard AreaCaptureFlow.activeOverlay != nil else { return "error no overlay" }
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
         register(.overlayWait) { _ in

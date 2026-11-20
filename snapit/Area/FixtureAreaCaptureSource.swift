@@ -34,6 +34,8 @@ final class FixtureAreaCaptureSource: AreaCaptureSource {
     }
 
     func freezeDisplays() async throws -> [FrozenDisplay] {
+        if FixtureCaptureSource.shared.delay > .zero { try await Task.sleep(for: FixtureCaptureSource.shared.delay) }
+        if FixtureCaptureSource.shared.fails { throw ScreenCaptureError.noImage }
         let frames = frames()
         let primary = frames[0]
         var frozen: [FrozenDisplay] = []
