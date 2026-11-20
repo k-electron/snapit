@@ -33,6 +33,7 @@ extension SocketCommandRegistry {
         registerInstallCommands()
         registerSettingsAppCommands()
         registerOnboardingAppCommands()
+        registerUpdateAppCommands()
     }
 
     private func registerMenuCommands() {

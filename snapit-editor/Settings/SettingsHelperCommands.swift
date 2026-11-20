@@ -153,7 +153,9 @@ enum SettingsFacts {
         case SettingsControl.standardResolution.id: model.setStandardResolution(!model.standardResolution)
         case SettingsControl.openScreenshotShortcuts.id: model.openScreenshotShortcuts()
         default:
-            if id.hasPrefix("shortcut."), let entry = ShortcutCatalog.entry(id: String(id.dropFirst("shortcut.".count))) {
+            if let row = AboutRows.all.first(where: { $0.control.id == id }), case .button(let action) = row.content {
+                action(model)
+            } else if id.hasPrefix("shortcut."), let entry = ShortcutCatalog.entry(id: String(id.dropFirst("shortcut.".count))) {
                 if model.recordingID == entry.shortcut.id { model.cancelRecording() } else { model.beginRecording(entry) }
             } else if id.hasPrefix("shortcut-clear."),
                 let entry = ShortcutCatalog.entry(id: String(id.dropFirst("shortcut-clear.".count)))

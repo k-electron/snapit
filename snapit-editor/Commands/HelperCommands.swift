@@ -16,5 +16,6 @@ extension SocketCommandRegistry {
         registerInstallHelperCommands()
         registerSettingsHelperCommands()
         registerOnboardingHelperCommands()
+        registerUpdateHelperCommands()
     }
 }

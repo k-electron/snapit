@@ -1,0 +1,14 @@
+import Foundation
+
+/// Commands of Check for Updates. The menu bar app makes the one request and never opens a
+/// window; the Editor helper shows the update window and asks the menu bar app for the answer.
+nonisolated extension SocketCommand {
+    /// The menu bar app asks the Editor helper to show the update window and check: the window
+    /// opens saying it is checking, the helper sends `check-for-updates`, and the window shows the
+    /// answer. A check already running is not started again. Replies `ok` once the window is on
+    /// screen, not when the answer is in.
+    static let showUpdateCheck = SocketCommand("show-update-check")
+    /// The helper asks the menu bar app to check: the one request snapit sends, to GitHub's latest
+    /// release. Replies with an `UpdateAnswer`'s wire form once GitHub has answered or failed.
+    static let checkForUpdates = SocketCommand("check-for-updates")
+}
