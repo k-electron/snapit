@@ -8,6 +8,9 @@ nonisolated enum EngineStatus: Int32, Sendable {
     case panic = 3
     case outOfMemory = 4
     case encodeFailed = 5
+    case ioFailed = 6
+    /// A Capture file that is damaged, truncated or from another version.
+    case invalidFile = 7
 }
 
 nonisolated struct EngineError: Error, CustomStringConvertible {

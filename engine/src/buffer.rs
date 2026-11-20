@@ -38,10 +38,22 @@ pub struct SnapitPixelBuffer {
     pub mapped_len: usize,
 }
 
-fn page_size() -> usize {
+pub(crate) fn page_size() -> usize {
     // SAFETY: `sysconf` has no preconditions.
     let size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     if size > 0 { size as usize } else { 16384 }
+}
+
+/// The row stride and mapped length (whole pages) of a `width` x `height` image, or `None`
+/// when the size overflows or is larger than any display produces.
+pub(crate) fn layout(width: u32, height: u32) -> Option<(usize, usize)> {
+    let stride = (width as usize)
+        .checked_mul(SNAPIT_BYTES_PER_PIXEL)?
+        .checked_next_multiple_of(SNAPIT_ROW_ALIGNMENT)?;
+    let mapped_len = stride
+        .checked_mul(height as usize)?
+        .checked_next_multiple_of(page_size())?;
+    (mapped_len <= isize::MAX as usize / 2).then_some((stride, mapped_len))
 }
 
 /// Maps a zero-filled buffer for a `width` x `height` image and stores it in `out`.
@@ -61,22 +73,9 @@ pub unsafe extern "C" fn snapit_buffer_alloc(
         if out.is_null() || width == 0 || height == 0 {
             return SNAPIT_STATUS_INVALID_ARGUMENT;
         }
-        let Some(stride) = (width as usize)
-            .checked_mul(SNAPIT_BYTES_PER_PIXEL)
-            .and_then(|row| row.checked_next_multiple_of(SNAPIT_ROW_ALIGNMENT))
-        else {
+        let Some((stride, mapped_len)) = layout(width, height) else {
             return SNAPIT_STATUS_INVALID_ARGUMENT;
         };
-        let Some(mapped_len) = stride
-            .checked_mul(height as usize)
-            .and_then(|len| len.checked_next_multiple_of(page_size()))
-        else {
-            return SNAPIT_STATUS_INVALID_ARGUMENT;
-        };
-        // Refuse sizes no display produces rather than ask the kernel for them.
-        if mapped_len > isize::MAX as usize / 2 {
-            return SNAPIT_STATUS_INVALID_ARGUMENT;
-        }
         // SAFETY: an anonymous private mapping has no preconditions on its arguments.
         let data = unsafe {
             libc::mmap(

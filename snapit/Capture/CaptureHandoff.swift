@@ -1,0 +1,53 @@
+import Foundation
+
+/// Hands a Capture to the Editor: the pixels go into a Capture file (memory-mapped, never over
+/// the socket), then the Editor helper is told to open Capture N.
+///
+/// Only the newest Capture's file is kept (it becomes the Last Capture): once Capture N is open
+/// in the Editor, the one before it goes. A Capture that fails to open leaves the previous one
+/// alone. Deleting the Capture, or quitting, removes the file too. The menu bar app holds no
+/// pixels afterwards: the mapping is gone when `publish` returns.
+@MainActor
+enum CaptureHandoff {
+    /// Starts at a number no earlier run of the menu bar app used (milliseconds since 1970), so a
+    /// helper that outlived a crashed menu bar app never mistakes a new Capture for one of its own.
+    private static var nextNumber = Int(Date().timeIntervalSince1970 * 1000)
+    private static var latestNumber: Int?
+
+    /// Writes `screen` as the next Capture's file and returns its number. Call `didOpen` once
+    /// the Editor has it, or `discard` when it could not be opened.
+    static func publish(_ screen: CapturedScreen) async throws -> Int {
+        let number = nextNumber
+        nextNumber += 1
+        try await write(number: number, screen: screen)
+        return number
+    }
+
+    /// Capture N is open in the Editor: it is now the Last Capture, and the one before goes.
+    static func didOpen(number: Int) {
+        if let previous = latestNumber, previous != number { CaptureFiles.remove(number: previous) }
+        latestNumber = number
+    }
+
+    /// Capture N could not be opened: its file goes, the previous Capture stays.
+    static func discard(number: Int) {
+        CaptureFiles.remove(number: number)
+    }
+
+    /// The user deleted Capture N in the Editor.
+    static func delete(number: Int) {
+        CaptureFiles.remove(number: number)
+        if latestNumber == number { latestNumber = nil }
+    }
+
+    /// Removes every Capture file: at launch (anything left by a crash) and at quit.
+    static func removeAll() {
+        CaptureFiles.removeAll()
+        latestNumber = nil
+    }
+
+    @concurrent
+    private static func write(number: Int, screen: CapturedScreen) async throws {
+        try CaptureFiles.write(number: number, image: screen.image, scale: screen.scale)
+    }
+}

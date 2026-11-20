@@ -1,14 +1,14 @@
 import Foundation
 
-/// A Screen Capture: the display under the pointer, onto the clipboard as a PNG.
+/// A Screen Capture: the display under the pointer, opened in the Editor.
 ///
-/// The Shortcut and the "Capture Screen" menu item both run this. The pixels live in
-/// engine-owned memory only while the flow runs; nothing is kept afterwards.
+/// The Shortcut and the "Capture Screen" menu item both run this. The pixels go to the Editor
+/// helper through a Capture file (`CaptureHandoff`); this process keeps nothing afterwards.
 @MainActor
 enum ScreenCaptureFlow {
     enum Outcome: Equatable {
-        /// The PNG is on the pasteboard.
-        case copied(width: Int, height: Int, byteCount: Int)
+        /// Capture N is showing in the Editor.
+        case opened(number: Int)
         /// Screen Recording is not granted; macOS was asked to show its prompt.
         case permissionNeeded
         /// Another Capture is still running.
@@ -16,13 +16,10 @@ enum ScreenCaptureFlow {
         case failed(String)
     }
 
-    private static var isRunning = false
-
     @discardableResult
     static func run() async -> Outcome {
-        guard !isRunning else { return .busy }
-        isRunning = true
-        defer { isRunning = false }
+        guard CaptureGate.enter() else { return .busy }
+        defer { CaptureGate.leave() }
         return await capture()
     }
 
@@ -33,21 +30,18 @@ enum ScreenCaptureFlow {
         }
         do {
             let screen = try await CaptureSources.current.captureDisplayUnderPointer()
-            let encoded = try await encode(screen)
-            AppPasteboard.write(encoded.png, as: .png)
-            return .copied(width: encoded.width, height: encoded.height, byteCount: encoded.png.count)
+            let number = try await CaptureHandoff.publish(screen)
+            do {
+                try await EditorHelperLauncher.open(capture: number)
+            } catch {
+                CaptureHandoff.discard(number: number)
+                throw error
+            }
+            CaptureHandoff.didOpen(number: number)
+            return .opened(number: number)
         } catch {
             NSLog("snapit: Screen Capture failed: \(error)")
             return .failed("\(error)")
         }
-    }
-
-    /// Moves the pixels into engine memory and Fast-encodes them, off the main thread. Both
-    /// the pixel buffer and the CGImage are gone when this returns; only the PNG is left.
-    @concurrent
-    private static func encode(_ screen: CapturedScreen) async throws -> (png: Data, width: Int, height: Int) {
-        let pixels = try PixelBuffer(copying: screen.image)
-        let png = try pixels.encodePNG(level: .fast, dpi: screen.dpi)
-        return (png, pixels.width, pixels.height)
     }
 }
