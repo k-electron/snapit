@@ -27,12 +27,6 @@ final class MoveToApplicationsModel {
         }
     }
 
-    struct ButtonSpec {
-        let id: String
-        let title: String
-        let tooltip: String
-    }
-
     let reason: Reason
     /// True when a copy of snapit already sits in Applications and the move replaces it.
     let replacesExisting: Bool
@@ -61,11 +55,11 @@ final class MoveToApplicationsModel {
         replacesExisting ? "The snapit already in Applications is replaced." : nil
     }
 
-    let moveButton = ButtonSpec(
+    let moveButton = HelperButton(
         id: "move", title: "Move to Applications", tooltip: "Copy snapit to Applications and relaunch it from there")
-    let laterButton = ButtonSpec(id: "later", title: "Not Now", tooltip: "Keep running snapit from here")
+    let laterButton = HelperButton(id: "later", title: "Not Now", tooltip: "Keep running snapit from here")
 
-    var buttons: [ButtonSpec] { [moveButton, laterButton] }
+    var buttons: [HelperButton] { [moveButton, laterButton] }
 
     /// Asks the menu bar app to move. Replies `ok` when it is relaunching (it quits, and the
     /// helper with it, a moment later) or the reason it could not.

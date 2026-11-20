@@ -20,12 +20,6 @@ final class UpdateModel {
         }
     }
 
-    struct ButtonSpec {
-        let id: String
-        let title: String
-        let tooltip: String
-    }
-
     private(set) var state = State.checking {
         didSet { blocks = ReleaseNotesBlocks.parse(notes ?? "") }
     }
@@ -99,11 +93,11 @@ final class UpdateModel {
         return URL(string: url)
     }
 
-    let downloadButton = ButtonSpec(
+    let downloadButton = HelperButton(
         id: "download", title: "Download", tooltip: "Open this release's page on GitHub in your browser")
-    let closeButton = ButtonSpec(id: "close", title: "Close", tooltip: "Close this window")
+    let closeButton = HelperButton(id: "close", title: "Close", tooltip: "Close this window")
 
-    var buttons: [ButtonSpec] {
+    var buttons: [HelperButton] {
         switch state {
         case .answered(.newer): [closeButton, downloadButton]
         default: [closeButton]

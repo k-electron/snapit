@@ -19,7 +19,7 @@ enum ToolbarRegistry {
         DragOutToolbarItem(),
         SaveToolbarItem(),
         RedoToolbarItem(),
-        ShapeFillToolbarItem(),
+        AnnotationFillToolbarItem(),
         UndoToolbarItem(),
         SizeToolbarItem(),
     ]
