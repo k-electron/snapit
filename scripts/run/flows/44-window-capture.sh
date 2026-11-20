@@ -119,7 +119,7 @@ rm -f "$RUN_ROOT/overlay.png"
 # A drag selects nothing, there is no Action bar, and Return does nothing.
 mouse down 0 30 30 >/dev/null
 mouse drag 0 100 100 >/dev/null
-expect_equal "a drag makes no selection" "none" "$(fact selection | sed 's/^[^ ]* //')"
+expect_equal "a drag makes no selection" "none" "$(fact area | sed 's/^[^ ]* //')"
 expect_equal "and shows no handles or Action bar" "0 none" "$(fact handles) $(fact action-bar)"
 mouse move 0 10 170 >/dev/null
 mouse up 0 10 170 >/dev/null

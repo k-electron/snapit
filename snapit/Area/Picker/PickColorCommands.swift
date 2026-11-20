@@ -42,7 +42,7 @@ extension AreaOverlayController {
         var lines = [
             "display=\(picker.displayIndex)",
             "pixel=\(picker.pixel.x),\(picker.pixel.y)",
-            "hex=\(PixelSampler.color(in: image, at: picker.pixel)?.hex ?? "none")",
+            "hex=\(PixelColorReader.color(in: image, at: picker.pixel)?.hex ?? "none")",
             "origin=\(picker.origin == .actionBar ? "bar" : "entry")",
             "frame=\(image.width)x\(image.height)",
         ]

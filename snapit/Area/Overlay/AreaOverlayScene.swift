@@ -18,13 +18,13 @@ struct AreaSceneState: Equatable {
     /// The frame of the window under the pointer, highlighted.
     var hoveredWindow: CGRect?
     /// The Area being dragged out or adjusted.
-    var selection: CGRect?
+    var area: CGRect?
     /// The Area is being adjusted: its eight handles show.
     var showsHandles = false
     /// The Action bar's frame on this display, when it shows. The size label keeps clear of it.
     var actionBar: CGRect?
     var tooltip: AreaTooltip?
-    /// The Color picker is up on this display: its loupe shows, and the dim, selection, crosshair
+    /// The Color picker is up on this display: its loupe shows, and the dim, Area, crosshair
     /// and the overlay's own loupe do not.
     var picker: PickerSceneState?
 }
@@ -55,7 +55,7 @@ final class AreaOverlayScene {
     private let dim = CAShapeLayer()
     private let hoverOuter = CAShapeLayer()
     private let hoverInner = CAShapeLayer()
-    private let selectionRing = CAShapeLayer()
+    private let areaRing = CAShapeLayer()
     private let handles = (0..<8).map { _ in CALayer() }
     private let verticalShadow = CALayer()
     private let horizontalShadow = CALayer()
@@ -70,8 +70,8 @@ final class AreaOverlayScene {
     private var dimmedCutout: CGRect?
     private var hasDimPath = false
     private var ringedHover: CGRect?
-    private var ringedSelection: CGRect?
-    private var handledSelection: CGRect?
+    private var ringedArea: CGRect?
+    private var handledArea: CGRect?
     private var shown: AreaSceneState?
     private var frameImage: CGImage?
 
@@ -109,7 +109,7 @@ final class AreaOverlayScene {
         let bounds = CGRect(origin: .zero, size: size)
 
         imageLayer.frame = bounds
-        // The layer shows the captured frame as it is; the loupe samples the same image.
+        // The layer shows the captured frame as it is; the loupe reads the same image.
         frameImage = display.image
         imageLayer.contents = frameImage
         imageLayer.contentsGravity = .resize
@@ -122,7 +122,7 @@ final class AreaOverlayScene {
         dim.fillColor = CGColor(gray: 0, alpha: 0.4)
         root.addSublayer(dim)
 
-        for ring in [hoverOuter, hoverInner, selectionRing] {
+        for ring in [hoverOuter, hoverInner, areaRing] {
             ring.frame = bounds
             ring.isHidden = true
             ring.fillColor = nil
@@ -133,8 +133,8 @@ final class AreaOverlayScene {
         hoverOuter.lineWidth = 3
         hoverInner.strokeColor = NSColor.systemBlue.cgColor
         hoverInner.lineWidth = 1
-        selectionRing.strokeColor = CGColor(gray: 1, alpha: 1)
-        selectionRing.lineWidth = 1
+        areaRing.strokeColor = CGColor(gray: 1, alpha: 1)
+        areaRing.lineWidth = 1
 
         for handle in handles {
             handle.bounds = CGRect(x: 0, y: 0, width: Self.handleSize, height: Self.handleSize)
@@ -173,14 +173,14 @@ final class AreaOverlayScene {
         defer { CATransaction.commit() }
         updateCount += 1
 
-        // The selection is drawn where its device pixels are, which is what the Capture holds.
-        let pixels = state.selection.flatMap {
+        // The Area is drawn where its device pixels are, which is what the Capture holds.
+        let pixels = state.area.flatMap {
             AreaGeometry.pixelRect(
                 of: $0, scale: display.scale, width: display.image.width, height: display.image.height)
         }
-        let selection = pixels.map { AreaGeometry.points(of: $0, scale: display.scale) }
-        let hover = selection == nil ? state.hoveredWindow : nil
-        setDim(cutout: selection ?? hover)
+        let area = pixels.map { AreaGeometry.points(of: $0, scale: display.scale) }
+        let hover = area == nil ? state.hoveredWindow : nil
+        setDim(cutout: area ?? hover)
         // Aiming at a color shows the frame as it is: no dim over what is being read.
         dim.isHidden = state.picker != nil
         // A path is rebuilt only when its rectangle changes.
@@ -191,25 +191,25 @@ final class AreaOverlayScene {
             hoverInner.path = CGPath(rect: flipped(hover.insetBy(dx: 3.5, dy: 3.5)), transform: nil)
         }
         ringedHover = hover
-        selectionRing.isHidden = selection == nil
-        if let selection, selection != ringedSelection {
-            selectionRing.path = CGPath(rect: flipped(selection.insetBy(dx: 0.5, dy: 0.5)), transform: nil)
+        areaRing.isHidden = area == nil
+        if let area, area != ringedArea {
+            areaRing.path = CGPath(rect: flipped(area.insetBy(dx: 0.5, dy: 0.5)), transform: nil)
         }
-        ringedSelection = selection
+        ringedArea = area
 
-        let handled = state.showsHandles ? selection : nil
-        if handled != handledSelection {
-            handledSelection = handled
+        let handled = state.showsHandles ? area : nil
+        if handled != handledArea {
+            handledArea = handled
             for handle in handles { handle.isHidden = handled == nil }
             if let handled { placeHandles(around: handled) }
         }
 
-        if let selection, let pixels {
+        if let area, let pixels {
             sizeLabel.set(
                 "\(pixels.width) × \(pixels.height)", fontSize: 12, weight: .semibold, color: .white,
                 padX: 8, padY: 4, background: NSColor(white: 0, alpha: 0.8))
             sizeLabel.place(
-                topLeft: labelOrigin(for: selection, adjusting: state.showsHandles, avoiding: state.actionBar),
+                topLeft: labelOrigin(for: area, adjusting: state.showsHandles, avoiding: state.actionBar),
                 parentHeight: size.height)
         } else {
             sizeLabel.hide()
@@ -269,12 +269,12 @@ final class AreaOverlayScene {
     }
 
     /// The eight handles, clockwise from the top left corner.
-    private func placeHandles(around selection: CGRect) {
+    private func placeHandles(around area: CGRect) {
         let centres = [
-            CGPoint(x: selection.minX, y: selection.minY), CGPoint(x: selection.midX, y: selection.minY),
-            CGPoint(x: selection.maxX, y: selection.minY), CGPoint(x: selection.maxX, y: selection.midY),
-            CGPoint(x: selection.maxX, y: selection.maxY), CGPoint(x: selection.midX, y: selection.maxY),
-            CGPoint(x: selection.minX, y: selection.maxY), CGPoint(x: selection.minX, y: selection.midY),
+            CGPoint(x: area.minX, y: area.minY), CGPoint(x: area.midX, y: area.minY),
+            CGPoint(x: area.maxX, y: area.minY), CGPoint(x: area.maxX, y: area.midY),
+            CGPoint(x: area.maxX, y: area.maxY), CGPoint(x: area.midX, y: area.maxY),
+            CGPoint(x: area.minX, y: area.maxY), CGPoint(x: area.minX, y: area.midY),
         ]
         for (handle, centre) in zip(handles, centres) {
             handle.position = CGPoint(x: centre.x, y: size.height - centre.y)
@@ -284,25 +284,25 @@ final class AreaOverlayScene {
     /// While an Area is dragged out its size sits below its bottom-right corner. While it is
     /// adjusted the label goes above its top-left corner, so the Action bar (below it) and the
     /// handles stay clear; with no room above, or when the bar is there, it moves inside.
-    private func labelOrigin(for selection: CGRect, adjusting: Bool, avoiding bar: CGRect?) -> CGPoint {
+    private func labelOrigin(for area: CGRect, adjusting: Bool, avoiding bar: CGRect?) -> CGPoint {
         let label = sizeLabel.size
         guard adjusting else {
-            var origin = CGPoint(x: selection.maxX + 8, y: selection.maxY + 8)
+            var origin = CGPoint(x: area.maxX + 8, y: area.maxY + 8)
             if origin.x + label.width > size.width - 4 {
-                origin = CGPoint(x: selection.maxX - label.width - 8, y: selection.maxY + 8)
+                origin = CGPoint(x: area.maxX - label.width - 8, y: area.maxY + 8)
             }
-            if origin.y + label.height > size.height - 4 { origin.y = selection.maxY - label.height - 8 }
+            if origin.y + label.height > size.height - 4 { origin.y = area.maxY - label.height - 8 }
             return origin
         }
-        var origin = CGPoint(x: max(4, selection.minX), y: selection.minY - label.height - 8)
-        if origin.y < 4 { origin = CGPoint(x: selection.minX + 8, y: selection.minY + 8) }
+        var origin = CGPoint(x: max(4, area.minX), y: area.minY - label.height - 8)
+        if origin.y < 4 { origin = CGPoint(x: area.minX + 8, y: area.minY + 8) }
         if let bar, bar.insetBy(dx: -4, dy: -4).intersects(CGRect(origin: origin, size: label)) {
-            origin = CGPoint(x: selection.minX + 8, y: selection.minY + 8)
+            origin = CGPoint(x: area.minX + 8, y: area.minY + 8)
         }
         return origin
     }
 
-    /// Lets go of the frozen frame: no layer shows or samples it any more.
+    /// Lets go of the frozen frame: no layer shows or reads it any more.
     func releaseFrame() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)

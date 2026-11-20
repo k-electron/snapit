@@ -20,7 +20,7 @@ struct PixelColor: Equatable {
 }
 
 /// Reads one pixel of a frozen frame.
-nonisolated enum PixelSampler {
+nonisolated enum PixelColorReader {
     /// The pixel at `point`, or nil outside the image. The pixel is cropped out (no copy of the
     /// frame) and drawn into one RGBA pixel in the image's own color space, so Core Graphics matches
     /// nothing and the components are the stored ones. Any pixel layout works (BGRA, BGRX, ...).
