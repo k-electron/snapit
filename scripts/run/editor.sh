@@ -36,6 +36,18 @@ capture_into_editor() {
   [[ -n "$EDITOR_N" && -n "$HELPER_PID" ]]
 }
 
+# peak_footprint_mb <pid> <seconds>: the largest footprint seen in the first <seconds> (sampled
+# every half second), so a Capture's drawing that lands late on a busy machine still counts.
+peak_footprint_mb() {
+  local peak="" mb i
+  for ((i = 0; i < $2 * 2; i++)); do
+    sleep 0.5
+    mb="$(footprint_mb "$1")"
+    if [[ -z "$peak" ]] || awk -v a="$mb" -v b="$peak" 'BEGIN { exit !(a > b) }'; then peak="$mb"; fi
+  done
+  echo "$peak"
+}
+
 # copy_closes_editor: presses ⌘C in the open Editor and waits for the helper to quit (close
 # after Copy is on by default).
 copy_closes_editor() {
