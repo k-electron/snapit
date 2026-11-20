@@ -239,8 +239,27 @@ else
   fail "the Capture for the Crop check finished with '$AREA_REPLY'"
 fi
 
-# 8. Opaque Captures keep producing RGB PNGs: a Screen Capture, an Area (also from a frozen frame
-#    with no alpha channel), and a window-sized crop of one.
+# 7d. A Crop inside the corners leaves nothing transparent: the PNG goes back to RGB (colour type 2),
+#     because the engine looks at the pixels that are left.
+area_start "press-shortcut capture-window" >/dev/null
+win_click 0 70 50
+if area_result; then
+  send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N c" >/dev/null
+  send "$EDITOR_SOCK" "editor-drag $EDITOR_N 0 0 10 10" >/dev/null
+  send "$EDITOR_SOCK" "editor-drag $EDITOR_N 100 60 90 50" >/dev/null
+  send "$EDITOR_SOCK" "editor-keystroke $EDITOR_N enter" >/dev/null
+  send "$APP_SOCK" pasteboard-clear >/dev/null
+  copy_closes_editor
+  send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/window.png" >/dev/null
+  WIN_INNER_INFO="$("$INSPECT" info "$RUN_ROOT/window.png")"
+  expect_equal "a window cropped inside its corners is 80 x 40, colour type 2 (RGB)" "80x40 2" "$(png_field "$WIN_INNER_INFO" width)x$(png_field "$WIN_INNER_INFO" height) $(png_field "$WIN_INNER_INFO" color_type)"
+  rm -f "$RUN_ROOT/window.png"
+else
+  fail "the Capture for the inner Crop check finished with '$AREA_REPLY'"
+fi
+
+# 8. Opaque Captures keep producing RGB PNGs: a Screen Capture, and an Area (also from a frozen frame
+#    with no alpha channel).
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 if capture_into_editor "press-shortcut capture-screen"; then
   send "$APP_SOCK" pasteboard-clear >/dev/null

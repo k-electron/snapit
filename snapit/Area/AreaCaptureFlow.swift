@@ -71,7 +71,7 @@ enum AreaCaptureFlow {
             lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
-            NSLog("snapit: Area Capture failed: \(error)")
+            NSLog("snapit: \(mode == .window ? "Window" : "Area") Capture failed: \(error)")
             conclude(.failed("\(error)"))
             return .failed("\(error)")
         }
@@ -134,7 +134,10 @@ enum AreaCaptureFlow {
     /// the outcome, and when no Editor opened the app the user was in gets focus back.
     private static func conclude(_ outcome: Result) {
         result = outcome
+
+        // Window Capture: lets go of the shareable-window list fetched while the overlay showed.
         WindowCaptureSources.current.release()
+
         let previous = previousApp
         previousApp = nil
         if case .opened = outcome {} else {

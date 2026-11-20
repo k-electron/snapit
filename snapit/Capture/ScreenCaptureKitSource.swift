@@ -44,20 +44,31 @@ struct ScreenCaptureKitSource: CaptureSource {
     }
 
     /// One-shot capture of what `filter` selects: native pixels, SDR, in the display's color space.
-    /// `ignoresShadows` leaves a window's shadow out (a single-window filter only).
-    static func capture(filter: SCContentFilter, ignoresShadows: Bool = false) async throws -> CapturedScreen {
+    /// `ignoresShadows` is nil for a display filter; a single-window filter passes whether the
+    /// window's shadow is left out. The scale of a window Capture is the filter's, so a mismatch
+    /// between the size asked for and the size delivered (a shadow squeezed in) shows in the log
+    /// and does not skew the scale.
+    static func capture(filter: SCContentFilter, ignoresShadows: Bool? = nil) async throws -> CapturedScreen {
         let requestedScale = Double(filter.pointPixelScale)
         let configuration = SCScreenshotConfiguration()
         // Native pixels: the content rect is in points.
         configuration.width = Int((filter.contentRect.width * requestedScale).rounded())
         configuration.height = Int((filter.contentRect.height * requestedScale).rounded())
         configuration.showsCursor = false
-        configuration.ignoreShadows = ignoresShadows
+        if let ignoresShadows { configuration.ignoreShadows = ignoresShadows }
         configuration.dynamicRange = .sdr
         configuration.displayIntent = .local
 
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw ScreenCaptureError.noImage }
+        if ignoresShadows != nil {
+            if image.width != configuration.width || image.height != configuration.height {
+                NSLog(
+                    "snapit: window image is \(image.width) x \(image.height), asked for \(configuration.width) x \(configuration.height)"
+                )
+            }
+            return CapturedScreen(image: image, scale: requestedScale)
+        }
         // The scale the Capture records is the one the pixels really have, whatever was asked for.
         let scale = filter.contentRect.width > 0 ? Double(image.width) / filter.contentRect.width : requestedScale
         return CapturedScreen(image: image, scale: scale)

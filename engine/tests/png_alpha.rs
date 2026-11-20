@@ -95,6 +95,51 @@ fn an_image_with_no_transparent_pixel_stays_an_rgb_png() {
 }
 
 #[test]
+fn padding_after_each_row_never_decides_the_colour_type() {
+    // 61 x 7 at a stride with 52 bytes of 0xEE after each row: the padding's alpha byte is not 255,
+    // and one real transparent pixel in the last row is what makes the PNG RGBA.
+    let stride = 61 * 4 + 52;
+    let opaque = |_: u32, _: u32| [10, 20, 30, 255];
+    let png = encode(
+        &image(61, 7, stride, opaque),
+        (61, 7, stride),
+        &params(SNAPIT_PNG_FAST, (61, 7)),
+    );
+    assert_eq!(color_type(&png), 2);
+    let with_hole = |x: u32, y: u32| {
+        if (x, y) == (60, 6) {
+            [0, 0, 0, 0]
+        } else {
+            [10, 20, 30, 255]
+        }
+    };
+    let png = encode(
+        &image(61, 7, stride, with_hole),
+        (61, 7, stride),
+        &params(SNAPIT_PNG_FAST, (61, 7)),
+    );
+    let (rgba, _, _, stored) = decode_rgba(&png);
+    assert_eq!(stored, 6);
+    assert_eq!(rgba[60 + 6 * 61], [0, 0, 0, 0]);
+    assert_eq!(rgba[0], [30, 20, 10, 255]);
+}
+
+#[test]
+fn un_premultiplying_rounds_half_up_and_clamps_a_colour_above_its_alpha() {
+    // c = 1 at a = 2 is 127.5: rounds to 128. c = 200 at a = 100 would be 510: clamps to 255.
+    let pixels = image(2, 1, 8, |x, _| {
+        if x == 0 {
+            [1, 1, 1, 2]
+        } else {
+            [200, 200, 200, 100]
+        }
+    });
+    let png = encode(&pixels, (2, 1, 8), &params(SNAPIT_PNG_FAST, (2, 1)));
+    let (rgba, ..) = decode_rgba(&png);
+    assert_eq!(rgba, vec![[128, 128, 128, 2], [255, 255, 255, 100]]);
+}
+
+#[test]
 fn transparent_corners_make_an_rgba_png_with_exact_alpha_and_straight_colour() {
     let pixels = window(160);
     for level in [SNAPIT_PNG_FAST, SNAPIT_PNG_BALANCED] {
