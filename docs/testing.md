@@ -34,6 +34,8 @@ the real system is replaced:
 | macOS shortcut clash check | the system's enabled symbolic hot keys | ⌘⇧3, ⌘⇧4 and ⌘⇧5, and what a run adds with `system-shortcut-fixture add` | `Shared/Edges/SystemShortcutClashes.swift` |
 | System Settings links | opens System Settings | appends the link to `<root>/system-settings-links` | `Shared/Edges/SystemSettingsLinks.swift` |
 | Shortcuts | KeyboardShortcuts (Carbon hot keys) | injected events (`press-shortcut`) | `snapit/Shortcuts/` |
+| Check for Updates' HTTP request (snapit's only network call) | one GET of GitHub's latest-release endpoint on an ephemeral session, in `GitHubReleaseEndpoint.swift`, the one file allowed to open a connection (`scripts/check-network.sh`) | a script (`update-script`) answers with a status and a body or a failure, never goes online; each request it is asked to send is logged to `<root>/update-requests` (method, address, every header); unscripted it answers as offline | `snapit/Updates/ReleaseEndpoint.swift`, `FixtureReleaseEndpoint.swift` |
+| browser (the Download button, a link in release notes) | `NSWorkspace.open` of an `https` link | appends the link to `<root>/browser-links` | `Shared/Edges/BrowserLinks.swift` |
 | color panel (the Editor's color wheel button) | `NSColorPanel.shared`, which keeps its mode and swatches in the helper's own preferences | a fixture with no window and no preferences (`editor-color-panel`) | `snapit-editor/Editor/Color/ColorPanelEdge.swift`, `FixtureColorPanel.swift` |
 | install location | `Bundle.main.bundlePath`, `statfs`, `/Applications`, `/Volumes`, `diskutil eject` | `<root>/Applications`, fake volumes below `<root>/Volumes`, a pretended bundle path, a fake eject (`<root>/install/ejected`); relaunches are real | `snapit/Install/` |
 
@@ -103,6 +105,11 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `install-location` | where the menu bar app runs from: `bundle`, `translocated`, `origin`, `on-disk-image`, `mount`, `decision` (`none`, `move`, `fix-in-place`) as `key=value` lines. Also answers in a normal run |
 | `install-check` | runs the launch check again; replies `none`, `move-screen-shown`, `fixed-in-place` or `not-approved` |
 | `install-pretend-bundle <path>`, `install-fake-volume <path> <fs> <from> <mount> ro\|rw`, `install-reset` | make this process behave as if it ran from `<path>`, give `<path>` (and below) a fake volume for `statfs`, forget both. Paths must be inside the root |
+| `update-script release <tag> <html_url> <notes> [draft\|prerelease]`, `update-script raw <status> [<body>]`, `update-script offline\|timeout`, `update-script hold on\|off` | what the fixture HTTP endpoint answers to Check for Updates (arguments are percent-encoded: notes may hold spaces and lines); `hold on` keeps a request waiting so a run sees a check in progress |
+| `update-requests` | how many requests Check for Updates has sent |
+| `update-redirect <url>` | whether the real endpoint would follow a redirect of its request to that address: `follow` or `refuse` |
+| `update-installed-version <x.y.z>\|reset` | pretend another bundle version, or read the bundle's again |
+| `update-compare <a> <b>` | the version comparison, `ReleaseVersion`, as a table check: `newer`, `same`, `older`, `invalid a` or `invalid b` |
 | `install-detect <path>` | detection with the real `statfs` and `/Volumes`, same reply as `install-location` |
 | `screen-recording-state`, `screen-recording-request`, `relaunch-snapit` | what the helper's Onboarding and Permission guide ask of the menu bar app, which alone asks macOS: where Screen Recording stands; ask afresh (after an update, reset snapit's own entry first; replies the state, then `reset-failed <why>` on a second line); relaunch (the helper quits first, so a reply may never reach the helper) |
 | `screen-recording-simulate notDetermined\|denied\|granted\|grantedStale` | puts the fake macOS where the user doing it would. `granted` is the default every other flow relies on: a flow that simulates anything else puts it back |
@@ -159,6 +166,9 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `onboarding-hide`, `onboarding-unhide`, `onboarding-close`, `onboarding-key <key code> [<modifier>,...]`, `onboarding-snapshot <png>`, `onboarding-user-guide-fixture on\|off` | minimise and restore the window (the animation stops and plays again); press the close button (the helper quits); a key as a Shortcut recorder receives it; render the view; set or clear the User Guide hook with one that writes `<root>/user-guide-opened` |
 | `guide-facts`, `guide-press`, `guide-activate`, `guide-hide`, `guide-unhide`, `guide-close`, `guide-snapshot` | the same for a Permission guide that has its own window (after an update): `guide-facts` is `window`, `title`, `activation` and the guide's lines |
 | `system-shortcut-fixture add <key code> [<modifier>,...]\|reset` | macOS's own shortcuts a Shortcut can clash with, besides ⌘⇧3, ⌘⇧4 and ⌘⇧5 |
+| `update-facts` | the update window: `window`, `title`, `activation`, `state` (`checking`, `newer`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`, `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`, one `notes-block <kind>\|<text>` line per rendered block of the release notes and one `button <id>\|<title>\|<tooltip>` line per button |
+| `update-press download\|close` | what pressing the window's button does (Download opens the release page through the browser edge and closes the window) |
+| `update-snapshot <png>` | renders the window to a PNG inside the root |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -240,7 +250,7 @@ working on one flow (flows share state, so `scripts/test.sh` always runs them al
 
 A flow is one file in `scripts/run/flows/`, named `NN-what-it-covers.sh`. `check-run.sh` starts the
 menu bar app, then sources every flow in name order (`10-` menu bar app, `20-` Screen Capture
-into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `47-` the Color picker (before the Last Capture flow and Settings, which relaunch the menu bar app), `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `80-` Move to Applications and the translocation
+into the Editor and Copy, `30-` the Editor, `35-` Editor warm-up and the helper launched on its own, `36-` the Editor's tools, `37-` Text, Highlighter, color and width, `38-` Redaction and Crop, `40-` Area Capture with Capture on release, `42-` Area Capture with the Action bar, `43-` Timed Capture (its relaunch check, that the timer is remembered, runs in a second snapit under its own root, because a relaunched snapit's test defaults cannot change a key an earlier launch stored), `44-` Window Capture, `45-` Save and drag-out, `47-` the Color picker (before the Last Capture flow and Settings, which relaunch the menu bar app), `50-` the Last Capture store and Reopen Last Capture (which quits and restarts the menu bar app), `52-` Settings (which quits and restarts the menu bar app), `56-` Check for Updates, `80-` Move to Applications and the translocation
 check, `90-` Editor helper and Quit, which must stay last). Flow `80-` quits and relaunches the
 menu bar app, so a flow after it starts with a freshly started menu bar app: `AT_REST` from `20-`
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
@@ -554,7 +564,7 @@ button) and one line in `AboutRows.all`; the view and `settings-facts` draw from
 |---|---|
 | a setting | a key and a reader in `Shared/Settings/<Name>Settings.swift` (the reader falls back to the default); a `SettingsControl` in `SettingsControls.swift`; a setter in `SettingsModel`; a row in `SettingsView`; a line in `SettingsFacts.describe()` and a case in `SettingsFacts.press` |
 | something Settings needs from the menu bar app | a `SocketCommand` in `Shared/Commands/SettingsCommands.swift` and its handler in `snapit/Settings/SettingsAppCommands.swift` (Open at Login and applying a Shortcut do this) |
-| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…; User Guide and Check for Updates… are each a `MenuSection` file and one line in `MenuModel.sections` after it (`QuitMenu` brings the separator before Quit snapit) |
+| a window of the helper that opens Settings, or a row beside it | `SettingsWindow.show()` is the one entry; the menu bar app's `SettingsMenu` section holds Settings…; User Guide and Check for Updates… are each a `MenuSection` file and one line in `MenuModel.sections` after it (`QuitMenu` brings the separator before Quit snapit). The order in `MenuModel.sections` is `SettingsMenu`, then the User Guide's section, then `CheckForUpdatesMenu`, then `QuitMenu`: a User Guide section goes between `SettingsMenu` and `CheckForUpdatesMenu`, never after it |
 
 Open at Login lives in the menu bar app (`LoginItem.current`: `SMAppService.mainApp`, or the fake
 in test mode); the helper sends `login-item-status` (and `shortcut-combos`) when Settings opens or
@@ -606,6 +616,46 @@ stores a step, relaunches the menu bar app (a real relaunch keeps the test root)
 | a Permission guide for another permission | a case in `PermissionGuideKind` (`Shared/Commands/OnboardingCommands.swift`), a model and a drawing beside the Screen Recording ones, a branch in `show-permission-guide`'s handler (`OnboardingHelperCommands.swift`), and the menu bar app asks for it with `OnboardingLauncher.showPermissionGuide(_:)` |
 | a step of Onboarding | a case in `OnboardingStep`, its words and buttons in `OnboardingModel`, its view in `OnboardingView`, its lines in `OnboardingFacts` |
 | the User Guide link's target | set `UserGuideLink.open` when the User Guide window exists; the Done step shows the link only then |
+## Check for Updates
+
+Check for Updates… (the menu, and Settings › About) is snapit's only network call. The menu bar
+app makes it; the Editor helper shows the update window and never touches a network.
+
+- **One click, one request.** `CheckForUpdatesMenu` asks the helper to show the update window
+  (`show-update-check`); the window (`UpdateWindow.showAndCheck()`, which the About row's button
+  calls too) says it is checking and sends `check-for-updates` to the menu bar app, which makes
+  the request and replies with an `UpdateAnswer` (`Shared/Updates/UpdateAnswer.swift`, the wire form
+  is in its comment). A click while a check runs joins it, in both processes. Nothing asks GitHub at
+  launch, on a timer or in the background.
+- **The mapping** from GitHub's reply to an answer is one table in `snapit/Updates/UpdateAnswers.swift`
+  (`ReleaseVersion` compares three integers, tolerates a leading `v` and rejects everything else).
+  A reply row is a case of `56-check-for-updates.sh`: add the row and the case together.
+- **The edge** is `ReleaseEndpoints.current`. Product code never builds a request: it hands a
+  `ReleaseRequest` (address, headers, timeout) to the endpoint. `GitHubReleaseEndpoint.swift` is
+  the one file that may contain `URLSession`, `URLRequest`, `NWConnection` and the like;
+  `scripts/check-network.sh` (run by `scripts/test.sh` and the scripted run) fails when any other file
+  has them, or the other ways code gets online (sockets, `AsyncImage`, HTML in an attributed string,
+  a shell tool such as curl, an `http(s)://` address outside the two files that name GitHub's, a
+  network entitlement or App Transport Security setting); when that file stops matching; when
+  `import WebKit` appears (a web view can load anything: the User Guide's file goes in the script's
+  `WEBKIT_ALLOWED` list once its navigation refuses everything but bundle file URLs); when the engine
+  uses a socket or an HTTP library; and when `Cargo.lock` or `Package.resolved` has a crate or
+  package that is not on the script's reviewed lists (a new dependency fails until someone has read it).
+  Never write those names, even in a comment, anywhere else. Flow 56 adds the runtime check:
+  `lsof -a -i` finds no internet socket in the menu bar app or the helper, whatever API would open one.
+  The real `URLSession`/CFNetwork/TLS path (footprint and idle CPU after a real check, redirects,
+  the headers the HTTP client adds itself) is covered by manual check 9 and 8 in `docs/manual-checks.md` only.
+- **The window** is `snapit-editor/Updates/`: `UpdateModel` (every word and tooltip, once),
+  `UpdateWindow` (window and view), `ReleaseNotesBlocks` (the notes' Markdown as headings, bullets and
+  paragraphs, inline Markdown applied, an image shown as its alternative text and never fetched; parsed
+  once), `UpdateHelperCommands`. Notes are cut at 300 lines and 20,000 bytes. A link in the notes and
+  the Download button open through `BrowserLinks`, which opens `https` links only. The Download button's
+  page is built from the tag (`https://github.com/k-electron/snapit/releases/tag/<tag>`); the `html_url`
+  in GitHub's reply is never used. The real request sets `User-Agent`, `Accept` and a fixed
+  `Accept-Language: en`, and follows a redirect only within `api.github.com`
+  (`ReleaseRequest.allowsRedirect`, checked with `update-redirect <url>`).
+- **Real network** (the real endpoint, a private repository answering 404, a proxy, no connection)
+  is in `docs/manual-checks.md`.
 
 ## Engine tests
 
