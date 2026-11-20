@@ -12,6 +12,7 @@ final class MenuModel {
         CaptureMenu(),
         LastCaptureMenu(),
         SettingsMenu(),
+        CheckForUpdatesMenu(),
         QuitMenu(),
     ]
 

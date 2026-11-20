@@ -19,5 +19,6 @@ struct AboutRow {
 enum AboutRows {
     static let all: [AboutRow] = [
         .version,
+        .checkForUpdates,
     ]
 }
