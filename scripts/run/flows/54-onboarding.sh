@@ -181,6 +181,9 @@ onb_press next >/dev/null
 expect_equal "Continue goes to Done" "done" "$(onb step)"
 expect_equal "reaching Done finishes Onboarding" "finished" "$(send "$APP_SOCK" "defaults-get onboardingStep")"
 expect_equal "Done is step 6" "6" "$(onb step-number)"
+onb_press back >/dev/null
+expect_equal "going back from Done does not start Onboarding over" "finished" "$(send "$APP_SOCK" "defaults-get onboardingStep")"
+onb_press next >/dev/null
 wait_until 10 onb_is try-it "Try it: press ⌃⌥⌘4"
 expect_equal "Done says what to try" "Try it: press ⌃⌥⌘4" "$(onb try-it)"
 expect_equal "the User Guide link is absent until the User Guide window sets its hook" "unavailable" "$(onb user-guide)"
