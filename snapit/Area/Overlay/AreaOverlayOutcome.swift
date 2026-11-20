@@ -11,6 +11,8 @@ enum AreaOverlayMode: Equatable {
 enum AreaOverlayOutcome: Equatable {
     /// Capture this Area now.
     case capture(AreaSelection)
+    /// Capture this Area after a countdown of this many seconds (Timed Capture).
+    case timed(AreaSelection, seconds: Int)
     /// Capture this window, and only it (the window overlay's click).
     case window(OnScreenWindow)
     /// Esc, the Cancel button, or the displays changed: nothing is captured.

@@ -5,6 +5,8 @@
 enum ActionBarRegistry {
     static let all: [any ActionBarItem] = [
         CaptureActionBarItem(),
+        TimerSliderActionBarItem(),
+        TimedCaptureActionBarItem(),
         CancelActionBarItem(),
     ].sorted { $0.order < $1.order }
 
