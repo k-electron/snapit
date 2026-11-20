@@ -5,6 +5,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var commandServer: CommandSocketServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Whether macOS has snapit granted Screen Recording is recorded now: it can use the grant only from
+        // its next launch on.
+        _ = ScreenRecordingPermission.current
         let registry = SocketCommandRegistry()
         registry.registerBuiltinCommands()
         registry.registerAppCommands()
@@ -24,8 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let outcome = await InstallCheck.runAtLaunch()
                 LoginItemDefault.applyIfEligible()
                 // Onboarding (or the update's Permission guide) only once this copy is where it
-                // belongs: a Move to Applications screen comes first and the relaunched copy follows.
-                if outcome == .none { await OnboardingLauncher.runAtLaunch() }
+                // belongs: a Move to Applications screen, or a relaunch in place, comes first and the
+                // relaunched copy follows. A copy macOS has not approved yet is left where it is.
+                if outcome != .moveScreenShown && outcome != .fixedInPlace { await OnboardingLauncher.runAtLaunch() }
             }
         } catch SocketError.alreadyRunning {
             // Another snapit owns the menu bar; this copy has nothing to do.
@@ -58,10 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The Editor helper never outlives the menu bar app. The process is ending, so a short
         // blocking send is fine here. It goes first: the helper stops writing the Last Capture's
         // state before it answers, so nothing recreates a file after the removal below.
-        // Only a helper this copy started: a relaunched copy may be serving a helper of its own on that
-        // socket by now.
-        let owner = CommandSocketClient.queryBeforeExit(.helperOwner, to: AppIdentity.editorSocketPath).flatMap { Int32($0) }
-        if owner == nil || owner == getpid() { CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath) }
+        // Only a helper that is this copy's: one it started, or one whose owner is gone (a crashed copy's)
+        // that this copy has been using. A relaunched copy may be serving a helper of its own on that socket.
+        if HelperOwnership.isOurs(CommandSocketClient.queryBeforeExit(.helperOwner, to: AppIdentity.editorSocketPath)) {
+            CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
+        }
         AppPasteboard.releaseIfPrivate()
         CaptureHandoff.removeAll()
         ExportFiles.removeAll()

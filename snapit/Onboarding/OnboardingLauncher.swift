@@ -32,8 +32,8 @@ enum OnboardingLauncher {
         await HelperWindowLauncher.show(.showOnboarding)
     }
 
-    /// Shows one Permission guide on its own: after an update, and (a later ticket) when a Shortcut
-    /// is pressed without the permission.
+    /// Shows one Permission guide on its own: after an update, and when a Shortcut is pressed
+    /// without the permission.
     static func showPermissionGuide(_ kind: PermissionGuideKind) async {
         await HelperWindowLauncher.show(.showPermissionGuide, arguments: [kind.rawValue])
     }

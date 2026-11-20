@@ -49,10 +49,10 @@ struct PermissionGuideView: View {
     }
 
     @ViewBuilder private var picture: some View {
-        if model.isGranted {
-            Image(systemName: "checkmark.circle.fill")
+        if model.isGranted || model.needsRelaunch {
+            Image(systemName: model.isGranted ? "checkmark.circle.fill" : "arrow.clockwise.circle.fill")
                 .font(.system(size: 64))
-                .foregroundStyle(.green)
+                .foregroundStyle(model.isGranted ? Color.green : Color.accentColor)
                 .frame(width: GuideTimeline.size.width + 24, height: GuideTimeline.size.height + 24)
                 .chromeGlass(RoundedRectangle(cornerRadius: 22, style: .continuous))
         } else {

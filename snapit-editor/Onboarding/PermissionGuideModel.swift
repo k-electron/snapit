@@ -17,8 +17,8 @@ struct HelperButton {
 /// first appears), never on a timer: after macOS's prompt or System Settings, coming back to
 /// snapit's window is the moment the answer can have changed.
 ///
-/// The guide tells people to turn snapit on, never to toggle an existing switch: after an update
-/// that switch looks on and does nothing, so snapit clears its own old entry first.
+/// The guide tells people to turn snapit on, never to toggle an existing switch: after an update that
+/// switch looks on and does nothing, so snapit clears its own old entry first.
 @MainActor
 @Observable
 final class PermissionGuideModel {
@@ -26,7 +26,7 @@ final class PermissionGuideModel {
     enum Variant: String {
         /// macOS's own message, then System Settings.
         case prompt
-        /// Only System Settings: macOS does not ask again after "Don't Allow".
+        /// Only System Settings: macOS's message is over, or was never to come.
         case systemSettings
     }
 
@@ -36,8 +36,11 @@ final class PermissionGuideModel {
     /// Where Screen Recording stood at the last look; nil before the first answer.
     private(set) var state: ScreenRecordingState?
     private(set) var variant = Variant.prompt
-    /// True when snapit found its Screen Recording gone after it had been granted (an update).
+    /// True when snapit found its Screen Recording gone after it was granted to another build (an
+    /// update), and cleared its own old entry.
     private(set) var isUpdate = false
+    /// True when snapit was granted Screen Recording and the user switched it off for this build.
+    private(set) var turnedOff = false
     private(set) var resetFailure: String?
     private(set) var relaunchError: String?
     /// How many times the guide looked at the permission.
@@ -55,6 +58,8 @@ final class PermissionGuideModel {
     init(kind: PermissionGuideKind = .screenRecording) { self.kind = kind }
 
     var isGranted: Bool { state == .granted }
+    /// Granted, but macOS applies it from snapit's next launch on.
+    var needsRelaunch: Bool { state == .grantedNeedsRelaunch }
 
     // MARK: Looking at the permission
 
@@ -66,22 +71,27 @@ final class PermissionGuideModel {
         defer { isChecking = false }
         needsCheck = false
         checks += 1
-        guard let reply = try? await CommandSocketClient.send(.screenRecordingState, to: AppIdentity.appSocketPath),
-            let current = ScreenRecordingState(rawValue: reply)
-        else {
+        guard let reply = try? await CommandSocketClient.send(.screenRecordingState, to: AppIdentity.appSocketPath) else {
             needsCheck = true
             return
         }
+        let lines = reply.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        guard let current = lines.first.flatMap(ScreenRecordingState.init(rawValue:)) else {
+            needsCheck = true
+            return
+        }
+        turnedOff = lines.dropFirst().contains("turned-off")
         if !hasAsked {
-            hasAsked = true
-            isUpdate = current == .grantedStale
             switch current {
             case .notDetermined, .grantedStale:
-                await ask()
+                // Only a reply that arrived counts as asked: otherwise the next look asks again.
+                if await ask(after: current) { hasAsked = true } else { needsCheck = true }
             case .denied:
+                hasAsked = true
                 state = current
                 variant = .systemSettings
-            case .granted:
+            case .granted, .grantedNeedsRelaunch:
+                hasAsked = true
                 state = current
             }
         } else {
@@ -96,15 +106,19 @@ final class PermissionGuideModel {
     func windowResigned() { needsCheck = true }
 
     /// Asks macOS afresh through the menu bar app. After an update it first clears snapit's own old
-    /// entry.
-    private func ask() async {
+    /// entry. Returns whether the menu bar app answered.
+    private func ask(after previous: ScreenRecordingState) async -> Bool {
         guard
             let reply = try? await CommandSocketClient.send(
-                .screenRecordingRequest, to: AppIdentity.appSocketPath, timeoutSeconds: 20)
-        else { return }
+                .screenRecordingRequest, to: AppIdentity.appSocketPath, timeoutSeconds: 20),
+            let answered = reply.split(separator: "\n", omittingEmptySubsequences: true).first
+                .flatMap({ ScreenRecordingState(rawValue: String($0)) })
+        else { return false }
         let lines = reply.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-        state = lines.first.flatMap(ScreenRecordingState.init(rawValue:))
+        state = answered
+        isUpdate = previous == .grantedStale
         resetFailure = lines.dropFirst().first { $0.hasPrefix("reset-failed ") }.map { String($0.dropFirst("reset-failed ".count)) }
+        return true
     }
 
     // MARK: Buttons
@@ -130,11 +144,12 @@ final class PermissionGuideModel {
         tooltip: "Open System Settings at Privacy & Security › Screen Recording")
     let relaunchButton = HelperButton(
         id: "relaunch", title: "Relaunch snapit",
-        tooltip: "Relaunch snapit, if you turned Screen Recording on and chose Later")
+        tooltip: "Relaunch snapit, so it can use Screen Recording once you turned it on")
     let replayButton = HelperButton(id: "replay", title: "Replay", tooltip: "Play the animation again")
 
     var buttons: [HelperButton] {
         guard let state, state != .granted else { return [] }
+        if state == .grantedNeedsRelaunch { return [relaunchButton] }
         var list = [openSystemSettingsButton]
         if variant == .systemSettings || resetFailure != nil { list.append(relaunchButton) }
         if animation.state == .stopped { list.append(replayButton) }
@@ -145,6 +160,7 @@ final class PermissionGuideModel {
         switch state {
         case nil: "Screen Recording"
         case .granted: "Screen Recording is on"
+        case .grantedNeedsRelaunch: "Relaunch snapit to start using Screen Recording"
         default: isUpdate ? "snapit needs Screen Recording turned back on" : "Turn on Screen Recording for snapit"
         }
     }
@@ -152,8 +168,14 @@ final class PermissionGuideModel {
     var message: String {
         guard let state else { return "Checking Screen Recording…" }
         if state == .granted { return "snapit can take Captures." }
+        if state == .grantedNeedsRelaunch {
+            return "Screen Recording is on for snapit, and macOS lets snapit use it from its next launch on. Choose Relaunch snapit."
+        }
         if let failure = resetFailure {
-            return "snapit could not clear its old Screen Recording entry (\(failure)). Open System Settings, select snapit in the Screen Recording list, press − to remove it, then choose Relaunch snapit."
+            return "snapit could not clear its old Screen Recording entry (\(failure)). Open System Settings, select snapit in the Screen Recording list, press − to remove it, then choose Relaunch snapit and allow Screen Recording when macOS asks."
+        }
+        if turnedOff {
+            return "Screen Recording is off for snapit. Turn snapit on in System Settings, then choose Quit & Reopen."
         }
         let update = isUpdate ? "Each update needs Screen Recording again. snapit cleared its old entry and asked macOS afresh. " : ""
         switch variant {
@@ -163,7 +185,6 @@ final class PermissionGuideModel {
                 + "In macOS's message choose Open System Settings, then turn snapit on. macOS then offers Quit & Reopen: choose it."
         case .systemSettings:
             return update
-                + (isUpdate ? "" : "macOS will not ask again. ")
                 + "Open System Settings, turn snapit on in the Screen Recording list, then choose Quit & Reopen. If you chose Later, use Relaunch snapit."
         }
     }
@@ -174,6 +195,7 @@ final class PermissionGuideModel {
             "guide-state=\(state?.rawValue ?? "unknown")",
             "guide-variant=\(variant.rawValue)",
             "guide-update=\(isUpdate ? "yes" : "no")",
+            "guide-turned-off=\(turnedOff ? "yes" : "no")",
             "guide-checks=\(checks)",
             "guide-animation=\(animation.state.rawValue)",
             "guide-loops=\(GuideAnimation.loops)",
@@ -193,7 +215,7 @@ final class PermissionGuideModel {
     /// The animation plays while the guide is on screen and the permission is still missing, and is
     /// cancelled the moment it is not.
     private func updateAnimation() {
-        let wanted = isShown && isVisible && state != nil && state != .granted
+        let wanted = isShown && isVisible && state != nil && state != .granted && state != .grantedNeedsRelaunch
         if wanted {
             if animation.state == .idle { animation.play() }
         } else {

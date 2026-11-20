@@ -1,9 +1,14 @@
 import Foundation
 
 nonisolated extension SocketCommand {
-    /// `screen-recording-simulate notDetermined|denied|granted|grantedStale`: puts the fake macOS
-    /// where the user doing it would. Test mode only.
+    /// `screen-recording-simulate notDetermined|denied|turnedOff|revoked|granted|grantedStale`: puts the fake
+    /// macOS where the user doing it would (`turnedOff`: it was granted to this build and the user
+    /// switched it off; `grantedStale`: it was granted to another build; `revoked`: only the grant goes,
+    /// what snapit remembers stays). Test mode only.
     static let screenRecordingSimulate = SocketCommand("screen-recording-simulate")
+    /// `screen-recording-build <id>`: makes this copy another build to the fake macOS, as an update
+    /// does. Test mode only.
+    static let screenRecordingBuild = SocketCommand("screen-recording-build")
     /// `state=<state>`, `requests=<n>` (times snapit asked macOS) and `resets=<n>` (times it reset
     /// its own entry), one per line. Test mode only.
     static let screenRecordingFacts = SocketCommand("screen-recording-facts")
@@ -17,13 +22,14 @@ nonisolated extension SocketCommand {
 extension SocketCommandRegistry {
     /// What the helper's Onboarding and Permission guide ask of the menu bar app.
     func registerOnboardingAppCommands() {
-        register(.screenRecordingState) { _ in ScreenRecordingPermission.current.state.rawValue }
+        register(.screenRecordingState) { _ in ScreenRecordingAsk.stateReply() }
         register(.screenRecordingRequest) { _ in await ScreenRecordingAsk.run().reply }
         register(.relaunchSnapit) { _ in await SnapitRelaunch.run() }
         guard TestMode.isActive else { return }
         register(.onboardingLaunchCheck) { _ in await OnboardingLauncher.runAtLaunch().rawValue }
         register(.screenRecordingSimulate) { request in
             let defaults = AppDefaults.store
+            let build = FixtureScreenRecording.buildID()
             switch request.arguments.first {
             case "granted":
                 FixtureScreenRecording.setGranted(true)
@@ -32,15 +38,28 @@ extension SocketCommandRegistry {
                 ScreenRecordingPermission.current.forgetHistory()
             case "denied":
                 FixtureScreenRecording.setGranted(false)
-                defaults.removeObject(forKey: DerivedPermission.grantedBeforeKey)
+                ScreenRecordingPermission.current.forgetHistory()
                 defaults.set(true, forKey: DerivedPermission.requestedKey)
+            case "revoked":
+                FixtureScreenRecording.setGranted(false)
+            case "turnedOff":
+                FixtureScreenRecording.setGranted(false)
+                defaults.set(true, forKey: DerivedPermission.grantedBeforeKey)
+                defaults.set(build, forKey: DerivedPermission.grantedBuildKey)
+                defaults.removeObject(forKey: DerivedPermission.requestedKey)
             case "grantedStale":
                 FixtureScreenRecording.setGranted(false)
                 defaults.set(true, forKey: DerivedPermission.grantedBeforeKey)
+                defaults.set("previous-" + build, forKey: DerivedPermission.grantedBuildKey)
                 defaults.removeObject(forKey: DerivedPermission.requestedKey)
             default:
-                return "error screen-recording-simulate notDetermined|denied|granted|grantedStale"
+                return "error screen-recording-simulate notDetermined|denied|turnedOff|revoked|granted|grantedStale"
             }
+            return "ok"
+        }
+        register(.screenRecordingBuild) { request in
+            guard let id = request.arguments.first else { return "error screen-recording-build <id>" }
+            FixtureScreenRecording.setBuildID(id)
             return "ok"
         }
         register(.screenRecordingFacts) { _ in
@@ -70,7 +89,10 @@ extension SocketCommandRegistry {
 enum SnapitRelaunch {
     static func run() async -> String {
         // The Editor helper goes first, so the relaunched copy starts a helper of its own (it shows
-        // Onboarding again at the step it was on) instead of meeting this one on its way out.
+        // Onboarding again at the step it was on) instead of meeting this one on its way out. Its `quit`
+        // runs `QuitPreparation`. The Quit prompt for Editors with unexported edits belongs here as well:
+        // the ticket that builds it (#28) puts its check before this line, so a relaunch asks as Quit
+        // snapit does. Until then a relaunch closes open Editors without asking.
         await HelperWindowLauncher.quitRunningHelper()
         SocketOwnership.release()
         do {

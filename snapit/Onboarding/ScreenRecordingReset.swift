@@ -33,8 +33,15 @@ struct TccutilReset: ScreenRecordingReset {
             } catch {
                 throw ScreenRecordingResetError(description: "tccutil could not run: \(error.localizedDescription)")
             }
+            // A tccutil that hangs is ended after a few seconds, and reported like any other failure.
+            let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: watchdog)
             let message = errors.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
+            watchdog.cancel()
+            guard process.terminationReason == .exit else {
+                throw ScreenRecordingResetError(description: "tccutil did not finish in time")
+            }
             guard process.terminationStatus == 0 else {
                 let text = String(decoding: message, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                 throw ScreenRecordingResetError(
