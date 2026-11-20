@@ -361,8 +361,8 @@ no full-screen backing store exists.
 
 The scripted run holds the bar to its budget: flow 42 takes the footprint before the first bar of the
 run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
-at most 2.5 MB higher (`BAR_FIRST_USE_MB_MAX`, set in `scripts/check-run.sh`; measured +1.6 to +1.8 MB
-after it is cancelled and +1.8 to +2.1 MB after five Captures, nearly all of it the glass, the tiles using the
+at most 2.5 MB higher (`BAR_FIRST_USE_MB_MAX`, set in `scripts/check-run.sh`; measured +0.7 to +1.8 MB
+after it is cancelled and +0.9 to +2.1 MB after five Captures (it varies run to run), nearly all of it the glass, the tiles using the
 overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
 was. From flow 42 on the process holds that glass for good, so what flows 42, 45, 50 and 80 compare
 with flow 20's resting footprint gets the same 2.5 MB on top (`FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX`, 7.5 MB
