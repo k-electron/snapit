@@ -2,8 +2,9 @@ import AppKit
 
 nonisolated extension SocketCommand {
     /// `editor-mouse <N> down|drag|up <x> <y>`: a pointer event on Editor N's canvas at a point of
-    /// the Capture (image points, origin at the top left). The event goes through the canvas's
-    /// own handlers, so the zoom mapping and the active tool are exercised. Test mode only.
+    /// the Capture (image points, origin at the top left). The point is mapped through the canvas's
+    /// layers (where the Annotation layer really is on screen), and the event goes through the
+    /// window's `sendEvent`, as a click does. Test mode only.
     static let editorMouse = SocketCommand("editor-mouse")
     /// `editor-drag <N> <x1> <y1> <x2> <y2>`: press, drag in steps, release. Test mode only.
     static let editorDrag = SocketCommand("editor-drag")
@@ -18,9 +19,28 @@ nonisolated extension SocketCommand {
     /// `editor-document <N>`: the Annotations (`annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB>
     /// <width> outline|solid`), the selection, the Undo and Redo steps and the revision. Test mode only.
     static let editorDocument = SocketCommand("editor-document")
-    /// `editor-first-click <N>`: one line per control host in the window, `<name> yes|no`, whether
-    /// the first click on a background Editor reaches it. Test mode only.
-    static let editorFirstClick = SocketCommand("editor-first-click")
+    /// `editor-controls <N>`: one line per control in Editor N's toolbars, `control <tooltip> <x> <y>`:
+    /// its tooltip and its centre in window coordinates, found through the accessibility tree.
+    /// Test mode only.
+    static let editorControls = SocketCommand("editor-controls")
+    /// `editor-background <N>`: makes another Editor's window the key window, so Editor N is a
+    /// background Editor. Replies `ok key=yes|no` (whether N is still key). Test mode only.
+    static let editorBackground = SocketCommand("editor-background")
+    /// `editor-click <N> tool <id>`, `item <id>` or `canvas <x> <y>`: a left click (press and release,
+    /// through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture.
+    /// Replies `ok key-before=yes|no key-after=yes|no`. Test mode only.
+    static let editorClick = SocketCommand("editor-click")
+    /// `editor-preview <N>`: renders the canvas's own layers (the Capture and the Annotations, no
+    /// selection) at the Capture's pixel size with Core Animation, writes the PNG into the run's
+    /// `probe` folder and replies `ok <path>`. The run compares it with the Export. Test mode only.
+    static let editorPreview = SocketCommand("editor-preview")
+    /// `editor-enabled <N> <item id>`: `yes` or `no`, whether the toolbar item is enabled now. Test mode only.
+    static let editorEnabled = SocketCommand("editor-enabled")
+    /// `editor-inject-effect <N> <x1> <y1> <x2> <y2>`: adds an Annotation of a test kind that Export
+    /// does not draw in the Annotations stage (as Redaction will not), a solid green box, at the end of
+    /// the document. Checks that such kinds lie beneath the others in the canvas and in hit testing.
+    /// Test mode only.
+    static let editorInjectEffect = SocketCommand("editor-inject-effect")
     /// `editor-menu-keys`: one line per item of the helper's Edit menu, `<title> key=<hex codes> modifiers=<mask>`:
     /// the key equivalent the menu shows for it. Test mode only.
     static let editorMenuKeys = SocketCommand("editor-menu-keys")
@@ -126,15 +146,82 @@ extension SocketCommandRegistry {
                 return "\(item.title) key=\(codes.isEmpty ? "none" : codes) modifiers=\(item.keyEquivalentModifierMask.rawValue)"
             }.joined(separator: "\n")
         }
-        register(.editorFirstClick) { request in
-            guard let session = Self.session(request.arguments), let content = session.window?.contentView
+        register(.editorEnabled) { request in
+            guard let session = Self.session(request.arguments), request.arguments.count == 2,
+                let item = ToolbarRegistry.item(id: request.arguments[1])
+            else { return "error editor-enabled <N> <item id>" }
+            return item.isEnabled(in: session) ? "yes" : "no"
+        }
+        register(.editorInjectEffect) { request in
+            let numbers = request.arguments.dropFirst().compactMap(Double.init)
+            guard let session = Self.session(request.arguments), let document = session.document, numbers.count == 4
+            else { return "error editor-inject-effect <N> <x1> <y1> <x2> <y2>" }
+            if AnnotationKinds.testKinds.isEmpty { AnnotationKinds.testKinds = [TestEffectAnnotationKind()] }
+            document.edit { history in
+                let id = history.makeID()
+                history.change {
+                    $0.annotations.append(
+                        Annotation(
+                            id: id, kind: TestEffectAnnotationKind.kindID, start: CGPoint(x: numbers[0], y: numbers[1]),
+                            end: CGPoint(x: numbers[2], y: numbers[3]), style: AnnotationStyle()))
+                }
+            }
+            return "ok"
+        }
+        register(.editorControls) { request in
+            guard let session = Self.session(request.arguments), let window = session.window
             else { return "error no Editor \(request.arguments.first ?? "")" }
-            return content.subviews.map { view in
-                let name = String(describing: type(of: view)).split(separator: "<").first.map(String.init) ?? ""
-                let content = String(describing: type(of: view)).split(separator: "<").dropFirst().first
-                    .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ">")) } ?? ""
-                return "\(name)\(content.isEmpty ? "" : " " + content) \(view.acceptsFirstMouse(for: nil) ? "yes" : "no")"
-            }.joined(separator: "\n")
+            return Self.controls(in: window).map { "control \($0.tooltip) \(Int($0.center.x)) \(Int($0.center.y))" }
+                .joined(separator: "\n")
+        }
+        register(.editorBackground) { request in
+            guard let session = Self.session(request.arguments), let window = session.window
+            else { return "error no Editor \(request.arguments.first ?? "")" }
+            if let other = EditorSessions.shared.sessions.values.first(where: { $0 !== session })?.window {
+                other.makeKeyAndOrderFront(nil)
+            }
+            return "ok key=\(window.isKeyWindow ? "yes" : "no")"
+        }
+        register(.editorClick) { request in
+            let arguments = request.arguments
+            guard let session = Self.session(arguments), let window = session.window, arguments.count >= 3 else {
+                return "error editor-click <N> tool <id> | item <id> | canvas <x> <y>"
+            }
+            let target: CGPoint
+            switch arguments[1] {
+            case "tool", "item":
+                let tooltip = arguments[1] == "tool"
+                    ? ToolRegistry.tool(id: arguments[2])?.tooltip : ToolbarRegistry.item(id: arguments[2])?.tooltip
+                guard let tooltip else { return "error no \(arguments[1]) \(arguments[2])" }
+                guard let control = Self.controls(in: window).first(where: { $0.tooltip == tooltip }) else {
+                    return "error no control with the tooltip \(tooltip)"
+                }
+                target = control.center
+            case "canvas":
+                guard arguments.count == 4, let x = Double(arguments[2]), let y = Double(arguments[3]),
+                    let point = Self.windowPoint(forImagePoint: CGPoint(x: x, y: y), in: session)
+                else { return "error editor-click <N> canvas <x> <y>" }
+                target = point
+            default:
+                return "error unknown target \(arguments[1])"
+            }
+            let before = window.isKeyWindow
+            Self.deliver(.down, at: target, in: window)
+            Self.deliver(.up, at: target, in: window)
+            return "ok key-before=\(before ? "yes" : "no") key-after=\(window.isKeyWindow ? "yes" : "no")"
+        }
+        register(.editorPreview) { request in
+            guard let session = Self.session(request.arguments), let document = session.document,
+                let canvas = session.canvas, let folder = TestMode.folder("probe")
+            else { return "error editor-preview <N>" }
+            do {
+                let png = try Self.renderPreview(of: canvas, capture: document.capture)
+                let url = folder.appendingPathComponent("preview.png")
+                try png.write(to: url)
+                return "ok \(url.path)"
+            } catch {
+                return "error \(error)"
+            }
         }
     }
 
@@ -153,10 +240,17 @@ extension SocketCommandRegistry {
         arguments.first.flatMap(Int.init).flatMap { EditorSessions.shared.session(captureNumber: $0) }
     }
 
-    /// Hands the canvas the pointer event for a point of the Capture, as AppKit would on a click.
-    private static func pointer(_ phase: Phase, at imagePoint: CGPoint, in session: EditorSession) -> Bool {
-        guard let canvas = session.canvas, let window = session.window else { return false }
-        let inWindow = canvas.convert(canvas.viewPoint(fromImagePoint: imagePoint), to: nil)
+    /// Where a point of the Capture is in the window, found by asking the layer tree (the
+    /// Annotation layer's own coordinates, flipped and scaled by the canvas) rather than the
+    /// canvas's own arithmetic.
+    private static func windowPoint(forImagePoint imagePoint: CGPoint, in session: EditorSession) -> CGPoint? {
+        guard let canvas = session.canvas, let root = canvas.layer else { return nil }
+        let inView = root.convert(imagePoint, from: canvas.annotationLayer)
+        return canvas.convert(inView, to: nil)
+    }
+
+    /// Hands the window a mouse event at a point of the window, as AppKit would on a click.
+    private static func deliver(_ phase: Phase, at windowPoint: CGPoint, in window: NSWindow) {
         let type: NSEvent.EventType = switch phase {
         case .down: .leftMouseDown
         case .drag: .leftMouseDragged
@@ -164,16 +258,45 @@ extension SocketCommandRegistry {
         }
         guard
             let event = NSEvent.mouseEvent(
-                with: type, location: inWindow, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                with: type, location: windowPoint, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
                 pressure: phase == .up ? 0 : 1)
-        else { return false }
-        switch phase {
-        case .down: canvas.mouseDown(with: event)
-        case .drag: canvas.mouseDragged(with: event)
-        case .up: canvas.mouseUp(with: event)
-        }
+        else { return }
+        window.sendEvent(event)
+    }
+
+    private static func pointer(_ phase: Phase, at imagePoint: CGPoint, in session: EditorSession) -> Bool {
+        guard let window = session.window, let point = windowPoint(forImagePoint: imagePoint, in: session) else { return false }
+        deliver(phase, at: point, in: window)
         return true
+    }
+
+    /// The controls of the window's toolbars: tooltip and centre in window coordinates, from the
+    /// marker views test mode puts behind each control (`ControlMarker`).
+    private static func controls(in window: NSWindow) -> [(tooltip: String, center: CGPoint)] {
+        var found: [(tooltip: String, center: CGPoint)] = []
+        func visit(_ view: NSView) {
+            if let marker = view as? ControlMarkerView {
+                let frame = marker.convert(marker.bounds, to: nil)
+                found.append((marker.tooltip, CGPoint(x: frame.midX, y: frame.midY)))
+            }
+            for child in view.subviews { visit(child) }
+        }
+        if let content = window.contentView { visit(content) }
+        return found
+    }
+
+    /// The canvas's layers rendered at the Capture's pixel size, as a PNG in the Capture's color space.
+    private static func renderPreview(of canvas: CanvasView, capture: OpenedCapture) throws -> Data {
+        let width = capture.info.width, height = capture.info.height
+        let target = try capture.pixels.makeEmptyBuffer(width: width, height: height)
+        try target.withCGContext { context in
+            context.scaleBy(x: capture.info.scale, y: capture.info.scale)
+            canvas.selectionLayer.isHidden = true
+            canvas.contentLayer.render(in: context)
+            canvas.selectionLayer.isHidden = false
+        }
+        return try target.encodePNG(level: .fast, dpi: capture.info.dpi)
     }
 
     private static func keyEvent(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags, window: NSWindow) -> NSEvent? {
@@ -192,5 +315,17 @@ extension SocketCommandRegistry {
         }
         window.sendEvent(event)
         return true
+    }
+}
+
+/// A kind that, like Redaction, is not drawn by `AnnotationStage`: a solid green box in the preview.
+nonisolated struct TestEffectAnnotationKind: AnnotationKind {
+    static let kindID = AnnotationKindID("test-effect")
+    let id = TestEffectAnnotationKind.kindID
+    let drawnByAnnotationStage = false
+
+    func paint(for annotation: Annotation) -> AnnotationPaint {
+        AnnotationPaint(
+            path: CGPath(rect: annotation.box, transform: nil), fill: CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
     }
 }

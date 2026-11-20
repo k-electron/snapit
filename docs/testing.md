@@ -84,12 +84,17 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-toolbar <N>` | one line per tool (`tool <id> <order> <tooltip>`) and toolbar item (`item <id> <slot> <tooltip>`) |
 | `export-stages` | the Export pipeline's steps in the order they run |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
-| `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a pointer event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The event goes through the canvas's own handlers, so the zoom mapping and the active tool are exercised |
+| `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a mouse event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The point is placed by asking the canvas's layer tree where it is, and the event goes through the window's `sendEvent`, as a click does |
 | `editor-keystroke <N> undo\|redo\|delete\|<character>` | ⌘Z, ⇧⌘Z, ⌫ or a plain key (a tool's key) as the window receives it |
 | `editor-style <N> fill outline\|solid`, `width <points>`, `color <RRGGBB>` | what the style controls do: the selected Annotation and the next ones, remembered through `AppDefaults.store` |
-| `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=` |
+| `editor-document <N>` | `annotation <id> <kind> <x1> <y1> <x2> <y2> <RRGGBB> <width> outline\|solid` per Annotation, then `selected=`, `undo-steps=`, `redo-steps=`, `revision=`, `tool=`, `zoom=`. For setup and for the zoom precondition; assertions are on pixels and on which items are enabled |
 | `editor-menu-keys` | the key equivalent each Edit menu item shows: `<title> key=<hex codes> modifiers=<mask>` |
-| `editor-first-click <N>` | one line per control host in the window, `<name> yes\|no`: whether the first click on a background Editor reaches it |
+| `editor-enabled <N> <item id>` | `yes` or `no`: whether a toolbar item is enabled (Delete Annotation is enabled exactly when something is selected) |
+| `editor-controls <N>` | one line per toolbar control, `control <tooltip> <x> <y>`: its centre in window coordinates. Test mode puts an invisible marker view behind each control (`ControlMarker`) |
+| `editor-background <N>` | makes another Editor's window key, so Editor N is a background Editor; replies `ok key=yes\|no` |
+| `editor-click <N> tool <id>`, `item <id>`, `canvas <x> <y>` | a click (press and release through the window's `sendEvent`) on a rail button, a toolbar item or a point of the Capture. With `editor-background` first, it is the first click on a background Editor: the window refuses it for Delete Capture and accepts it everywhere else |
+| `editor-preview <N>` | renders the canvas's own layers (no selection) at the Capture's pixel size, writes the PNG into the run's `probe` folder and replies `ok <path>`; `png-inspect compare` sets it against the Export |
+| `editor-inject-effect <N> <x1> <y1> <x2> <y2>` | adds an Annotation of a test kind that Export's Annotations stage does not draw (as Redaction will not), to check it lies beneath the others in the canvas and in hit testing |
 | `move-screen-facts` | the "Move snapit to Applications" window: `window`, `title`, `state` (`ready`, `moving`, `failed`), `reason`, `replaces`, `message`, `activation`, and one `button <id>\|<title>\|<tooltip>` line per button |
 | `move-screen-press move\|later` | presses a button of that window; `move` replies with the menu bar app's reply (`ok` or `error <why>`) |
 
@@ -138,9 +143,10 @@ versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variab
 `EDITOR_SOCK`, `RUN_ROOT`, `APP_PID`, `INSPECT` (the `png-inspect` tool, which also lists a
 process's windows: `png-inspect windows <pid>`, reads one pixel: `png-inspect pixel <file> <x> <y>`, and
 compares a PNG with the fixture: `png-inspect diff-fixture <file> <w> <h> [<x0> <y0> <x1> <y1>]` prints how
-many pixels changed, their bounding box and how many lie inside and outside a rectangle). A flow that draws in
-the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`,
-`fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
+many pixels changed, their bounding box and how many lie inside and outside a rectangle, and compares two
+PNGs: `png-inspect compare <a> <b>`). A flow that draws in
+the Editor sources `scripts/run/editor-tools.sh` (`drag`, `click`, `keystroke`, `style`, `export_png`, `preview_png`,
+`click_on`, `expect_enabled`, `fixture_diff`, `fixture_pixel`, ...; `36-editor-tools.sh` is the model).
 
 1. Pick the fixture: `send "$APP_SOCK" "fixture-display 2 301 187"`.
 2. Drive the app through a command, never the real system. A Capture opens an Editor in the helper:
@@ -219,14 +225,20 @@ through `EditorDocument.edit`, which tells the canvas. A field added to a stored
 with `decodeIfPresent` and a default (as `AnnotationStyle` does), so what an older snapit stored
 still opens.
 
+Selection, the style the next Annotation gets and the gesture in progress live on the `EditorSession`;
+`toolbarState` is what the toolbar watches, and it changes only when a gesture starts or ends, never on
+a pointer move. A kind's preview layer is made and updated with an `AnnotationRenderContext` (the
+Capture's read-only pixels, the scale and the zoom), so a kind that previews from the Capture (Redaction,
+through the engine) needs no other hook. `AnnotationKinds.paintOrder` is the order Export paints and the
+canvas layers and hit testing follow: kinds with `drawnByAnnotationStage` false (Redaction) beneath all
+the others.
+
 A kind's `paint(for:)` (path, fill, stroke) feeds both the canvas's `CAShapeLayer` and the Export's
 Core Graphics drawing, so the preview is the Export. Hit tests are exact (the inside of a filled
 Annotation, the stroke of an outline). `AnnotationStage` draws every Annotation whose kind has
 `drawnByAnnotationStage` true, in document order, onto the Export's owned buffer; a stage of another
 feature filters `job.annotations` by `kind` (Redaction's `RedactionStage` takes its own kind and
-sets `drawnByAnnotationStage` false). Selection, the style the next Annotation gets and the gesture
-in progress live on the `EditorSession` (`EditorSession+Annotations.swift`), never in a tool: tools
-are shared by every open Editor. The Annotation color, width and fill used last are remembered in
+sets `drawnByAnnotationStage` false). Tools are shared by every open Editor, so their state (`EditorSession+Annotations.swift`) never lives in a tool. The Annotation color, width and fill used last are remembered in
 `AnnotationSettings` (`annotationColor` as `RRGGBB`, `annotationWidth`, `annotationFilled`).
 
 ## Adding a Shortcut

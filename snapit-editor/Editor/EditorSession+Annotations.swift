@@ -11,13 +11,22 @@ enum AnnotationGesture {
     case resizing(original: Annotation, handle: Int, grab: CGSize)
 }
 
+/// What the toolbar needs to know about the Annotations (see `EditorSession.toolbarState`).
+struct AnnotationToolbarState: Equatable {
+    var canUndo = false
+    var canRedo = false
+    var canDelete = false
+    /// Whether the selected Annotation comes as an outline or a solid fill; nil with no selection.
+    var selectionSupportsFill: Bool?
+    /// The selected Annotation's fill is solid.
+    var selectionFilled = false
+}
+
 /// The Annotation actions: drawing, selecting, moving, resizing, deleting, Undo, Redo and the
 /// style. A tool's pointer hooks, a toolbar item's `perform` and a test command all call these,
 /// so each exists once. The state lives on the session (one per open Editor), never on a tool:
 /// tools are shared by every Editor.
 extension EditorSession {
-    /// A drag shorter than this (in image points) draws nothing.
-    private static let smallestDrawing: CGFloat = 3
     /// How near the pointer must be to a handle or a thin line to grab it, in view points.
     private static let grabDistance: CGFloat = 8
 
@@ -31,11 +40,26 @@ extension EditorSession {
         guard let document else { return }
         if let id = selectedAnnotationID, document.history.annotation(id: id) == nil { selectedAnnotationID = nil }
         canvas?.showAnnotations(document.annotations, selected: selectedAnnotation)
+        refreshToolbarState()
     }
 
     func selectAnnotation(_ id: Int?) {
         selectedAnnotationID = id
         annotationsDidChange()
+    }
+
+    /// Recomputes `toolbarState`, and only stores it when it is different.
+    func refreshToolbarState() {
+        var state = AnnotationToolbarState()
+        let idle = annotationGesture == nil
+        state.canUndo = idle && document?.canUndo == true
+        state.canRedo = idle && document?.canRedo == true
+        if let selected = selectedAnnotation {
+            state.canDelete = idle
+            state.selectionSupportsFill = AnnotationKinds.kind(selected.kind)?.supportsFill ?? false
+            state.selectionFilled = selected.style.filled
+        }
+        if state != toolbarState { toolbarState = state }
     }
 
     // MARK: Drawing
@@ -64,27 +88,29 @@ extension EditorSession {
         replace(annotation)
     }
 
-    /// Finishes the drawing: one Undo step, or nothing when the drag was too short to be one.
+    /// Finishes the drawing: one Undo step, or nothing when the drag was too short to leave
+    /// something to see and click.
     func finishDrawing(at point: CGPoint) {
         guard case .drawing(let id, let previous) = annotationGesture, var annotation = document?.history.annotation(id: id)
         else { return }
         annotation.end = point
         replace(annotation)
-        if hypot(annotation.end.x - annotation.start.x, annotation.end.y - annotation.start.y) < Self.smallestDrawing {
+        if AnnotationKinds.kind(annotation.kind)?.isLargeEnough(annotation) == true {
+            endAnnotationGesture()
+        } else {
             document?.edit { $0.abort() }
             annotationGesture = nil
             selectAnnotation(previous)
-        } else {
-            endAnnotationGesture()
         }
     }
 
     // MARK: Select
 
-    /// The topmost Annotation under `point`, by its exact shape.
+    /// The topmost Annotation under `point`, by its exact shape. Topmost is the order Export
+    /// paints in (Redactions beneath all the others).
     func annotation(at point: CGPoint) -> Annotation? {
         let width = Self.grabDistance / zoom
-        return annotations.last { annotation in
+        return AnnotationKinds.paintOrder(annotations).last { annotation in
             AnnotationKinds.kind(annotation.kind)?.hit(annotation, at: point, minimumWidth: width) == true
         }
     }
@@ -126,11 +152,22 @@ extension EditorSession {
         }
     }
 
-    /// Select's release: one Undo step when the Annotation really moved, nothing for a click.
+    /// Select's release: one Undo step when the Annotation really moved or was resized, nothing
+    /// for a click, and no change at all when a resize left it too small to see.
     func finishSelecting() {
         switch annotationGesture {
-        case .moving, .resizing: endAnnotationGesture()
-        default: break
+        case .moving:
+            endAnnotationGesture()
+        case .resizing(let original, _, _):
+            if let current = document?.history.annotation(id: original.id),
+                AnnotationKinds.kind(current.kind)?.isLargeEnough(current) == true
+            {
+                endAnnotationGesture()
+            } else {
+                abortAnnotationGesture()
+            }
+        default:
+            break
         }
     }
 
@@ -141,8 +178,8 @@ extension EditorSession {
         annotationGesture = nil
     }
 
-    /// Puts everything back as it was before the pointer was pressed (the tool changed, or the
-    /// window is closing).
+    /// Puts everything back as it was before the pointer was pressed (the tool changed, the
+    /// resize went too small, or the window is closing).
     func abortAnnotationGesture() {
         guard let gesture = annotationGesture else { return }
         document?.edit { $0.abort() }
@@ -162,45 +199,41 @@ extension EditorSession {
 
     // MARK: Delete, Undo, Redo
 
-    var canDeleteAnnotation: Bool { selectedAnnotation != nil && annotationGesture == nil }
+    var canDeleteAnnotation: Bool { toolbarState.canDelete }
+    var canUndo: Bool { toolbarState.canUndo }
+    var canRedo: Bool { toolbarState.canRedo }
 
     /// Delete Annotation (⌫): removes the selected Annotation.
     func deleteSelectedAnnotation() {
-        guard canDeleteAnnotation, let id = selectedAnnotationID else { return }
+        guard annotationGesture == nil, let id = selectedAnnotationID else { return }
         document?.edit { history in
             history.change { $0.annotations.removeAll { $0.id == id } }
         }
     }
 
-    var canUndo: Bool { document?.canUndo == true && annotationGesture == nil }
-    var canRedo: Bool { document?.canRedo == true && annotationGesture == nil }
-
     func undo() {
-        guard canUndo else { return }
+        guard annotationGesture == nil, document?.canUndo == true else { return }
         document?.edit { $0.undo() }
     }
 
     func redo() {
-        guard canRedo else { return }
+        guard annotationGesture == nil, document?.canRedo == true else { return }
         document?.edit { $0.redo() }
     }
 
     // MARK: Style
 
     /// True when the outline / solid fill choice does something now: the selected Annotation, or
-    /// the active tool's, is a Rectangle or an Oval.
+    /// with none selected the active tool's, is a Rectangle or an Oval.
     var fillApplies: Bool {
-        if let selected = selectedAnnotation { return AnnotationKinds.kind(selected.kind)?.supportsFill == true }
+        if let supports = toolbarState.selectionSupportsFill { return supports }
         return currentTool.annotationKind.flatMap(AnnotationKinds.kind)?.supportsFill == true
     }
 
     /// Whether the fill the user sees chosen is solid: the selected Annotation's, else the one
     /// new Annotations get.
     var fillIsSolid: Bool {
-        if let selected = selectedAnnotation, AnnotationKinds.kind(selected.kind)?.supportsFill == true {
-            return selected.style.filled
-        }
-        return annotationStyle.filled
+        toolbarState.selectionSupportsFill == true ? toolbarState.selectionFilled : annotationStyle.filled
     }
 
     /// Outline or solid fill: for the selected Rectangle or Oval, and for the next ones.
@@ -210,21 +243,26 @@ extension EditorSession {
         restyleSelection(onlyIfFillable: true) { $0.filled = filled }
     }
 
-    /// The line width in points, for the selected Annotation and for the next ones.
+    /// The line width in points, for the selected Annotation and for the next ones. Each call
+    /// records one Undo step for the selected Annotation: a control that changes it
+    /// continuously (a slider) brackets the changes with `document.edit { $0.begin() }` and
+    /// `$0.end()`.
     func setAnnotationWidth(_ width: CGFloat) {
         annotationStyle.width = width
         AnnotationSettings.width = width
         restyleSelection { $0.width = width }
     }
 
-    /// The Annotation color, for the selected Annotation and for the next ones.
+    /// The Annotation color, for the selected Annotation and for the next ones. One Undo step
+    /// per call, like `setAnnotationWidth`.
     func setAnnotationColor(_ color: AnnotationColor) {
         annotationStyle.color = color
         AnnotationSettings.color = color
         restyleSelection { $0.color = color }
     }
 
-    /// Changes the selected Annotation's style as one Undo step.
+    /// Changes the selected Annotation's style as one Undo step (or as part of the gesture a
+    /// caller has open).
     private func restyleSelection(onlyIfFillable: Bool = false, _ change: (inout AnnotationStyle) -> Void) {
         guard annotationGesture == nil, let selected = selectedAnnotation,
             let kind = AnnotationKinds.kind(selected.kind), !onlyIfFillable || kind.supportsFill
@@ -233,11 +271,12 @@ extension EditorSession {
         change(&updated.style)
         guard updated != selected else { return }
         document?.edit { history in
-            history.change { state in
+            let apply: (inout DocumentState) -> Void = { state in
                 if let index = state.annotations.firstIndex(where: { $0.id == updated.id }) {
                     state.annotations[index] = updated
                 }
             }
+            if history.isInGesture { history.mutate(apply) } else { history.change(apply) }
         }
     }
 }

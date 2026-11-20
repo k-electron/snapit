@@ -9,6 +9,9 @@
 //                                               how many pixels differ from the fixture formula, their bounding
 //                                               box (`x0,y0,x1,y1`, end exclusive) and, given a rectangle
 //                                               (end exclusive), how many of them lie outside and inside it
+//   png-inspect compare <a> <b>                 how two PNGs of the same size differ: `max_diff=` (the largest
+//                                               difference of any channel, 0-255) and `over_<n>=` (how many
+//                                               pixels differ by more than 8 in any channel)
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect general-pasteboard              changeCount of the general pasteboard (never its contents)
 //   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
@@ -209,6 +212,29 @@ case "diff-fixture":
         print("outside=\(outside)")
         print("inside=\(inside)")
     }
+
+case "compare":
+    guard arguments.count == 4 else { fail("compare <a> <b>") }
+    let (imageA, _) = loadImage(arguments[2])
+    let (imageB, _) = loadImage(arguments[3])
+    guard imageA.width == imageB.width, imageA.height == imageB.height else {
+        print("size=\(imageA.width)x\(imageA.height) and \(imageB.width)x\(imageB.height)")
+        print("max_diff=all")
+        exit(0)
+    }
+    let bitmapA = readPixels(imageA), bitmapB = readPixels(imageB)
+    let count = imageA.width * imageA.height * 4
+    let a = bitmapA.data!.bindMemory(to: UInt8.self, capacity: count)
+    let b = bitmapB.data!.bindMemory(to: UInt8.self, capacity: count)
+    var maxDiff = 0, over = 0
+    for pixel in 0..<(imageA.width * imageA.height) {
+        var worst = 0
+        for channel in 0..<3 { worst = max(worst, abs(Int(a[pixel * 4 + channel]) - Int(b[pixel * 4 + channel]))) }
+        maxDiff = max(maxDiff, worst)
+        if worst > 8 { over += 1 }
+    }
+    print("max_diff=\(maxDiff)")
+    print("over_8=\(over)")
 
 case "profile-sha":
     guard arguments.count == 3 else { fail("profile-sha <srgb|displayP3>") }

@@ -15,6 +15,19 @@ nonisolated struct AnnotationPaint {
     var lineJoin = CGLineJoin.miter
 }
 
+/// What a kind's preview layer can know about the Editor it is in: the Capture's pixels (the
+/// read-only mapping: read them with `withReadOnlyPixels`, never write), how many pixels make a
+/// point, and the canvas's zoom (view points per image point). A kind that previews from the
+/// Capture (Redaction, through the engine, to match the Export) reads it here; a kind that
+/// paints from its path ignores it.
+@MainActor
+struct AnnotationRenderContext {
+    let capture: PixelBuffer?
+    /// Pixels per point.
+    let scale: Double
+    let zoom: CGFloat
+}
+
 /// What one kind of Annotation does. A feature adds a file with its kind and one line in
 /// `AnnotationKinds`; nothing else changes. A kind that is painted from a path only gives
 /// `paint(for:)` and gets the preview layer, the exact hit test, the selection handles and the
@@ -41,14 +54,25 @@ nonisolated protocol AnnotationKind: Sendable {
     /// Draws the Annotation in the Export's context, which is already in image points (origin
     /// at the top left).
     func draw(_ annotation: Annotation, in context: CGContext)
-    /// The preview layer on the canvas; the canvas sets its frame.
-    @MainActor func makeLayer() -> CALayer
-    @MainActor func update(_ layer: CALayer, for annotation: Annotation)
+    /// False when the Annotation is too small to see or to click (a drag that stopped where it
+    /// started, a resize that collapsed it): the gesture that made it is thrown away.
+    func isLargeEnough(_ annotation: Annotation) -> Bool
+    /// The preview layer on the canvas; the canvas sets its frame. Runs once per Annotation.
+    @MainActor func makeLayer(in context: AnnotationRenderContext) -> CALayer
+    /// Brings the layer up to date with the Annotation: on every change to it, and for every
+    /// Annotation when the zoom changes.
+    @MainActor func update(_ layer: CALayer, for annotation: Annotation, in context: AnnotationRenderContext)
 }
 
 nonisolated extension AnnotationKind {
     var drawnByAnnotationStage: Bool { true }
     var supportsFill: Bool { false }
+
+    /// A box at least `AnnotationLimits.smallestSize` points each way.
+    func isLargeEnough(_ annotation: Annotation) -> Bool {
+        let box = annotation.box
+        return box.width >= AnnotationLimits.smallestSize && box.height >= AnnotationLimits.smallestSize
+    }
 
     func hit(_ annotation: Annotation, at point: CGPoint, minimumWidth: CGFloat) -> Bool {
         let paint = paint(for: annotation)
@@ -104,9 +128,9 @@ nonisolated extension AnnotationKind {
         }
     }
 
-    @MainActor func makeLayer() -> CALayer { CAShapeLayer() }
+    @MainActor func makeLayer(in context: AnnotationRenderContext) -> CALayer { CAShapeLayer() }
 
-    @MainActor func update(_ layer: CALayer, for annotation: Annotation) {
+    @MainActor func update(_ layer: CALayer, for annotation: Annotation, in context: AnnotationRenderContext) {
         guard let layer = layer as? CAShapeLayer else { return }
         let paint = paint(for: annotation)
         layer.path = paint.path
@@ -116,6 +140,11 @@ nonisolated extension AnnotationKind {
         layer.lineCap = paint.lineCap.shapeLayerCap
         layer.lineJoin = paint.lineJoin.shapeLayerJoin
     }
+}
+
+nonisolated enum AnnotationLimits {
+    /// The smallest an Annotation may be, in image points, each way (an Arrow: its length).
+    static let smallestSize: CGFloat = 3
 }
 
 nonisolated extension CGLineCap {

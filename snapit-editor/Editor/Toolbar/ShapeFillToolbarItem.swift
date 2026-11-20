@@ -45,5 +45,6 @@ private struct ShapeFillControl: View {
         }
         .buttonStyle(ChromeButtonStyle(look: chosen ? .selected : .plain))
         .help(tooltip)
+        .controlMarker(tooltip)
     }
 }

@@ -11,7 +11,9 @@ final class EditorDocument {
     let captureNumber: Int
     let capture: OpenedCapture
     /// The Annotations, the crop and their Undo and Redo history. Change it only through `edit`.
-    private(set) var history: AnnotationHistory
+    /// Not observed: it changes on every pointer move of a drag, and a view that watched it would
+    /// be rebuilt each time. What the toolbar needs is `EditorSession.toolbarState`.
+    @ObservationIgnored private(set) var history: AnnotationHistory
     /// Runs after every change to `history`, so the canvas can show it.
     @ObservationIgnored var onChange: (() -> Void)?
     private(set) var exportedRevision = 0
