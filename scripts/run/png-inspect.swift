@@ -6,6 +6,8 @@
 //   png-inspect verify-fixture <file> <w> <h>   compares every pixel with the fixture formula
 //   png-inspect profile-sha <srgb|displayP3>    SHA-256 of the system's ICC profile
 //   png-inspect general-pasteboard              changeCount of the general pasteboard (never its contents)
+//   png-inspect windows <pid>                   one line per ordinary (layer 0) window of the process:
+//                                               `<width>x<height> onscreen|offscreen`; no names, so no TCC prompt
 //
 // The fixture formula (see FixtureCaptureSource.swift), `w` x `h` pixels:
 //   R = x * 255 / (w - 1)   G = y * 255 / (h - 1)   B = 40 if (x / 8 + y / 8) is even else 200
@@ -75,7 +77,7 @@ func loadImage(_ path: String) -> (CGImage, [CFString: Any]) {
 }
 
 let arguments = CommandLine.arguments
-guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|profile-sha|general-pasteboard") }
+guard arguments.count >= 2 else { fail("usage: png-inspect info|verify-fixture|profile-sha|general-pasteboard|windows") }
 
 switch arguments[1] {
 case "info":
@@ -152,6 +154,18 @@ case "profile-sha":
 case "general-pasteboard":
     // The change count only: the user's clipboard contents are never read.
     print("change_count=\(NSPasteboard.general.changeCount)")
+
+case "windows":
+    guard arguments.count == 3, let pid = Int32(arguments[2]) else { fail("windows <pid>") }
+    // Window server facts only (owner, layer, size, whether it is on screen): no window names
+    // are read, so this needs no Screen Recording permission.
+    let list = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []
+    for window in list where (window[kCGWindowOwnerPID as String] as? Int32) == pid && (window[kCGWindowLayer as String] as? Int) == 0 {
+        let bounds = (window[kCGWindowBounds as String] as? [String: Any]).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+        guard let bounds, bounds.width > 8, bounds.height > 8 else { continue }
+        let onScreen = (window[kCGWindowIsOnscreen as String] as? Bool) ?? false
+        print("\(Int(bounds.width))x\(Int(bounds.height)) \(onScreen ? "onscreen" : "offscreen")")
+    }
 
 default:
     fail("unknown command \(arguments[1])")

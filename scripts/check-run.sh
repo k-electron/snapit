@@ -36,6 +36,8 @@ INSPECT="$RUN_ROOT/png-inspect"
 
 # shellcheck source=run/lib.sh
 source "$ROOT_DIR/scripts/run/lib.sh"
+# shellcheck source=run/editor.sh
+source "$ROOT_DIR/scripts/run/editor.sh"
 
 cleanup() {
   # Quit whatever is still running from this bundle, then remove the run root.
