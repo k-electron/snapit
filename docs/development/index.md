@@ -7,6 +7,7 @@ The starting point for contributors. The vocabulary (Capture, Editor, Annotation
 - [Architecture](architecture.md): the repo's layout, so you can find code by feature.
 - [Building](building.md): the toolchain, the build command and regenerating the C header.
 - [Testing](testing.md): `scripts/test.sh` and its stages, the scripted whole-app run, test mode, and how to add a flow, a fixture, a test-mode command or an engine test.
+- [Shot list](shot-list.md): every image in the README and the User Guide, how to take it, and how a shot not yet taken waits as a slot marker.
 - [Releasing](releasing.md): the tag-to-DMG pipeline and the local packaging command.
 - [Manual checks](manual-checks.md): what only a person can check, such as installing from the DMG.
 - [Research](../research): the notes behind the v1 decisions: [the menu bar shell](../research/menu-bar-shell.md), [the repo, CI and release pipeline](../research/repo-ci-release.md), [ScreenCaptureKit](../research/screencapturekit.md) and [the Swift and Rust bridge](../research/swift-rust-bridge.md).
