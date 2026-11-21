@@ -10,6 +10,8 @@
 [![CI](https://github.com/k-electron/snapit/actions/workflows/ci.yml/badge.svg)](https://github.com/k-electron/snapit/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/k-electron/snapit)](LICENSE)
 
+**[Download snapit from Releases](https://github.com/k-electron/snapit/releases/latest)** · macOS 26 or later, Apple silicon · [install steps](#download-and-install)
+
 <!-- shot: hero-light -->
 
 <!-- shot: hero-dark -->
