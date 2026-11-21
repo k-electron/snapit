@@ -107,7 +107,7 @@ expect_peak_proportionate() {
 }
 
 # expect_not_spinning <label> <pid> <seconds>: the process used under 5% of one CPU, on average, over
-# <seconds> (5 or more). A loop or a timer that never stops shows; an event the system sends does not.
+# <seconds> (several). It catches a busy loop or a runaway timer; an event the system sends does not trip it.
 expect_not_spinning() {
   local label="$1" pid="$2" seconds="$3" before after used
   if gone "$pid"; then fail "$label: the process is not running"; return; fi

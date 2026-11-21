@@ -346,8 +346,8 @@ send_slow "$APP_SOCK" overlay-wait >/dev/null
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 win_no_helper
 
-# 12. Memory returns to baseline over repeated Window Captures. A 2560 x 1600 pixel display (16 MB of pixels).
-send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
+# 12. Memory returns to baseline over repeated Window Captures. A 5120 x 2880 pixel display (56 MB of pixels).
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 area_start "press-shortcut capture-window" >/dev/null
 win_click 0 70 50
 area_result && copy_closes_editor   # warm up allocator pools
@@ -362,9 +362,21 @@ for _ in 1 2 3 4 5; do
   win_click 0 70 50
   area_result && copy_closes_editor
 done
-expect_memory_returns "memory returns to baseline after five Window Captures" "$APP_PID" "$WIN_BASELINE" "$(pixels_mb 2560 1600)"
-expect_memory_returns "memory is back near the at-rest footprint" "$APP_PID" "$WIN_AT_REST" "$(pixels_mb 2560 1600)"
-expect_peak_proportionate "the window overlay: a frozen frame held on screen" "$WIN_PEAK" "$WIN_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory returns to baseline after five Window Captures" "$APP_PID" "$WIN_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "memory is back near the at-rest footprint" "$APP_PID" "$WIN_AT_REST" "$(pixels_mb 5120 2880)"
+expect_peak_proportionate "the window overlay: a frozen frame held on screen" "$WIN_PEAK" "$WIN_BASELINE" "$(pixels_mb 5120 2880)"
+send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
+wait_until 10 win_no_helper
+
+# An idle overlay does no work: no polling.
+area_start "press-shortcut capture-window" >/dev/null
+mouse move 0 70 50 >/dev/null
+wait_until 10 scene_updates_quiet
+UPDATES_BEFORE="$(fact scene-updates)"
+sleep 1
+expect_equal "an idle overlay updates nothing (no polling)" "$UPDATES_BEFORE" "$(fact scene-updates)"
+send "$APP_SOCK" "overlay-key escape" >/dev/null
+send_slow "$APP_SOCK" overlay-wait >/dev/null
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 win_no_helper
 expect_equal "no helper process is left after the Window Capture checks" "0" "$(win_helper_count)"
