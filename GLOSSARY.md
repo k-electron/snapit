@@ -87,6 +87,10 @@ _Avoid_: Permission screen, permission prompt, setup step
 The help that ships inside snapit and walks through every flow the user can take.
 _Avoid_: Manual, docs, help pages, README
 
+**Update window**:
+The window Check for Updates opens when a newer version exists. It shows the release notes and a Download button that opens the release page, and reminds the user that Open Anyway and Screen Recording are needed again after updating.
+_Avoid_: Update dialog, update prompt
+
 **Shortcut**:
 A global key combination that starts a Capture in a given Capture mode.
 _Avoid_: Hotkey, keybinding
