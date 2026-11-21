@@ -10,7 +10,7 @@ git push origin v1.2.3
 `.github/workflows/release.yml` runs on every `vX.Y.Z` tag, on the hosted `xcode-27` arm64 runner (macOS 27 with Xcode 27). It runs `scripts/package-release.sh`, then publishes with `gh release create`:
 
 1. **Build.** Release configuration, with the bundle version taken from the tag (`1.2.3`) and the build number from the workflow run.
-2. **Sign.** Ad-hoc (`codesign --sign -`), the Editor helper first, then the outer app, with the hardened runtime, no `--deep` and no entitlements. There is no certificate and no notarization, which is why people need Open Anyway.
+2. **Sign.** Ad-hoc (`codesign --sign -`), the Editor helper first, then the outer app, with the hardened runtime, no `--deep` and no entitlements. That ad-hoc signature is why macOS asks each person to confirm snapit once with Open Anyway.
 3. **Verify.** `codesign --verify --deep --strict` on the app, the flags and entitlements of both bundles, and `scripts/check-bundle.sh`.
 4. **DMG.** `scripts/make-dmg.sh` runs [dmgbuild](https://github.com/dmgbuild/dmgbuild) 2.x, pinned with hashes in `packaging/dmg/requirements.txt` (Dependabot's `pip` entry keeps it current). The window background, with the arrow into Applications and the line "First open: System Settings › Privacy & Security › Open Anyway", is drawn by `packaging/dmg/make-background.swift` on every build; no image is committed.
 5. **Check.** `scripts/check-dmg.sh` mounts the DMG, checks its contents, layout and signatures, then detaches it.

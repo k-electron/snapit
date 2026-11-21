@@ -212,10 +212,11 @@ struct GuideDocument: Equatable {
         return (title, id ?? title.lowercased().replacingOccurrences(of: " ", with: "-"), icon ?? "doc.text")
     }
 
-    /// `<a id="some-id"></a>`: the anchor that makes a section's id a link target on GitHub.
-    private static let anchorTag = /<a id="([A-Za-z0-9_-]+)"><\/a>/
-    /// The body of an icon comment: ` icon: symbol.name `.
-    private static let iconComment = /^\s*icon:\s*([A-Za-z0-9.]+)\s*$/
+    /// `<a id="some-id"></a>`: the anchor that makes a section's id a link target on GitHub. An id is
+    /// `a-z`, `0-9` and `-`, as `scripts/check-docs.sh` requires.
+    private static let anchorTag = /<a id="([a-z0-9-]+)"><\/a>/
+    /// The body of an icon comment, exactly ` icon: symbol.name ` (the docs check requires that form).
+    private static let iconComment = /^ icon: ([A-Za-z0-9.]+) $/
     /// A line that is only images, each possibly wrapped in a link: GitHub shows them, the window
     /// draws none.
     private static let imageLine = /(?:\[\s*)?(?:!\[[^\]]*\]\([^)]*\)\s*)+(?:\]\([^)]*\))?/

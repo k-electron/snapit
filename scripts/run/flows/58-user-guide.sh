@@ -28,10 +28,10 @@ UG_BASELINE_MB="$(footprint_mb "$APP_PID")"
 rm -f "$RUN_ROOT/browser-links"
 
 # 1. The docs check: the guide's source has unique anchors, every in-window link resolves and the checklist is covered (and every relative link in the repo's Markdown resolves).
-if "$ROOT_DIR/scripts/check-docs.sh" >"$RUN_ROOT/user-guide-check.log" 2>&1; then
-  pass "the guide's source covers the checklist and every anchor resolves ($(tail -n 1 "$RUN_ROOT/user-guide-check.log"))"
+if "$ROOT_DIR/scripts/check-docs.sh" >"$RUN_ROOT/docs-check.log" 2>&1; then
+  pass "the docs check passes: the guide's source covers the checklist and every anchor resolves, and every relative link and image in the Markdown resolves ($(tail -n 1 "$RUN_ROOT/docs-check.log"))"
 else
-  fail "the docs check fails (scripts/check-docs.sh): $(tr '\n' ' ' <"$RUN_ROOT/user-guide-check.log")"
+  fail "the docs check fails (scripts/check-docs.sh): $(tr '\n' ' ' <"$RUN_ROOT/docs-check.log")"
 fi
 
 # 2. The menu: User Guide sits between Settings… and Check for Updates…, with no key.
@@ -70,7 +70,7 @@ expect_equal "no two sections share an anchor" "" "$(ugv duplicate-ids)"
 expect_equal "every link in the guide resolves to a section or to GitHub" "" "$(ugv broken-links)"
 UG_SOURCE="$ROOT_DIR/docs/UserGuide.md"
 expect_equal "every section has the icon its source gives" \
-  "$(sed -n 's/^## <a id="\([a-z0-9-]*\)"><\/a>.* <!-- icon: \([A-Za-z0-9.]*\) -->$/\1|\2/p' "$UG_SOURCE")" \
+  "$("$ROOT_DIR/scripts/check-docs.sh" --sections)" \
   "$(printf '%s\n' "$UG_FACTS" | sed -n 's/^section [^|]*|\([^|]*\)|[^|]*|\(.*\)$/\1|\2/p')"
 expect_equal "the loaded guide links to the same sections, in the same order, as the source's [text](#id) links" \
   "$(grep -o '](#[a-z0-9-]*)' "$UG_SOURCE" | sed 's/^](#//; s/)$//' | paste -sd, -)" "$(ugv section-links)"

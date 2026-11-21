@@ -3,21 +3,26 @@
 #
 # The User Guide's one source (docs/UserGuide.md, bundled into the Editor helper and read on
 # GitHub), against the checklist of spec flows in scripts/user-guide-checklist.txt. A section
-# is `## <a id="id"></a>Title <!-- icon: symbol.name -->`; HTML comments, on one line or several,
-# are not text. Every failure names the file and the line:
-#   1. every section has an id and an icon, and each id is unique;
+# is exactly `## <a id="id"></a>Title <!-- icon: symbol.name -->` (an id of a-z, 0-9 and "-", one space
+# before the comment, none after it; GuideDocument.swift reads the same form, and
+# `scripts/check-docs.sh --sections` prints the `id|icon` of every section for flow 58). HTML comments,
+# on one line or several, are not text. Every failure names the file and the line:
+#   1. every section has an id and an icon in that form, and each id is unique;
 #   2. every in-window link (`](#id)`) names a section that exists;
 #   3. every checklist section exists and mentions every term of its line;
 #   4. a link goes to a section or to https://github.com/k-electron/snapit, nowhere else (the
 #      guide is bundled and fetches nothing);
-#   5. an image is a relative path into the docs images folder (`images/...`, from the guide).
+#   5. an image is a Markdown image of a line of its own, a relative path into the docs images folder
+#      (`images/...`, from the guide), and the guide holds no HTML img, picture or source (the
+#      window shows raw HTML as text).
 # Flow 58 of the scripted run repeats 1 to 3 on the guide the helper actually loaded.
 #
 # Every Markdown file in the repo (build output, Cargo's target folder, .git and the agent
 # worktrees excepted). Code spans and fenced code are skipped; so is what an HTML comment holds,
 # for images. A destination with a scheme (https:, mailto:, data:) or to a place in the same page
 # (#id) is not a file and is not looked up. Every failure is file:line.
-#   6. every relative link resolves to a file or folder that exists;
+#   6. every relative link (a Markdown link, or the href of an HTML a, area or link) resolves to a
+#      file or folder that exists;
 #   7. every image (a Markdown image, an HTML img src, a source srcset with each of its
 #      candidates) is a file that exists;
 #   8. the shot list (docs/development/shot-list.md) has one `### <id>` heading per shot, a
@@ -28,6 +33,7 @@
 #      not there yet is pending: printed as a count and a list, and never a failure.
 #
 #   scripts/check-docs.sh
+#   scripts/check-docs.sh --sections   # the `id|icon` of each guide section, in order, for flow 58
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,17 +42,17 @@ cd "$ROOT"
 exec perl -CSDA -e '
 use strict; use warnings;
 use File::Find; use File::Basename qw(dirname);
-my ($guide, $checklist) = @ARGV;
+my ($mode, $guide, $checklist) = @ARGV;
 my $failed = 0;
 sub fail { print STDERR "error: $_[0]\n"; $failed = 1; }
 
 open(my $g, "<:encoding(UTF-8)", $guide) or die "cannot read $guide";
-my (%text, %title, %line_of, @order, $current, $in_comment);
+my (%text, %title, %icon, %line_of, @order, $current, $in_comment);
 my (@links, @images);   # [line, destination]
 my $gn = 0;
 while (my $raw = <$g>) {
   chomp $raw; $gn++;
-  my $heading = !$in_comment && $raw =~ /^## <a id="([a-z0-9-]+)"><\/a>(.+?)\s*<!-- icon: [A-Za-z0-9.]+ -->\s*$/ ? [$1, $2] : undef;
+  my $heading = !$in_comment && $raw =~ /^## <a id="([a-z0-9-]+)"><\/a>(\S(?:.*?\S)?) <!-- icon: ([A-Za-z0-9.]+) -->$/ ? [$1, $2, $3] : undef;
   # What is outside the HTML comments is the text: GitHub shows nothing of a comment.
   my ($line, $rest) = ("", $raw);
   while (length $rest) {
@@ -55,22 +61,31 @@ while (my $raw = <$g>) {
     else { $line .= $rest; $rest = ""; }
   }
   if ($heading) {
-    my ($id, $t) = @$heading;
-    fail("$guide:$gn: duplicate section id $id (first at line $line_of{$id})") if exists $text{$id};
-    $text{$id} = "$t\n"; $title{$id} = $t; $line_of{$id} //= $gn; push @order, $id; $current = $id;
+    my ($id, $t, $icon) = @$heading;
+    if (exists $text{$id}) {   # the first section keeps its text; the lines of this one are not read into it
+      fail("$guide:$gn: duplicate section id $id (first at line $line_of{$id})");
+      $current = undef; next;
+    }
+    $text{$id} = "$t\n"; $title{$id} = $t; $icon{$id} = $icon; $line_of{$id} = $gn; push @order, $id; $current = $id;
     next;
   }
   if ($line =~ /^## /) {
-    fail("$guide:$gn: section without an id and an icon (## <a id=\"id\"></a>Title <!-- icon: symbol.name -->): $line");
+    fail("$guide:$gn: a section is exactly ## <a id=\"id\"></a>Title <!-- icon: symbol.name --> (id of a-z, 0-9 and -, one space before the comment, nothing after it): $line");
     $current = undef; next;
   }
   next if $line =~ /^# /;
   $text{$current} .= "$line\n" if defined $current;
+  # The window draws no raw HTML image, and an image is a line of its own.
+  (my $prose = $line) =~ s/(`+)(?:(?!\1).)+?\1/ /g;
+  fail("$guide:$gn: the guide has no HTML <$1> (the window would show it as text); an image is ![alt](images/...) on a line of its own") if $prose =~ /<\s*\/?\s*(img|picture|source)\b/i;
+  fail("$guide:$gn: an image is on a line of its own (![alt](images/...), alone, or alone inside one link): $line")
+    if $prose =~ /!\[[^\]]*\]\(/ && $prose !~ /^\s*(?:\[\s*)?(?:!\[[^\]]*\]\([^)]*\)\s*)+(?:\]\([^)]*\))?\s*$/;
   while ($line =~ s/!\[[^\]]*\]\(([^)\s]*)[^)]*\)/ /) { push @images, [$gn, $1]; }
   while ($line =~ /\]\(([^)\s]*)[^)]*\)/g) { push @links, [$gn, $1]; }
 }
 close $g;
 
+if ($mode eq "--sections") { print "$_|$icon{$_}\n" for @order; exit($failed ? 1 : 0); }
 fail("$guide: the guide has no sections") unless @order;
 for my $image (@images) {
   my ($n, $dest) = @$image;
@@ -176,6 +191,16 @@ for my $doc (@docs) {
     fail("$doc:" . line_at($shown, $offset) . ": image of a file that does not exist: $dest") unless -e $target;
   }
 
+  # An HTML href (a, area, link) is a link like a Markdown one.
+  while ($shown =~ /<(?:a|area|link)\b([^>]*)>/gis) {
+    my $attrs = $1; my $base = $-[1];
+    next unless $attrs =~ /\bhref\s*=\s*(?:"([^"]*)"|\x27([^\x27]*)\x27|([^\s>]+))/i;
+    my ($dest, $at) = ($1 // $2 // $3, $-[0]);
+    my $target = target_of($doc, $dest) // next;
+    $links_checked++;
+    fail("$doc:" . line_at($shown, $base + $at) . ": link to a file that does not exist: $dest") unless -e $target;
+  }
+
   # Links: a link is not an image, so images are taken out first.
   my $n = 0;
   for my $p (@prose) {
@@ -243,4 +268,4 @@ if (@pending) {
 if ($failed) { exit 1; }
 print "ok (" . scalar(@order) . " sections, $lines checked; " . scalar(@docs) . " Markdown files, $links_checked relative links, $images_checked images; "
   . scalar(keys %shot_file) . " shots, " . scalar(@slots) . " slots, " . scalar(@pending) . " pending)\n";
-' docs/UserGuide.md scripts/user-guide-checklist.txt
+' -- "${1:-}" docs/UserGuide.md scripts/user-guide-checklist.txt

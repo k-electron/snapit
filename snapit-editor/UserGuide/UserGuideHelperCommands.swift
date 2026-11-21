@@ -123,16 +123,21 @@ enum UserGuideFacts {
 
     /// The ids that the links to a section name, in document order.
     private static func sectionLinks(_ document: GuideDocument) -> [String] {
-        document.sections.flatMap { $0.blocks.flatMap(\.links) }.compactMap { link in
+        links(document) { link in
             if case .section(let id) = GuideLink(link) { return id }
             return nil
         }
     }
 
     private static func externalLinks(_ document: GuideDocument) -> [String] {
-        document.sections.flatMap { $0.blocks.flatMap(\.links) }.compactMap { link in
+        links(document) { link in
             if case .external = GuideLink(link) { return link.absoluteString }
             return nil
         }
+    }
+
+    /// What `pick` makes of each link of the guide, in document order, for the links it takes.
+    private static func links(_ document: GuideDocument, _ pick: (URL) -> String?) -> [String] {
+        document.sections.flatMap { $0.blocks.flatMap(\.links) }.compactMap(pick)
     }
 }
