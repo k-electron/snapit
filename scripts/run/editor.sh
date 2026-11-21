@@ -8,10 +8,20 @@ helper_pid() { pid_of "$HELPER_EXE"; }
 # Cmd-Tab entry, its own menus) or UIElement (an agent: none of those). Empty when it is gone.
 app_type() { lsappinfo info -only applicationType "$(lsappinfo find pid="$1")" 2>/dev/null | sed -n 's/.*type="\([A-Za-z]*\)".*/\1/p'; }
 is_foreground() { [[ "$(app_type "$1")" == "Foreground" ]]; }
+# LaunchServices lists a process for a moment after it has exited: no_app_type waits for it to stop doing so.
+no_app_type() { [[ -z "$(app_type "$1")" ]]; }
 
 # How many ordinary windows of the process are on screen, from the window server (no names read).
 onscreen_windows() { "$INSPECT" windows "$1" | grep -c onscreen; }
 has_onscreen_window() { (($(onscreen_windows "$1") >= 1)); }
+onscreen_windows_are() { [[ "$(onscreen_windows "$1")" == "$2" ]]; }
+# expect_onscreen_windows <description> <pid> <count>: the window server lists exactly that many ordinary windows of
+# the process. Its list lags what AppKit has ordered in or out when the machine is busy, so the count is read until
+# it is the expected one (up to 10 s) and asserted once it is, or when the time is up.
+expect_onscreen_windows() {
+  wait_until 10 onscreen_windows_are "$2" "$3"
+  expect_equal "$1" "$3" "$(onscreen_windows "$2")"
+}
 
 # The Capture files in the run's cache folder (other files there belong to other features).
 capture_files() { ls "$RUN_ROOT/captures" 2>/dev/null | grep '^capture-.*\.pixels$'; }
@@ -21,6 +31,9 @@ menu_items() { printf '%s\n' "$1" | sed -n "s/^$2: //p" | tr '|' '\n'; }
 
 # The numbers of the open Editors, one per line.
 open_editors() { send "$EDITOR_SOCK" editors; }
+# open_editors_are <numbers, one per line, or empty>: the open Editors are exactly those. A flow that closes an
+# Editor waits for this (wait_until 10 open_editors_are ...) before it asserts, so the window's closing is never raced.
+open_editors_are() { [[ "$(open_editors)" == "$1" ]]; }
 
 # capture_into_editor <trigger command>: runs the Capture (menu-click or press-shortcut) and
 # waits until the Editor window is showing. Sets EDITOR_N (the Editor's number) and HELPER_PID.

@@ -29,6 +29,11 @@ guide_is() { [[ "$(gf "$1")" == "$2" ]]; }
 onb_has_button() { onb_facts | grep -q "^button $1|"; }
 onb_button() { onb_facts | grep "^button $1|" | head -1; }
 onb_press() { send_slow "$EDITOR_SOCK" "onboarding-press $1"; }
+# A look already under way when the window becomes active answers for the permission as it was before it, and the
+# activation is not repeated by the guide. onb_activate_until and guide_activate_until repeat it (what coming back
+# to the window does) until the guide shows what is expected.
+onb_activate_until() { send "$EDITOR_SOCK" onboarding-activate >/dev/null; onb_is "$1" "$2"; }
+guide_activate_until() { send "$EDITOR_SOCK" guide-activate >/dev/null; guide_is "$1" "$2"; }
 onb_tooltips() { onb_facts | grep '^button ' | awk -F'|' '$3 == "" { bad = 1 } END { exit bad }'; }
 links_log() { cat "$RUN_ROOT/system-settings-links" 2>/dev/null; }
 new_app_pid() { local now; now="$(pid_of "$APP_EXE")"; [[ -n "$now" && "$now" != "$1" ]] && answers "$APP_SOCK"; }
@@ -227,7 +232,8 @@ onb_press open-system-settings >/dev/null
 expect_equal "Open System Settings opens the Screen Recording page" "$ONB_URL" "$(links_log | tail -1)"
 # "Don't Allow": once macOS's message is over, the next time the window is active the guide switches.
 CHECKS_BEFORE="$(onb guide-checks)"
-send "$EDITOR_SOCK" onboarding-activate >/dev/null
+onb_looked_again() { send "$EDITOR_SOCK" onboarding-activate >/dev/null; (($(onb guide-checks) > CHECKS_BEFORE)); }
+wait_until 15 onb_looked_again
 expect_equal "the window becoming active looks at Screen Recording again" "$((CHECKS_BEFORE + 1))" "$(onb guide-checks)"
 expect_equal "after Don't Allow the guide shows the System Settings version" "systemSettings" "$(onb guide-variant)"
 expect_contains "the System Settings version says to turn snapit on in the list" "turn snapit on in the Screen Recording list" "$(onb guide-message)"
@@ -241,7 +247,7 @@ CHECKS_BEFORE="$(onb guide-checks)"
 sleep 5
 expect_equal "five seconds on, with Screen Recording granted in the meantime, the guide has not looked" "$CHECKS_BEFORE" "$(onb guide-checks)"
 expect_equal "so it still says denied" "denied" "$(onb guide-state)"
-send "$EDITOR_SOCK" onboarding-activate >/dev/null
+wait_until 15 onb_activate_until guide-state granted
 expect_equal "becoming active shows the grant" "granted" "$(onb guide-state)"
 expect_equal "a granted guide says Screen Recording is on" "Screen Recording is on" "$(onb guide-headline)"
 expect_equal "a granted guide stops its animation" "idle" "$(onb guide-animation)"
@@ -249,7 +255,7 @@ expect_equal "a granted guide has only Back and Continue" "" "$(onb_button open-
 
 # 13. "Quit & Reopen" (and Later, then Relaunch snapit): the relaunched snapit resumes Onboarding at the same step.
 send "$APP_SOCK" "screen-recording-simulate denied" >/dev/null
-send "$EDITOR_SOCK" onboarding-activate >/dev/null
+wait_until 15 onb_activate_until guide-variant systemSettings
 expect_equal "a guide that finds Screen Recording off again shows System Settings" "systemSettings" "$(onb guide-variant)"
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 OLD_APP_PID="$APP_PID"
@@ -288,7 +294,7 @@ expect_equal "the guide window is a regular helper window with a title" "Screen 
 expect_equal "snapit is no longer granted before: the next launch resets nothing" "none" "$(send_slow "$APP_SOCK" onboarding-launch-check)"
 expect_equal "so it reset only once" "$((RESETS_BEFORE + 1))" "$(sr_fact resets)"
 if gfacts | grep '^button ' | awk -F'|' '$3 == "" { bad = 1 } END { exit bad }'; then pass "every button of the update guide has a tooltip"; else fail "a button of the update guide has no tooltip"; fi
-send "$EDITOR_SOCK" guide-activate >/dev/null
+wait_until 15 guide_activate_until guide-variant systemSettings
 expect_equal "after Don't Allow the update guide shows System Settings" "systemSettings" "$(gf guide-variant)"
 expect_contains "the update guide offers Relaunch snapit" "button relaunch|Relaunch snapit|" "$(gfacts)"
 : >"$RUN_ROOT/system-settings-links"
@@ -398,7 +404,7 @@ wait_until 10 onb_is guide-state denied
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 expect_equal "granted after launch is a state of its own" "grantedNeedsRelaunch" "$(sr_fact state)"
 expect_contains "the permission edge reports it as not usable yet" "permission=denied" "$(send "$APP_SOCK" test-seams)"
-send "$EDITOR_SOCK" onboarding-activate >/dev/null
+wait_until 15 onb_activate_until guide-state grantedNeedsRelaunch
 expect_equal "the guide says to relaunch" "grantedNeedsRelaunch" "$(onb guide-state)"
 expect_equal "with a headline that says so" "Relaunch snapit to start using Screen Recording" "$(onb guide-headline)"
 expect_equal "Relaunch snapit stays" "button relaunch|Relaunch snapit|Relaunch snapit, so it can use Screen Recording once you turned it on" "$(onb_button relaunch)"

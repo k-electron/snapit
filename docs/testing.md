@@ -316,6 +316,25 @@ Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w
    that memory returned with `expect_memory_returns` (see "Resource checks").
 4. Delete what you create under `$RUN_ROOT` (the run removes the root at the end).
 
+### Asynchronous work, and a slow machine
+
+A check reads what a command has finished, and waits for what it has only started. `press-shortcut`, `menu-click` and
+`editor-press` reply when their action has finished; a window the helper shows, a window that closes, a process that
+quits, a look at the permission, a file the app removes at quit and the window server's list of windows follow some
+time after. A flow reads those only once the exact condition holds: `wait_until <seconds> <predicate>` with a generous
+bound, then one `expect_*` of the value (never a `sleep` before a read, never a looser expectation).
+
+- `open_editors_are <numbers>` and `expect_onscreen_windows <description> <pid> <count>` (`editor.sh`) wait for the open
+  Editors and for the window server's count of a process's windows.
+- A counter a launch can move (`screen-recording-facts` `resets=`) is read before the launch (`restart_app`), and the
+  flow asserts the exact change once the launch's own effect is visible (the guide is showing, `guide-state` is
+  `denied`), then asserts what a later press adds (nothing) once the press has been processed (`guide-checks` rose).
+- The guide looks at the permission when its window becomes active; a look already under way answers for the
+  permission as it was before, so a flow that changes the fake macOS repeats `guide-activate` or `onboarding-activate`
+  (`wait_until 15 ... guide_activate_until <key> <value>`) until the guide shows the new value.
+- `area_result` prints the overlay's facts when `overlay-wait` gives no answer, so the log names the state a gesture
+  left the overlay in.
+
 `check-run.sh` also ends with the isolation assertion: no `dev.snapit.snapit*.plist` in
 `~/Library/Preferences` is new or changed, `defaults read` of the bundle ID domains is unchanged,
 `~/Library/Caches/dev.snapit.snapit` is unchanged and the general pasteboard was not written to by the

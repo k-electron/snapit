@@ -46,8 +46,8 @@ expect_contains "the window is called User Guide" "title=User Guide" "$UG_FACTS"
 expect_contains "the helper is a regular app while the guide is open" "activation=regular" "$UG_FACTS"
 if wait_until 10 is_foreground "$UG_PID"; then pass "a Dock icon shows while the guide is open"; else fail "the helper has no Dock icon"; fi
 if wait_until 10 has_onscreen_window "$UG_PID"; then pass "the guide is on screen (the window server lists it)"; else fail "no guide window on screen"; fi
-expect_equal "the guide is one window" "1" "$(onscreen_windows "$UG_PID")"
-expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
+expect_onscreen_windows "the guide is one window" "$UG_PID" "1"
+expect_onscreen_windows "the menu bar app has no window of its own" "$APP_PID" "0"
 expect_equal "the guide starts on its first section, the overview" "overview" "$(ugv section)"
 expect_equal "no text field has the keyboard when the guide opens (a blinking caret is CPU)" "first-responder-is-text=false" "$(ugfacts | grep '^first-responder-is-text=')"
 expect_no_internet "the Editor helper with the User Guide open" "$UG_PID"
@@ -57,7 +57,7 @@ expect_no_internet "the menu bar app with the User Guide open" "$APP_PID"
 expect_equal "User Guide again runs" "ok" "$(send_slow "$APP_SOCK" "menu-click user-guide")"
 expect_equal "and show-user-guide answers too" "ok" "$(send_slow "$EDITOR_SOCK" "show-user-guide")"
 expect_equal "the same helper serves it" "$UG_PID" "$(helper_pid)"
-expect_equal "there is still one guide window" "1" "$(onscreen_windows "$UG_PID")"
+expect_onscreen_windows "there is still one guide window" "$UG_PID" "1"
 
 # 5. The checklist: the sections of the guide the helper loaded cover every flow of the spec.
 UG_FACTS="$(ugfacts)"
@@ -173,10 +173,10 @@ expect_equal "the link runs" "ok" "$(send_slow "$EDITOR_SOCK" "onboarding-press 
 if wait_until 10 ug_visible; then pass "the Done step's link opens the User Guide"; else fail "the Done step's link did not open the guide"; fi
 expect_equal "in the helper that shows Onboarding" "$ONB_PID" "$(helper_pid)"
 expect_equal "pressing it again brings the same window forward" "ok" "$(send_slow "$EDITOR_SOCK" "onboarding-press user-guide")"
-expect_equal "Onboarding and the guide are two windows" "2" "$(onscreen_windows "$ONB_PID")"
+expect_onscreen_windows "Onboarding and the guide are two windows" "$ONB_PID" "2"
 send_slow "$EDITOR_SOCK" user-guide-close >/dev/null
 wait_until 10 ug_onscreen_is "$ONB_PID" 1
-expect_equal "closing the guide leaves Onboarding open" "1" "$(onscreen_windows "$ONB_PID")"
+expect_onscreen_windows "closing the guide leaves Onboarding open" "$ONB_PID" "1"
 expect_equal "and the helper running" "$ONB_PID" "$(helper_pid)"
 send_slow "$EDITOR_SOCK" onboarding-close >/dev/null
 if wait_until 10 ug_no_helper; then pass "closing the last window quits the helper"; else fail "the helper outlived its last window"; fi
