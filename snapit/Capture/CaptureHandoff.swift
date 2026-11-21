@@ -17,6 +17,8 @@ enum CaptureHandoff {
     /// was already gone when the Editor was asked to open that Capture (`nil` until then).
     private static weak var frameForTest: AnyObject?
     private(set) static var frameFreedAtOpen: Bool?
+    /// Test mode only: the latest frame carried no lifetime probe, so nothing can be said about it.
+    private(set) static var frameProbeMissing = false
 
     /// Writes `screen` as the next Capture's file and returns its number. Call `didOpen` once
     /// the Editor has it, or `discard` when it could not be opened.
@@ -41,6 +43,7 @@ enum CaptureHandoff {
     private static func trackFrameForTest(_ screen: CapturedScreen) {
         guard TestMode.isActive else { return }
         frameForTest = screen.lifetimeProbe
+        frameProbeMissing = screen.lifetimeProbe == nil
         frameFreedAtOpen = nil
     }
 

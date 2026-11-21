@@ -67,7 +67,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
-| `frame-freed-at-open` | `yes` when the latest Capture's frame (its `CapturedScreen`) was already gone when the Editor was asked to open it, that is once its Capture file was written; `no` while something still held it; `none` before any Capture. `capture_into_editor` and `area_result` assert `yes` after every Capture |
+| `frame-freed-at-open` | `yes` when the latest Capture's frame (its `CapturedScreen`) was already gone when the Editor was asked to open it, that is once its Capture file was written; `no` while something still held it; `none` before any Capture; `unknown` when the frame carried no lifetime probe (so a check cannot pass without one). `capture_into_editor` and `area_result` assert `yes` after every Capture |
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
 | `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification, with the displays counted as different); the overlay ends, and so does a Timed Capture's countdown |
