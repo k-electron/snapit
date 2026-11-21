@@ -6,7 +6,7 @@ Every image in the README and the User Guide has an entry here: what it shows, h
 
 ## The entry format
 
-One entry per image, under the `## The shots` heading below. Every `###` heading in this file is a shot id, so the guidance sections use `##` only.
+One entry per image: a User Guide image under `## The User Guide shots`, a README image under `## The README shots`, both below. Every `###` heading in this file is a shot id, so the guidance sections use `##` only.
 
 ```
 ### menu-bar-menu
@@ -37,8 +37,19 @@ To add a shot:
 1. Take it as the entry says and save it as the entry's `File:`, under `docs/images/`. Git does not track an empty folder, so create the folder with the first shot.
 2. Replace the marker with the image reference.
    - In the User Guide the reference is a Markdown image on a line of its own, `![alt text](images/user-guide/<id>.png)`. snapit drops only such lines, so an `<img>` or `<picture>` in the User Guide would show as raw text in the window.
-   - In the README it is `![alt text](docs/images/readme/<id>.png)`, or HTML where a Light and a Dark image share one place: a `<picture>` with a `<source media="(prefers-color-scheme: dark)" srcset="…">` and an `<img src="…">`.
+   - In the README it is `![alt text](docs/images/readme/<id>.png)`.
 3. Run `scripts/check-docs.sh`. It fails on an image that does not exist and on a file with no entry.
+
+The README hero is the one place where a Light and a Dark shot share a position. Its two markers, `hero-light` and `hero-dark`, wait side by side, and GitHub shows nothing for them. Once both files exist, replace the two markers with one `<picture>` on lines of its own, with a blank line before and after:
+
+```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/hero-dark.png">
+  <img src="docs/images/readme/hero-light.png" alt="snapit taking a Capture of an Area" width="800">
+</picture>
+```
+
+Until both files exist the markers stay, so the README never shows a broken image.
 
 To retake a shot, replace the file and keep the name.
 
@@ -57,7 +68,7 @@ To retake a shot, replace the file and keep the name.
 
 The Annotation and Editor shots share one Sample Capture, an Area Capture of an original page, "Harbour Café, weekly specials": a heading, three short lines of text, a small illustration of a boat and a solid color block. Build it in a plain window with no app name visible, and capture it about 1200 pixels wide. Keep it the same across shots, so a reader sees the same page being marked up.
 
-## The shots
+## The User Guide shots
 
 ### install-dmg-window
 
@@ -345,3 +356,91 @@ The Annotation and Editor shots share one Sample Capture, an Area Capture of an 
 - Surface: The Screen Recording Permission guide after an update: "snapit needs Screen Recording turned back on".
 - Setup: State: A newer build whose Screen Recording entry is lost; the guide is on its own. Sample content: none beyond what the state needs. Appearance: Light. Size: the guide window at its own size. Taken with: snapit's own Window Capture.
 - Used by: [User Guide, After an update](../UserGuide.md#after-an-update)
+
+## The README shots
+
+The hero is two shots, Light and Dark, and its two markers become one `<picture>` (see "Slot markers and adding a shot"). The demo is a GIF of about 5 MB or less. Every other image is Light.
+
+### hero-light
+
+- File: `readme/hero-light.png`
+- Surface: The Editor holding the Sample Capture with an Arrow and a Redaction, on a tidy desktop, with the Area it was taken from still outlined behind it.
+- Setup: State: The Editor is open on the Sample Capture with one Arrow at the heading and one Redaction over a made-up reference number. Sample content: the Sample Capture. Appearance: Light. Size: one display's tidy desktop, about 1600 pt wide. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because the shot holds more than one window.
+- Used by: [README, the hero](../../README.md#snapit)
+
+### hero-dark
+
+- File: `readme/hero-dark.png`
+- Surface: The same scene as `hero-light`, in the Dark appearance.
+- Setup: State: As `hero-light`, retaken with macOS set to Dark, with the same positions. Sample content: the Sample Capture. Appearance: Dark. Size: as `hero-light`. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because the shot holds more than one window.
+- Used by: [README, the hero](../../README.md#snapit)
+
+### demo
+
+- File: `readme/demo.gif`
+- Surface: An animation: an Area drag, the Action bar, the Editor with an Arrow and a Redaction, then ⌘C.
+- Setup: State: The Sample Capture's page is open in a window on a tidy desktop. Drag an Area over the page, press Enter on the Action bar's Capture, draw an Arrow at the heading and a Redaction over the reference number, press ⌘C. Sample content: the Sample Capture. Appearance: Light. Size: cropped to the page and the Editor, about 900 pt wide, 15 seconds at most, and about 5 MB or less. Taken with: the macOS screenshot tool (⇧⌘5, record a selection), converted to a GIF.
+- Used by: [README, the top](../../README.md#snapit)
+
+### tour-area
+
+- File: `readme/tour-area.png`
+- Surface: The Area overlay: an Area selected over the sample page, with the screen dimmed around it and its handles.
+- Setup: State: An Area Capture in progress with an Area selected; the Action bar is not shown yet (drag, hold the mouse down). Sample content: the Sample Capture's page on the display. Appearance: Light. Size: crop to the Area and its surroundings, about 900 pt wide. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because snapit's own Capture would freeze or hide this surface.
+- Used by: [README, Area, Window and Screen Capture](../../README.md#area-window-and-screen-capture)
+
+### tour-window
+
+- File: `readme/tour-window.png`
+- Surface: The Window Capture's outline over one window, with the rest of the screen dimmed.
+- Setup: State: A Window Capture in progress; the pointer is over one tidy window. Sample content: an original made-up page in a window (no app name visible). Appearance: Light. Size: one display; crop to the window and its surroundings. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because snapit's own Capture would freeze or hide this surface.
+- Used by: [README, Area, Window and Screen Capture](../../README.md#area-window-and-screen-capture)
+
+### tour-screen
+
+- File: `readme/tour-screen.png`
+- Surface: A Screen Capture of a tidy desktop, open in the Editor.
+- Setup: State: A Screen Capture of a tidy desktop has just been taken; the Editor is open with no Annotations. Sample content: a tidy desktop with one original made-up window. Appearance: Light. Size: the Editor at its opening size. Taken with: snapit's own Window Capture.
+- Used by: [README, Area, Window and Screen Capture](../../README.md#area-window-and-screen-capture)
+
+### tour-action-bar
+
+- File: `readme/tour-action-bar.png`
+- Surface: The Action bar beside a selected Area.
+- Setup: State: An Area is selected with After selecting an Area set to Show Action bar; the Timer slider at 5. Sample content: the Sample Capture's page behind the Area. Appearance: Light. Size: crop to the Area and its Action bar, about 800 pt wide. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because snapit's own Capture would freeze or hide this surface.
+- Used by: [README, The Action bar](../../README.md#the-action-bar)
+
+### tour-timed-capture
+
+- File: `readme/tour-timed-capture.png`
+- Surface: A Timed Capture counting down: the thin border around the Area and the badge with the seconds left.
+- Setup: State: A Timed Capture started with the Timer slider at 5; the countdown shows 3. Sample content: an original made-up page behind the border. Appearance: Light. Size: crop to the Area and the badge. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because snapit's own Capture would freeze or hide this surface.
+- Used by: [README, Timed Capture](../../README.md#timed-capture)
+
+### tour-color-picker
+
+- File: `readme/tour-color-picker.png`
+- Surface: The Color picker's loupe outlining one pixel, with its swatch and `#RRGGBB` value.
+- Setup: State: The Color picker is open over a flat, saturated area of the sample page. Sample content: an original made-up page with a solid color block. Appearance: Light. Size: crop to the loupe, about 400 pt wide. Taken with: the macOS screenshot tool (⇧⌘5, a selection), because snapit's own Capture would freeze or hide this surface.
+- Used by: [README, Color picker](../../README.md#color-picker)
+
+### tour-editor-tools
+
+- File: `readme/tour-editor-tools.png`
+- Surface: The Editor with its toolbar of tools and its Annotation colors, on the Sample Capture.
+- Setup: State: The Editor open on the Sample Capture, no Annotations, Select tool active. Sample content: the Sample Capture. Appearance: Light. Size: the Editor at its opening size. Taken with: snapit's own Window Capture.
+- Used by: [README, Editor tools](../../README.md#editor-tools)
+
+### tour-redaction
+
+- File: `readme/tour-redaction.png`
+- Surface: A Redaction over a made-up line of text.
+- Setup: State: The Redaction tool; one Redaction over a made-up line of text (a fake reference number). Sample content: the Sample Capture. Appearance: Light. Size: crop to the Capture area of the Editor, about 700 pt wide. Taken with: snapit's own Window Capture.
+- Used by: [README, Redaction](../../README.md#redaction)
+
+### tour-export
+
+- File: `readme/tour-export.png`
+- Surface: Copy, Save and drag-out: the Editor's top right with Copy, Save and the drag-out thumbnail, beside the saved file in a Finder window.
+- Setup: State: An Annotated Sample Capture; Save pressed with the Save location set to a tidy folder, and that folder open in Finder. Sample content: the Sample Capture. Appearance: Light. Size: crop to the Editor's top right and the Finder window. Taken with: snapit's own Window Capture.
+- Used by: [README, Copy, Save and drag-out](../../README.md#copy-save-and-drag-out)
