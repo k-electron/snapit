@@ -3,12 +3,14 @@
 # real machine as it found it, so this looks from outside at two places it must never reach:
 #
 #   - ~/Downloads: the names of the `snapit-*` files there (names only, nothing is opened);
-#   - the general pasteboard's changeCount (a read of one integer: it never writes to the
-#     pasteboard and never reads what is on it).
+#   - the general pasteboard: its changeCount (a read of one integer), and only when that moved,
+#     whether it holds a PNG or a `#RRGGBB` string. It never writes to the pasteboard.
 #
 #   leak_begin   records both before the run
-#   leak_check   returns non-zero, with a message, when a new `snapit-*` file appeared or the
-#                changeCount moved
+#   leak_check   returns non-zero, with a message, when a new `snapit-*` file appeared, or when
+#                the changeCount moved and the pasteboard now holds what snapit puts there
+#                (a PNG or a `#RRGGBB` string). A move with anything else on it is the person
+#                at the Mac copying during the run: noted, not failed.
 #
 # SNAPIT_LEAK_DOWNLOADS_DIR replaces ~/Downloads, for testing this check only. When the folder
 # can't be listed (a terminal without access to Downloads) the file half says so and is skipped;
@@ -30,6 +32,16 @@ _leak_changecount() {
   count="$(swift -e 'import AppKit; print(NSPasteboard.general.changeCount)' 2>/dev/null)" || return 1
   [[ "$count" =~ ^[0-9]+$ ]] || return 1
   printf '%s' "$count"
+}
+
+# "yes" when the general pasteboard holds what snapit writes (a PNG, or exactly a #RRGGBB string).
+_leak_pasteboard_snapit_shaped() {
+  swift -e 'import AppKit
+let pb = NSPasteboard.general
+let png = pb.types?.contains(.png) ?? false
+let s = pb.string(forType: .string) ?? ""
+let hex = s.range(of: "^#[0-9A-F]{6}$", options: .regularExpression) != nil
+print(png || hex ? "yes" : "no")' 2>/dev/null
 }
 
 leak_begin() {
@@ -63,14 +75,18 @@ leak_check() {
     echo "error: could not read the general pasteboard's changeCount after the run" >&2
     ok=1
   elif [[ "$count" != "$LEAK_CHANGECOUNT_BEFORE" ]]; then
-    echo "error: the general pasteboard changed during the scripted run (changeCount $LEAK_CHANGECOUNT_BEFORE -> $count). The run uses a private pasteboard, so either snapit wrote to the real clipboard or something else copied while it ran; if you copied, rerun without copying" >&2
-    ok=1
+    if [[ "$(_leak_pasteboard_snapit_shaped)" != "no" ]]; then
+      echo "error: the general pasteboard changed during the scripted run (changeCount $LEAK_CHANGECOUNT_BEFORE -> $count) and now holds a PNG or a #RRGGBB string, what snapit writes; the run must use only its private pasteboard" >&2
+      ok=1
+    else
+      echo "note: the general pasteboard changed during the run (changeCount $LEAK_CHANGECOUNT_BEFORE -> $count) but holds nothing snapit writes; taken as someone copying at the Mac"
+    fi
   fi
   if ((ok == 0)); then
     if [[ -n "$LEAK_DOWNLOADS_UNREADABLE" ]]; then
-      echo "leak check: general pasteboard unchanged (Downloads not checked)"
+      echo "leak check: nothing of snapit's on the general pasteboard (Downloads not checked)"
     else
-      echo "leak check: no new snapit-* files in Downloads, general pasteboard unchanged"
+      echo "leak check: no new snapit-* files in Downloads, nothing of snapit's on the general pasteboard"
     fi
   fi
   return "$ok"

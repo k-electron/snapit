@@ -1,17 +1,9 @@
 # snapit
 
-## Engineering priorities
+## Checks and review
 
-Rank every trade-off: **correctness**, then **safety**, then **stability**, then **performance**. Performance matters and ranks fourth.
-
-snapit stays small, light and fast through ordinary good engineering. Features and UX are built in full and are never shaped to fit a performance number. For each resource the app uses (CPU, memory, GPU, disk, file handles, anything else), ask:
-
-1. **Justified:** does the feature set need it?
-2. **Proportionate:** does what snapit's own process holds add up to what the running feature requires?
-3. **Released:** does it return to the process's own baseline when the flow ends?
-4. **Well chosen:** is the algorithm the best on correctness, then safety, then stability, then performance?
-
-Resource review is a reading of the code against these four questions. Tests cover behaviour and release (clean-up after each flow), measured against the process's own baseline and the feature's own size, with generous margins, and pass the same way on every machine.
+- Before committing, run `scripts/test.sh`: it is the local gate, and CI is only a final check. `scripts/test.sh engine` runs the fast stages, and the pre-commit hook runs them too. README explains every stage, and `docs/testing.md` covers the scripted whole-app run.
+- Reviews apply `CODING_STANDARDS.md`: engineering priorities, tests, language and design.
 
 ## Agent skills
 
