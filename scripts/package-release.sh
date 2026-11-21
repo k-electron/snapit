@@ -24,6 +24,8 @@ BUILD_NUMBER="${SNAPIT_BUILD_NUMBER:-1}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=xcode-env.sh
+source "$ROOT/scripts/xcode-env.sh"
 BUILD="$ROOT/build"
 DIST="${SNAPIT_DIST_DIR:-$BUILD/release}"
 DERIVED="$BUILD/release-derived.noindex"

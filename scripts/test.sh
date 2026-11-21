@@ -5,7 +5,7 @@
 #   scripts/test.sh            all stages
 #   scripts/test.sh engine     only the repo checks and the Rust stages
 #
-# Needs: Xcode 27, rustup (the pinned toolchain in rust-toolchain.toml), cbindgen 0.29.4.
+# Needs: Xcode 27 (found by scripts/xcode-env.sh when xcode-select points elsewhere), rustup (the pinned toolchain in rust-toolchain.toml), cbindgen 0.29.4.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -62,6 +62,12 @@ if [[ "${1:-}" == "engine" ]]; then
   exit 0
 fi
 
+# A full Xcode from here on: xcodebuild, and swift for the leak check. The engine stages above need none.
+# shellcheck source=xcode-env.sh
+source "$ROOT/scripts/xcode-env.sh"
+# shellcheck source=leak-check.sh
+source "$ROOT/scripts/leak-check.sh"
+
 stage "xcodebuild"
 xcodebuild -version
 xcodebuild -project snapit.xcodeproj -scheme snapit -configuration Release \
@@ -72,7 +78,14 @@ stage "bundle checks"
 scripts/check-bundle.sh "$PRODUCTS/snapit.app"
 
 stage "scripted whole-app run"
-scripts/check-run.sh "$PRODUCTS/snapit.app"
+# The run uses a private pasteboard and temporary folders. Look from outside that it left the real
+# ~/Downloads and the general pasteboard alone, whether or not the run itself passed.
+leak_begin
+run_status=0
+scripts/check-run.sh "$PRODUCTS/snapit.app" || run_status=$?
+leak_status=0
+leak_check || leak_status=$?
+if ((run_status != 0 || leak_status != 0)); then exit 1; fi
 
 echo
 echo "all tests passed"
