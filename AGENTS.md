@@ -7,9 +7,11 @@
 
 ## Agent skills
 
+Work follows Matt Pocock's skills flow, as set out in `CONTRIBUTING.md` ("The flow"); plans, specs and docs fit it.
+
 ### Issue tracker
 
-Issues live in GitHub Issues for `k-electron/snapit`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues for `k-electron/snapit`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
