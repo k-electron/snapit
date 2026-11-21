@@ -2,7 +2,7 @@
 
 Things only a person can check, because they need Gatekeeper, macOS's own permission dialogs or a real Finder window. Each section says when to run it and how to clean up afterwards.
 
-Where a step looks at memory or CPU, read it with the four questions in `AGENTS.md` ("Engineering priorities").
+Where a step looks at memory or CPU, read it with the four questions in `CODING_STANDARDS.md` ("Engineering priorities").
 
 ## Release DMG install (#34)
 

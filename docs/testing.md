@@ -359,7 +359,7 @@ The menu bar app is started again with `relaunch_app [<why>]` (after it quit or 
 
 ## Resource checks
 
-snapit's resources are judged by the four questions in `AGENTS.md` ("Engineering priorities"): justified,
+snapit's resources are judged by the four questions in `CODING_STANDARDS.md` ("Engineering priorities"): justified,
 proportionate, released, well chosen. A review reads the code against them; the run checks release and
 proportion from the outside, against the process's own baseline and the feature's own size, with margins
 no machine's noise reaches, and it runs the same on every machine. The checks, all in `scripts/run/lib.sh`:
@@ -401,7 +401,7 @@ Flow `05-run-helpers.sh` checks the spin check on a process that burns CPU and o
 cache check on a leftover export file.
 
 Review checklist for a change that holds a resource (CPU, memory, GPU, disk, file handles; the questions
-are `AGENTS.md`'s, "Engineering priorities"): justified, proportionate, released, well chosen.
+are `CODING_STANDARDS.md`'s, "Engineering priorities"): justified, proportionate, released, well chosen.
 
 ## Adding an edge or a test-mode command
 
