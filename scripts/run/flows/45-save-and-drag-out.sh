@@ -140,9 +140,12 @@ if capture_into_editor "press-shortcut capture-screen"; then
   # it out again. The Capture is 602 x 374 pixels, so the image is 96 x 60 (0.16 of a pixel for each).
   drag_image() { local reply; reply="$(send_slow "$EDITOR_SOCK" "editor-drag-image $EDITOR_N")"; [[ "$reply" == ok\ * ]] && echo "${reply#ok }"; }
   looks_red() { local c; c="$(pixel "$1" "$2" "$3")"; (($(channel "$c" 0) >= 200 && $(channel "$c" 1) <= 110 && $(channel "$c" 2) <= 110)); }
+  # An empty path (the command failed) must fail the check, never pass a negative one.
+  have_image() { [[ -n "$IMAGE" && -f "$IMAGE" ]] || { fail "the drag's image was not made: '$IMAGE'"; return 1; }; }
   same_pixel() { [[ "$(pixel "$1" "$2" "$3")" == "$(pixel "$1" "$4" "$5")" ]]; }
   IMAGE="$(drag_image)"
   expect_equal "the drag's image is 96 x 60 pixels, drawn at thumbnail size" "96x60" "$(png_field "$("$INSPECT" info "$IMAGE")" width)x$(png_field "$("$INSPECT" info "$IMAGE")" height)"
+  have_image
   if looks_red "$IMAGE" 48 29; then fail "the drag's image shows a red rectangle before one is drawn"; else pass "the drag's image of the untouched Capture has no rectangle"; fi
   if same_pixel "$IMAGE" 4 4 9 9; then fail "the untouched Capture's drag image is flat where a Redaction will be"; else pass "the untouched Capture's drag image shows the Capture's own pixels"; fi
   keystroke r >/dev/null
@@ -158,7 +161,39 @@ if capture_into_editor "press-shortcut capture-screen"; then
   keystroke undo >/dev/null
   keystroke undo >/dev/null
   IMAGE="$(drag_image)"
+  have_image
   if ! looks_red "$IMAGE" 48 29 && ! same_pixel "$IMAGE" 4 4 9 9; then pass "Undo takes both out of the drag's image at once"; else fail "the drag's image still shows what Undo took out"; fi
+  # A crop, a Redaction and a rectangle over it: the image is the cropped Export at thumbnail size. The
+  # crop keeps the points 50,30 to 250,170 (400 x 280 pixels at 2x, so 96 x 67 and 0.24 of a pixel for
+  # each), starting at pixel 100,60 of the Capture. The Redaction (60,40 to 140,100 points) is pixels
+  # 20,20 to 180,140 of the crop: thumbnail pixels 5,5 to 43,34 in blocks of 10 from its corner. The
+  # solid rectangle (100,60 to 180,110 points) starts inside the Redaction and runs past its right
+  # edge: thumbnail pixels 24,14 to 62,38, drawn over the Redaction.
+  send "$EDITOR_SOCK" "editor-state-crop $EDITOR_N set 50 30 200 140" >/dev/null
+  keystroke x >/dev/null
+  drag 60 40 140 100 >/dev/null
+  keystroke r >/dev/null
+  drag 100 60 180 110 >/dev/null
+  IMAGE="$(drag_image)"
+  have_image
+  expect_equal "the cropped drag image is 96 x 67 pixels" "96x67" "$(png_field "$("$INSPECT" info "$IMAGE")" width)x$(png_field "$("$INSPECT" info "$IMAGE")" height)"
+  # Where nothing is drawn, the thumbnail is the Capture's own pixels from the crop's corner: thumbnail pixel
+  # 80,60 is the Capture's pixel 435,312 (a 4 x 4 average, so a few levels either way).
+  CROP_WANT="$(fixture_pixel 435 312 602 374)"
+  CROP_GOT="$(pixel "$IMAGE" 80 60)"
+  if (( $(channel "$CROP_GOT" 0) - $(channel "$CROP_WANT" 0) <= 8 && $(channel "$CROP_WANT" 0) - $(channel "$CROP_GOT" 0) <= 8 && $(channel "$CROP_GOT" 1) - $(channel "$CROP_WANT" 1) <= 8 && $(channel "$CROP_WANT" 1) - $(channel "$CROP_GOT" 1) <= 8 )); then
+    pass "the cropped drag image starts at the crop's corner: pixel 80,60 is the Capture's pixel 435,312 ($CROP_GOT, fixture $CROP_WANT)"
+  else
+    fail "the cropped drag image is not the crop's part of the Capture at 80,60 (got $CROP_GOT, fixture $CROP_WANT)"
+  fi
+  if looks_red "$IMAGE" 43 26; then pass "the rectangle is placed inside the crop (thumbnail pixel 43,26)"; else fail "the rectangle is not at 43,26 of the cropped drag image (got $(pixel "$IMAGE" 43 26))"; fi
+  if looks_red "$IMAGE" 30 20; then pass "and is drawn over the Redaction, not beneath it"; else fail "the Redaction covers the rectangle in the drag image (got $(pixel "$IMAGE" 30 20))"; fi
+  if looks_red "$IMAGE" 20 26 || looks_red "$IMAGE" 66 26; then fail "the rectangle spills past its own edges in the drag image"; else pass "and stops at its own edges (24 to 62)"; fi
+  if same_pixel "$IMAGE" 6 6 13 13 && same_pixel "$IMAGE" 16 16 22 30; then pass "the Redaction is pixelated in blocks of 10 pixels from its corner at 5,5"; else fail "the Redaction's blocks are not where the crop puts them ($(pixel "$IMAGE" 6 6) $(pixel "$IMAGE" 13 13) / $(pixel "$IMAGE" 16 16) $(pixel "$IMAGE" 22 30))"; fi
+  if same_pixel "$IMAGE" 6 6 16 6; then fail "the Redaction's first two blocks have the same color"; else pass "and neighbouring blocks differ"; fi
+  keystroke undo >/dev/null
+  keystroke undo >/dev/null
+  keystroke undo >/dev/null
   style fill outline >/dev/null
   send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
   # The drag-out file stays after its Editor closes: the app that took the drop may still be reading it.

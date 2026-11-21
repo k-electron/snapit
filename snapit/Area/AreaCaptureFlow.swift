@@ -175,6 +175,11 @@ enum AreaCaptureFlow {
     }
 }
 
+/// `FrameSlot.take()` found the frame already handed over.
+enum FrameSlotError: Error {
+    case frameAlreadyTaken
+}
+
 /// The one hold a flow keeps on a Capture's frame while the Capture is written. `take()` hands the
 /// frame over and forgets it, so the flow's own storage never keeps the frame alive past the write.
 @MainActor
@@ -185,7 +190,7 @@ final class FrameSlot {
 
     func take() throws -> CapturedScreen {
         defer { screen = nil }
-        guard let screen else { throw ScreenCaptureError.noDisplay }
+        guard let screen else { throw FrameSlotError.frameAlreadyTaken }
         return screen
     }
 }

@@ -8,9 +8,12 @@ import CoreGraphics
 ///
 /// It is the Export's own stages at the thumbnail's scale: the crop rectangle is `CropStage`'s,
 /// the Redaction rectangles and blocks are `RedactionGeometry`'s (then scaled down with the
-/// Capture), and the Annotations are `AnnotationStage` itself. A Redaction's blocks are a fraction
-/// of a thumbnail pixel on a big Capture, so there it shows as the average of what it covers,
-/// which is what the Export's pixelated blocks average to.
+/// Capture), and the Annotations are `AnnotationStage` itself.
+///
+/// The thumbnail is an approximation of the Export (it averages sampled rows, and a Redaction in it
+/// is the Export's blocks shrunk by the same factor). A block that shrinks below about 1.5 pixels
+/// becomes one pixel, which leaves that part as the plain average of what it covers. The file that
+/// is dragged out is the real Export.
 nonisolated enum ExportThumbnail {
     /// The thumbnail of `job`'s Export: neither side longer than `maxSide` pixels.
     static func render(_ job: ExportJob, maxSide: Int) throws -> PixelBuffer {
