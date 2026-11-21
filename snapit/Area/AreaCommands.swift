@@ -19,6 +19,10 @@ nonisolated extension SocketCommand {
     /// Waits until the overlay that is showing has finished, then replies `opened <N>` (Capture N
     /// is in the Editor), `cancelled` or `failed <why>`.
     static let overlayWait = SocketCommand("overlay-wait")
+    /// `overlay-frames-freed`: `yes` when the frozen frames of the latest overlay are all gone (its
+    /// panels, scenes and controller have let go and the flow kept none), `no` while one is still held,
+    /// `none` before any overlay, `unknown` when a frame carried no lifetime probe. Test mode only.
+    static let overlayFramesFreed = SocketCommand("overlay-frames-freed")
     /// `overlay-mouse move|down|drag|up <display> <x> <y> [<click count>]`: sends the overlay a
     /// mouse event at a point of display `<display>` (0 is the first), in points from that
     /// display's top-left corner. A real `NSEvent`, delivered to the display's panel, with that
@@ -63,6 +67,7 @@ extension SocketCommandRegistry {
                 scale: numbers[0], pointWidth: numbers[1], pointHeight: numbers[2])
             return "ok"
         }
+        register(.overlayFramesFreed) { _ in AreaCaptureFlow.overlayFramesFreed }
         register(.fixturePixelLayout) { request in
             guard let layout = request.arguments.first, ["alpha-first", "skip-first"].contains(layout) else {
                 return "error fixture-pixel-layout alpha-first|skip-first"
