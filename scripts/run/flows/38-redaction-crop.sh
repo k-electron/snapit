@@ -7,7 +7,7 @@
 # decoder in png-inspect, which recomputes every block mean from the fixture formula), the
 # canvas's own rendering and which toolbar items are enabled.
 #
-# The block rule the checks apply (docs/testing.md): the block is a third of the Redaction's
+# The block rule the checks apply (docs/development/testing.md): the block is a third of the Redaction's
 # short side, between 14 and 48 points, at least 4 pixels; its grid starts at the Redaction's
 # top left corner in pixels (after a crop, at the corner of what is left of it), and what is left
 # over at the right and bottom edge is folded into the last tile, so no tile is a sliver.

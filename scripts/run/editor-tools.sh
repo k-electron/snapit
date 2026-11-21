@@ -53,7 +53,7 @@ expect_blue() {
 expect_green() {
   if (($(channel "$2" 1) >= 230 && $(channel "$2" 0) <= 150 && $(channel "$2" 2) <= 150)); then pass "$1"; else fail "$1 (got $2)"; fi
 }
-# fixture_pixel <x> <y> <pixel width> <pixel height>: "r,g,b" the fixture has there, from the formula in docs/testing.md.
+# fixture_pixel <x> <y> <pixel width> <pixel height>: "r,g,b" the fixture has there, from the formula in docs/development/testing.md.
 fixture_pixel() {
   local x="$1" y="$2" w="$3" h="$4" b=200
   if (((x / 8 + y / 8) % 2 == 0)); then b=40; fi

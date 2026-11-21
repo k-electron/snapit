@@ -2,7 +2,7 @@
 
 ## Checks and review
 
-- Before committing, run `scripts/test.sh`: it is the local gate, and CI is only a final check. `scripts/test.sh engine` runs the fast stages, and the pre-commit hook runs them too. README explains every stage, and `docs/testing.md` covers the scripted whole-app run.
+- Before committing, run `scripts/test.sh`: it is the local gate, and CI is only a final check. `scripts/test.sh engine` runs the fast stages, and the pre-commit hook runs them too. `docs/development/testing.md` explains every stage and the scripted whole-app run; `docs/development/index.md` points at the other technical docs (architecture, building, releasing, manual checks).
 - Reviews apply `CODING_STANDARDS.md`: engineering priorities, tests, language and design.
 
 ## Agent skills

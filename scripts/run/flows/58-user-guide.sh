@@ -25,11 +25,11 @@ sleep 1
 UG_BASELINE_MB="$(footprint_mb "$APP_PID")"
 rm -f "$RUN_ROOT/browser-links"
 
-# 1. The guide's source: unique anchors, every in-window link resolves, the checklist is covered.
-if "$ROOT_DIR/scripts/check-user-guide.sh" >"$RUN_ROOT/user-guide-check.log" 2>&1; then
+# 1. The docs check: the guide's source has unique anchors, every in-window link resolves and the checklist is covered (and every relative link in the repo's Markdown resolves).
+if "$ROOT_DIR/scripts/check-docs.sh" >"$RUN_ROOT/user-guide-check.log" 2>&1; then
   pass "the guide's source covers the checklist and every anchor resolves ($(cat "$RUN_ROOT/user-guide-check.log"))"
 else
-  fail "the guide's source fails scripts/check-user-guide.sh: $(tr '\n' ' ' <"$RUN_ROOT/user-guide-check.log")"
+  fail "the docs check fails (scripts/check-docs.sh): $(tr '\n' ' ' <"$RUN_ROOT/user-guide-check.log")"
 fi
 
 # 2. The menu: User Guide sits between Settings… and Check for Updates…, with no key.

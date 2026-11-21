@@ -18,7 +18,7 @@ import Foundation
 ///
 /// An edge is one file: a protocol (or a small enum), its real implementation, and the
 /// choice between real and fixture in one place. A feature that needs a new edge adds a new
-/// file like that and its own test-mode commands (`docs/testing.md` has the recipe), so no
+/// file like that and its own test-mode commands (`docs/development/testing.md` has the recipe), so no
 /// shared file changes.
 nonisolated enum TestMode {
     static let rootVariable = "SNAPIT_TEST_ROOT"

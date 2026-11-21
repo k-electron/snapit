@@ -8,7 +8,7 @@
 # sockets and their replies, the pasteboard's PNG, memory footprint, CPU time and the cache folder's files.
 #
 # The run is a list of flows, one file each, in scripts/run/flows/ (sourced in name order).
-# Helpers are in scripts/run/lib.sh. docs/testing.md says how to add a flow.
+# Helpers are in scripts/run/lib.sh. docs/development/testing.md says how to add a flow.
 #
 # Usage: scripts/check-run.sh path/to/snapit.app
 # Optional: SNAPIT_FLOWS (flow number prefixes, default every flow) runs only those flows.

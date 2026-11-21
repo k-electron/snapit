@@ -18,7 +18,7 @@ enum ScreenRecordingResets {
 
 /// `tccutil reset ScreenCapture <bundle id>`, run from inside the app. The reset was only ever
 /// verified from Terminal, so every way it can fail (no tccutil, it cannot run, it exits with an
-/// error) is reported, never assumed to have worked. `docs/manual-checks.md` has the real-install check.
+/// error) is reported, never assumed to have worked. `docs/development/manual-checks.md` has the real-install check.
 struct TccutilReset: ScreenRecordingReset {
     func reset() async throws {
         try await Task.detached {

@@ -6,7 +6,7 @@ import Carbon.HIToolbox
 /// menu's own key equivalents (⌘, and ⌘Q) cannot fire in the middle of a recording.
 ///
 /// KeyboardShortcuts' own recorder is not used here: it keeps its choice in this process's
-/// `UserDefaults.standard`, but only the menu bar app's counts. See docs/testing.md.
+/// `UserDefaults.standard`, but only the menu bar app's counts. See docs/development/testing.md.
 @MainActor
 final class ShortcutRecorder {
     enum Result: Equatable {

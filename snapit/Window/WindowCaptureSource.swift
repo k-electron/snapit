@@ -5,7 +5,7 @@ enum WindowCapture {
     /// Whether a Window Capture includes the window's shadow. It does not: the Capture is exactly
     /// the window's frame, with transparent rounded corners. One line to flip. Flipping it also
     /// needs the requested size to grow by the shadow's margin (ScreenCaptureKit scales the
-    /// window plus its shadow into whatever size is asked for): see docs/manual-checks.md.
+    /// window plus its shadow into whatever size is asked for): see docs/development/manual-checks.md.
     static let includesShadow = false
 }
 
