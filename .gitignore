@@ -57,6 +57,12 @@ fastlane/test_output
 *.p12
 *.mobileprovision
 *.provisionprofile
+*.pem
+*.key
+*.p8
+*.cer
+*.p7b
+*.keychain-db
 
 # Editors and tools
 .vscode/
@@ -71,3 +77,5 @@ fastlane/test_output
 
 # Local scratch
 .scratch/
+*.log
+*.profraw
