@@ -67,6 +67,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `defaults-set <key> <value>`, `defaults-get <key>` | write or read a string through `AppDefaults.store`; the run writes in one process and reads in the other |
 | `activation-plan test\|normal` | how the helper is brought forward when a Capture opens (`activate-at-launch`, `activate-after-open`); a scripted run never activates it |
 | `capture-source` | `fixture` when the Capture source is the test one |
+| `frame-freed-at-open` | `yes` when the latest Capture's frame (its `CapturedScreen`) was already gone when the Editor was asked to open it, that is once its Capture file was written; `no` while something still held it; `none` before any Capture. `capture_into_editor` and `area_result` assert `yes` after every Capture |
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
 | `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification, with the displays counted as different); the overlay ends, and so does a Timed Capture's countdown |
@@ -136,6 +137,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-save-outcome <N>` | how Editor N's latest Save ended: `none`, `handed-over`, `failed folder-not-writable <errno> <folder>` or `failed <message>` |
 | `editor-drag-file <N>` | does what pressing the mouse on the thumbnail does (Fast-encodes the Export into `<root>/drag-out/<N>/`), waits and replies `ok <path>` |
 | `editor-drag-thumbnail <N>` | the thumbnail view: `view=<w>x<h> thumbnail=<w>x<h>\|none` |
+| `editor-drag-image <N>` | presses the thumbnail (what the mouse going down does), writes the image the drag would show into the run's `probe` folder as a PNG, replies `ok <path>` and lets the press go. It is drawn at the press from the document as it is, so an edit made an instant before it is in the image; flow 45 asserts that for a rectangle and a Redaction, and that Undo takes them out |
 | `main-menu` | the helper's menu bar menus, one line each: `<menu>: <item>\|<item>...` (`-` separator) |
 | `editor-mouse <N> down\|drag\|up <x> <y>`, `editor-drag <N> <x1> <y1> <x2> <y2>` | a mouse event, or a whole press-drag-release, on Editor N's canvas at a point of the Capture (image points, origin at the top left). The point is placed by asking the canvas's layer tree where it is, and the event goes through the window's `sendEvent`, as a click does |
 | `editor-keystroke <N> undo\|redo\|delete\|enter\|<character>` | ⌘Z, ⇧⌘Z, ⌫, Return or a plain key (a tool's key) as the window receives it |
@@ -163,7 +165,7 @@ Commands the Editor helper (`editor.sock`) answers in test mode (`snapit-editor/
 | `editor-front` | the number of the Editor whose window is frontmost (a run never activates the helper, so no window is key; the order shows "brought forward") |
 | `editor-prompt` | `none`, or `shown close\|quit editor=<N> title=… message=… buttons=Cancel,Discard escape=Cancel command-d=Discard tooltips=…\|…`: the question an Editor is waiting on |
 | `editor-prompt-answer discard\|cancel\|escape\|command-d` | answers it: a button is pressed as a click does; Esc and ⌘D reach the sheet as key events. `none` when nothing is asked |
-| `editor-drop <N> begin\|taken\|refused` | `begin` makes the drag's file from the Capture as it is now (pressing the thumbnail); the others end the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
+| `editor-drop <N> begin\|taken\|refused` | `begin` makes the drag's file and image from the Capture as it is now (pressing the thumbnail); the others end the thumbnail's drag session as the system does for a drop that was taken (an Export) or that nobody took |
 | `export-hold on\|off` | holds every Copy and Save after it took its snapshot, until released, so the Capture can be edited while an Export is still running |
 | `editor-first-mouse <N> item <id>` | the view under the centre of that toolbar item's control: `hit=<class> accepts-first-mouse=yes\|no` (Delete Capture's is `no`, every other control's `yes`) |
 | `quit-event` | (both processes) sends this process the quit AppleEvent, as logout or `osascript` does, and replies `ok` at once |
@@ -346,6 +348,9 @@ no machine's noise reaches, and it runs the same on every machine. The checks, a
   the helper's footprint to the same margin from one cycle to the next.
 - **Peak is the feature's size** (`expect_peak_proportionate`): what an overlay or a set of Redactions holds
   at its peak is at most four times the feature's own size plus 25 MB on top of the baseline.
+- **A Capture's frame goes with its file** (`frame-freed-at-open`): the menu bar app lets go of the frame
+  (a `CapturedScreen`) once its Capture file is written, before it waits for the Editor to open; every
+  Capture (Screen, Area, Window, Timed) asserts it.
 - **The helper goes** (`gone "$HELPER_PID"` after the last window closes, in every flow that opens one):
   no helper process is left at rest.
 - **The cache folder holds only what a flow's end leaves** (`expect_cache_holds_only_expected`, run by

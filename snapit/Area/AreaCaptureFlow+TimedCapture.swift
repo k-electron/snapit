@@ -54,12 +54,12 @@ extension AreaCaptureFlow {
             displayID: timed.target.displayID, displayFrame: timed.target.frame, ownWindows: timed.ownWindows)
         Task {
             do {
-                let screen = try await TimedCaptureSources.current.captureFresh(request) { timed.hideWindows() }
+                let frame = FrameSlot(try await TimedCaptureSources.current.captureFresh(request) { timed.hideWindows() })
                 // Cancelled (the ✕ pressed while the Capture was being taken): the pixels go unused.
                 guard countdown === timed else { return }
                 countdown = nil
                 timed.close()
-                conclude(await capture(screen, area: timed.target.pixels))
+                conclude(await capture(frame, area: timed.target.pixels))
             } catch {
                 guard countdown === timed else { return }
                 NSLog("snapit: Timed Capture failed: \(error)")

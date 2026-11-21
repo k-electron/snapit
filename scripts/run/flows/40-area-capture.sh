@@ -57,6 +57,7 @@ area_result() {
   if [[ "$reply" == opened\ * ]]; then
     EDITOR_N="${reply#opened }"
     HELPER_PID="$(helper_pid)"
+    expect_equal "Capture $EDITOR_N: the frozen frame was freed once its file was written, before the Editor was asked to open it" "yes" "$(send "$APP_SOCK" frame-freed-at-open)"
     return 0
   fi
   return 1

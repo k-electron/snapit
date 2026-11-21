@@ -8,7 +8,8 @@ import AppKit
 /// release, a drag released (or a click on the highlighted window) takes the Capture; with Show
 /// Action bar, the Area stays and the Action bar, Return or a double-click takes it. Esc
 /// cancels. The pixels go to the Editor helper through a Capture file (`CaptureHandoff`); this
-/// process keeps nothing afterwards, and every frozen frame is gone when the overlay closes.
+/// process keeps nothing afterwards: the overlay's panels let go of the frozen frames when it
+/// closes, and the frame that is cropped is freed as soon as its Capture file is written.
 ///
 /// The Color picker opens over the same frozen frames: from the Action bar, or straight away from
 /// the menu item and its Shortcut through `start(mode: .pickColor)`. It ends with a hex on the
@@ -97,17 +98,17 @@ enum AreaCaptureFlow {
     /// The overlay that is showing now, if any.
     static var activeOverlay: AreaOverlayController? { overlay }
 
-    /// What the overlay's outcome sets going. Every outcome closes the overlay first, which lets go
-    /// of the frozen frames; a new outcome adds its arm here.
+    /// What the overlay's outcome sets going. Every outcome closes the overlay first, whose panels
+    /// let go of the frozen frames; a new outcome adds its arm here.
     private static func finish(_ outcome: AreaOverlayOutcome) {
         guard let controller = overlay else { return }
         overlay = nil
         switch outcome {
         case .capture(let area):
-            let frozen = controller.displays[area.displayIndex]
+            let frame = FrameSlot(controller.displays[area.displayIndex].screen)
             controller.teardown()
             Task {
-                conclude(await capture(frozen.screen, area: area.pixels))
+                conclude(await capture(frame, area: area.pixels))
             }
         case .timed(let area, let seconds):
             beginTimedCapture(from: controller, area: area, seconds: seconds)
@@ -130,11 +131,13 @@ enum AreaCaptureFlow {
         }
     }
 
-    /// Crops `screen` (a frozen frame, or a Timed Capture's fresh one) in the engine into a Capture
-    /// file and opens the Editor on it.
-    static func capture(_ screen: CapturedScreen, area: PixelRect) async -> Result {
+    /// Crops the frame in `frame` (a frozen frame, or a Timed Capture's fresh one) in the engine
+    /// into a Capture file and opens the Editor on it. The frame is freed as soon as the file is
+    /// written: nothing reads it again, and the Editor opens on the file.
+    static func capture(_ frame: FrameSlot, area: PixelRect) async -> Result {
         do {
-            let number = try await CaptureHandoff.publish(screen, cropping: area)
+            // Never named here, so the frame is freed when `publish` returns.
+            let number = try await CaptureHandoff.publish(try frame.take(), cropping: area)
             do {
                 try await EditorHelperLauncher.open(capture: number)
             } catch {
@@ -169,5 +172,20 @@ enum AreaCaptureFlow {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending { waiter.resume(returning: outcome) }
+    }
+}
+
+/// The one hold a flow keeps on a Capture's frame while the Capture is written. `take()` hands the
+/// frame over and forgets it, so the flow's own storage never keeps the frame alive past the write.
+@MainActor
+final class FrameSlot {
+    private var screen: CapturedScreen?
+
+    init(_ screen: CapturedScreen) { self.screen = screen }
+
+    func take() throws -> CapturedScreen {
+        defer { screen = nil }
+        guard let screen else { throw ScreenCaptureError.noDisplay }
+        return screen
     }
 }

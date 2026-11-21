@@ -17,8 +17,9 @@ struct ChosenArea: Equatable {
 /// `.cancel`. The Color picker is a state of this same overlay (`pickingColor`): the Area, the
 /// Action bar and the crosshair give way to a loupe on the one pixel being sampled. From the Action
 /// bar, Esc goes back to it; opened from the menu or its Shortcut, the overlay starts in the picker
-/// and Esc ends it. The controller keeps no pixels of its own; the frozen frames belong to the scenes'
-/// layers and go with the panels at `teardown()`.
+/// and Esc ends it. The frozen frames are the controller's `displays`, shared with the scenes'
+/// layers; the panels let go of them at `teardown()` and the controller's own hold ends when the
+/// controller is released after its outcome.
 @MainActor
 final class AreaOverlayController: ActionBarHost {
     enum State: String {

@@ -19,8 +19,8 @@ enum WindowCaptureFlow {
     /// Captures `window` alone and opens the Editor on it.
     static func capture(_ window: OnScreenWindow) async -> AreaCaptureFlow.Result {
         do {
-            let screen = try await WindowCaptureSources.current.captureWindow(window)
-            let number = try await CaptureHandoff.publish(screen)
+            // The frame is passed on as it is taken, never named, so it is freed when `publish` returns.
+            let number = try await CaptureHandoff.publish(try await WindowCaptureSources.current.captureWindow(window))
             do {
                 try await EditorHelperLauncher.open(capture: number)
             } catch {

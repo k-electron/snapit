@@ -78,7 +78,7 @@ extension SocketCommandRegistry {
                 let view = Self.dragOutView(in: session), request.arguments.count == 2
             else { return "error editor-drop <N> begin|taken|refused" }
             switch request.arguments[1] {
-            case "begin": view.beginPendingFile()
+            case "begin": view.press()
             case "taken": view.finishDrag(operation: .copy)
             case "refused": view.finishDrag(operation: [])
             default: return "error editor-drop <N> begin|taken|refused"

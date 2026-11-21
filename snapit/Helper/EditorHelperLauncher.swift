@@ -47,6 +47,7 @@ enum EditorHelperLauncher {
     static func open(capture number: Int, command: SocketCommand = .openCapture) async throws {
         var failure: Error = EditorHelperError.didNotStart
         let isNew = command == .openCapture
+        if isNew { CaptureHandoff.noteOpenForTest() }
         // A helper being warmed up is the one to use: never start a second.
         await EditorWarmUp.settle()
         // Twice: a helper that was quitting when the first send arrived is replaced by a new one.
