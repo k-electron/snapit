@@ -74,7 +74,7 @@ macOS 26 or later, on a Mac with Apple silicon.
 
 1. Download the disk image (DMG) from the [latest release](https://github.com/k-electron/snapit/releases/latest).
 2. Open it and drag snapit onto Applications.
-3. Open snapit from Applications. snapit is not notarized, so macOS says it can't verify it.
+3. Open snapit from Applications. snapit is ad-hoc signed, so macOS asks you to confirm it once.
 4. Open System Settings › Privacy & Security, click **Open Anyway** and enter your password. Open snapit again.
 5. Onboarding opens and takes you through the Screen Recording permission, the Save location and the Shortcuts.
 
