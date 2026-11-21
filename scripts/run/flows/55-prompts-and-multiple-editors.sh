@@ -436,7 +436,8 @@ if capture_into_editor "menu-click capture.screen"; then
   send_slow "$EDITOR_SOCK" "editor-press $Y save" >/dev/null
   send_slow "$APP_SOCK" "menu-click quit" >/dev/null
   if wait_until 10 gone "$OLD_APP"; then pass "Quit snapit asks nothing when every older Editor was Exported (the Last Capture's edits never count)"; else fail "Quit snapit did not go through, or asked"; fi
-  expect_equal "no prompt is showing" "none" "$(pr_prompt)"
+  # The helper quits with the menu bar app: it answers `none` while it is still there and nothing once it is gone.
+  expect_equal "no prompt is showing" "none" "$(PROMPT_NOW="$(pr_prompt)"; echo "${PROMPT_NOW:-none}")"
   wait_until 10 bash -c "[[ -z \"\$(pgrep -f '$HELPER_EXE' | head -1)\" ]]"
   expect_equal "the helper quit with it" "" "$(helper_pid)"
   restart_app

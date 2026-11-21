@@ -60,6 +60,8 @@ area_result() {
     expect_equal "Capture $EDITOR_N: the frozen frame was freed once its file was written, before the Editor was asked to open it" "yes" "$(send "$APP_SOCK" frame-freed-at-open)"
     return 0
   fi
+  # A reply that is not a Capture: what the overlay shows now, so a log names the state a gesture left it in.
+  [[ -z "$reply" ]] && echo "     overlay-wait gave no answer; the overlay shows: $(send "$APP_SOCK" overlay-facts | tr '\n' ' ')"
   return 1
 }
 
@@ -357,7 +359,7 @@ area_start "press-shortcut capture-area" >/dev/null
 if wait_until 10 area_warm_is warm; then pass "the Area Shortcut warms the Editor helper up"; else fail "no warm helper after the Area Shortcut (state '$(area_warm_state)')"; fi
 AREA_WARM_PID="$(helper_pid)"
 expect_equal "the warm helper is an agent: no Dock icon" "UIElement" "$(app_type "$AREA_WARM_PID")"
-expect_equal "the warm helper has no window on screen" "0" "$(onscreen_windows "$AREA_WARM_PID")"
+expect_onscreen_windows "the warm helper has no window on screen" "$AREA_WARM_PID" "0"
 expect_equal "the warm helper has no panel at the overlay's level either" "" "$("$INSPECT" overlay-windows "$AREA_WARM_PID")"
 expect_equal "the overlay is showing while the helper warms up" "1" "$(overlay_panels | grep -c '^301x187 ')"
 
@@ -399,7 +401,7 @@ wait_until 10 area_warm_is warm
 area_drag 0 50 40 200 150
 if area_result; then
   expect_contains "the Editor was built before its Capture" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
-  expect_equal "the warm Editor is on screen once it opened" "1" "$(onscreen_windows "$HELPER_PID")"
+  expect_onscreen_windows "the warm Editor is on screen once it opened" "$HELPER_PID" "1"
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 else

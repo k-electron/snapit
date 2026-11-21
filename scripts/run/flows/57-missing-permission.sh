@@ -28,6 +28,7 @@ mp_onb() { send "$EDITOR_SOCK" onboarding-facts | sed -n "s/^$1=//p" | head -1; 
 mp_onb_visible() { [[ "$(mp_onb window)" == visible ]]; }
 mp_onb_is() { [[ "$(mp_onb "$1")" == "$2" ]]; }
 mp_saved_pngs() { ls -A "$1" 2>/dev/null | grep -c '^snapit-.*\.png$'; }
+mp_saved_is() { [[ "$(mp_saved_pngs "$1")" == "$2" ]]; }
 mp_save_idle() { [[ "$(send "$APP_SOCK" save-pending)" == "0" ]]; }
 mp_close_windows() {
   send "$EDITOR_SOCK" "guide-close" >/dev/null 2>&1
@@ -101,7 +102,7 @@ send_slow "$APP_SOCK" "press-shortcut capture-area" >/dev/null
 mp_checked_again() { (($(mp_gf "" guide-checks) > CHECKS_BEFORE)); }
 wait_until 10 mp_checked_again
 if mp_checked_again; then pass "a second press looks at the permission again in the same window"; else fail "a second press did not look again"; fi
-expect_equal "and still shows one guide window" "1" "$(onscreen_windows "$(helper_pid)")"
+expect_onscreen_windows "and still shows one guide window" "$(helper_pid)" "1"
 mp_close_windows
 
 # 4. Onboarding unfinished: the press opens Onboarding, never a second window that asks macOS too.
@@ -118,21 +119,29 @@ expect_equal "macOS was asked once, by Onboarding's own guide" "$((REQUESTS_BEFO
 mp_close_windows
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 
-# 5. Granting works end to end: after an update (granted to the build before) a press shows the guide
-#    and resets snapit's own entry; the user turns it on; macOS lets a process use it from its next
-#    launch on, so the guide offers Relaunch snapit; and after it Captures work.
+# 5. Granting works end to end: the launch after an update (granted to the build before) shows the guide
+#    and resets snapit's own entry once, and a press while the guide is open resets nothing more; the user
+#    turns it on; macOS lets a process use it from its next launch on, so the guide offers Relaunch snapit;
+#    and after it Captures work.
 send "$APP_SOCK" "screen-recording-simulate grantedStale" >/dev/null
-restart_app "launched without Screen Recording"
 RESETS_BEFORE="$(mp_sr resets)"
-CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
-send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
+restart_app "launched without Screen Recording"
 wait_until 15 mp_guide_visible ""
 wait_until 10 mp_guide_is "" guide-state denied
-expect_equal "the press after an update reset snapit's own entry once" "$((RESETS_BEFORE + 1))" "$(mp_sr resets)"
+expect_equal "the launch after an update reset snapit's own entry once" "$((RESETS_BEFORE + 1))" "$(mp_sr resets)"
+CAPTURE_BEFORE="$(send "$APP_SOCK" last-capture)"
+CHECKS_BEFORE="$(mp_gf "" guide-checks)"
+send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
+mp_checked_again() { (($(mp_gf "" guide-checks) > CHECKS_BEFORE)); }
+wait_until 15 mp_checked_again
+expect_equal "a press with the guide open reset nothing more" "$((RESETS_BEFORE + 1))" "$(mp_sr resets)"
 expect_equal "the guide is worded for the update" "yes" "$(mp_gf "" guide-update)"
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 expect_equal "once granted, the state waits for a relaunch" "grantedNeedsRelaunch" "$(mp_sr state)"
-send "$EDITOR_SOCK" guide-activate >/dev/null
+# A look already under way when the window becomes active answers for the permission as it was before, so
+# the activation is repeated until the guide shows what the permission is now.
+mp_activate_until() { send "$EDITOR_SOCK" guide-activate >/dev/null; mp_guide_is "" guide-state "$1"; }
+wait_until 15 mp_activate_until grantedNeedsRelaunch
 expect_equal "coming back to the window, the guide says so" "grantedNeedsRelaunch" "$(mp_gf "" guide-state)"
 expect_contains "it offers Relaunch snapit" "button relaunch|Relaunch snapit|" "$(mp_facts "")"
 send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null
@@ -188,10 +197,12 @@ MP_WINDOWS="$(onscreen_windows "$MP_HELPER")"
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 10 mp_guide_is folder guide-failures 2
 expect_equal "a second refusal updates the open guide" "2" "$(mp_gf folder guide-failures)"
-expect_equal "and it is still one guide window (the Editor and one guide)" "$MP_WINDOWS" "$(onscreen_windows "$MP_HELPER")"
+expect_onscreen_windows "and it is still one guide window (the Editor and one guide)" "$MP_HELPER" "$MP_WINDOWS"
 chmod 700 "$MP_SAVE"
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
+wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_SAVE" 1
 expect_equal "Try again, once the folder opens, saves from the Editor that stayed open" "1" "$(mp_saved_pngs "$MP_SAVE")"
 expect_equal "the guide closed itself" "window=none" "$(mp_facts folder)"
 expect_equal "the Editor is still open" "$MP_EDITOR" "$(open_editors | tail -1)"
@@ -208,6 +219,7 @@ expect_equal "the chooser is a real panel: a run names the folder with its own c
 send_slow "$EDITOR_SOCK" "guide-choose-folder $MP_ELSEWHERE" >/dev/null
 wait_until 15 mp_guide_gone folder
 wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_ELSEWHERE" 1
 expect_equal "choosing another folder saves the Capture there" "1" "$(mp_saved_pngs "$MP_ELSEWHERE")"
 expect_equal "the Save location is the chosen folder" "$MP_ELSEWHERE" "$(send "$APP_SOCK" test-seams | sed -n 's/^save=//p')"
 expect_equal "the folder that was refused got nothing" "0" "$(mp_saved_pngs "$MP_SAVE")"
@@ -249,6 +261,7 @@ send "$APP_SOCK" "save-fail-check off" >/dev/null
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
 wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_DOCS" 1
 expect_equal "once macOS lets snapit in, Try again saves" "1" "$(mp_saved_pngs "$MP_DOCS")"
 
 # 6c2. An EPERM with no Files & Folders switch behind it: a locked folder (a real `chflags uchg`, which
@@ -264,6 +277,7 @@ chflags nouchg "$MP_DOCS"
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
 wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_DOCS" 2
 expect_equal "unlocked, Try again saves" "2" "$(mp_saved_pngs "$MP_DOCS")"
 send "$APP_SOCK" "defaults-set saveLocation $MP_SAVE" >/dev/null
 send "$APP_SOCK" "save-fail-check 1" >/dev/null
@@ -285,6 +299,7 @@ mkdir -p "$MP_GONE"
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
 wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_GONE" 1
 expect_equal "the drive comes back and Try again saves into it" "1" "$(mp_saved_pngs "$MP_GONE")"
 rm -rf "$MP_GONE"
 
@@ -303,7 +318,7 @@ chmod 500 "$MP_SAVE"
 mp_save
 wait_until 15 mp_guide_visible folder
 send_slow "$EDITOR_SOCK" "editor-key $MP_EDITOR escape" >/dev/null 2>&1
-sleep 1
+wait_until 15 mp_guide_is folder guide-retry unavailable
 expect_contains "after its Editor closed, the guide offers no Try again" "guide-retry=unavailable" "$(mp_facts folder)"
 expect_contains "but still Choose another folder" "button choose-folder|" "$(mp_facts folder)"
 expect_equal "the guide alone keeps the helper running" "visible" "$(mp_gf folder window)"
@@ -378,6 +393,7 @@ expect_equal "closing the window leaves the Editor open" "$MP_EDITOR" "$(open_ed
 expect_equal "and the same helper running" "$MP_HELPER" "$(helper_pid)"
 mp_save
 wait_until 15 mp_save_idle
+wait_until 15 mp_saved_is "$MP_SAVE" 1
 expect_equal "the Editor Saves once the disk has room" "1" "$(mp_saved_pngs "$MP_SAVE")"
 send_slow "$EDITOR_SOCK" "editor-key $MP_EDITOR escape" >/dev/null 2>&1
 wait_until 10 mp_no_helper

@@ -34,7 +34,7 @@ if capture_into_editor "menu-click capture.screen"; then
   # The process and window facts, from outside.
   if wait_until 5 is_foreground "$HELPER_PID"; then pass "the helper has a Dock icon and a Cmd-Tab entry while the Editor is open (application type Foreground)"; else fail "the helper is '$(app_type "$HELPER_PID")' while the Editor is open, expected Foreground"; fi
   if wait_until 5 has_onscreen_window "$HELPER_PID"; then pass "the Editor window is on screen according to the window server"; else fail "the window server lists no on-screen window for the helper"; fi
-  expect_equal "the Editor is the helper's only window" "1" "$(onscreen_windows "$HELPER_PID")"
+  expect_onscreen_windows "the Editor is the helper's only window" "$HELPER_PID" "1"
   expect_equal "the menu bar app stays an agent while the Editor is open" "UIElement" "$(app_type "$APP_PID")"
 
   # The pixels travel through a memory-mapped file, never over the socket.
@@ -73,6 +73,7 @@ if capture_into_editor "menu-click capture.screen"; then
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   if wait_until 10 gone "$HELPER_PID"; then pass "Esc closes the Editor and the helper quits"; else fail "the helper is still running after Esc"; fi
   expect_equal "Esc exports nothing" "" "$(send "$APP_SOCK" pasteboard-types)"
+  wait_until 10 no_app_type "$HELPER_PID"
   expect_equal "the helper's Dock icon is gone after the last Editor closed" "" "$(app_type "$HELPER_PID")"
   expect_in_order "the menu bar app keeps the Last Capture's file after the Editor closed" "$(capture_files)" "capture-$EDITOR_N.pixels"
 fi
@@ -94,7 +95,7 @@ if capture_into_editor "press-shortcut capture-screen"; then
     expect_equal "two Editors are open" "2" "$(open_editors | grep -c .)"
     expect_in_order "the newest Capture's file is kept" "$(capture_files)" "capture-$EDITOR_N.pixels"
     expect_equal "the Capture before it was replaced" "0" "$(capture_files | grep -c "^capture-$FIRST_N.pixels\$")"
-    expect_equal "both Editors have a window" "2" "$(onscreen_windows "$HELPER_PID")"
+    expect_onscreen_windows "both Editors have a window" "$HELPER_PID" "2"
     send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
     wait_until 5 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$FIRST_N' ]]"
     expect_equal "closing one Editor leaves the other open" "$FIRST_N" "$(open_editors)"
@@ -122,7 +123,7 @@ WARM_PID="$(helper_pid)"
 send "$EDITOR_SOCK" editor-warm >/dev/null
 expect_contains "a warm helper has built its Editor, hidden, without a Capture" "warm window=hidden canvas=built" "$(send "$EDITOR_SOCK" editor-warm-state)"
 expect_equal "a warm helper is still an agent (no Dock icon)" "UIElement" "$(app_type "$WARM_PID")"
-expect_equal "a warm helper has no window on screen" "0" "$(onscreen_windows "$WARM_PID")"
+expect_onscreen_windows "a warm helper has no window on screen" "$WARM_PID" "0"
 expect_equal "a warm helper has no Editor open" "" "$(open_editors)"
 if capture_into_editor "menu-click capture.screen"; then
   expect_contains "the Capture opens in the Editor that was built ahead of it" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"

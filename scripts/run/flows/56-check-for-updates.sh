@@ -18,6 +18,7 @@ ufacts() { send "$EDITOR_SOCK" update-facts; }
 uval() { ufacts | sed -n "s/^$1=//p" | head -1; }
 ublocks() { ufacts | sed -n 's/^notes-block //p'; }
 ubuttons() { ufacts | sed -n 's/^button //p' | awk -F'|' '{ print $1 }' | tr '\n' ' '; }
+uval_is() { [[ "$(uval "$1")" == "$2" ]]; }
 update_settled() { local state; state="$(uval state)"; [[ -n "$state" && "$state" != checking ]]; }
 update_requests() { send "$APP_SOCK" update-requests; }
 requests_are() { [[ "$(update_requests)" == "$1" ]]; }
@@ -49,7 +50,7 @@ sleep 1
 #    the flows before this one (the app has been running for the whole run).
 expect_equal "no request has been sent since snapit started" "0" "$(update_requests)"
 if [[ ! -e "$RUN_ROOT/update-requests" ]]; then pass "no request is logged"; else fail "a request was logged before any click"; fi
-expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
+expect_onscreen_windows "the menu bar app has no window of its own" "$APP_PID" "0"
 expect_no_internet "the menu bar app at rest" "$APP_PID"
 
 # 1. The version comparison: three integers, compared number by number.
@@ -120,8 +121,8 @@ expect_contains "the window is called Check for Updates" "title=Check for Update
 expect_contains "the helper is a regular app while the window is open" "activation=regular" "$FACTS"
 if wait_until 10 is_foreground "$UPDATE_PID"; then pass "a Dock icon shows while the update window is open"; else fail "the helper has no Dock icon"; fi
 if wait_until 10 has_onscreen_window "$UPDATE_PID"; then pass "the update window is on screen (the window server lists it)"; else fail "no update window on screen"; fi
-expect_equal "the window is one window" "1" "$(onscreen_windows "$UPDATE_PID")"
-expect_equal "the menu bar app still has no window" "0" "$(onscreen_windows "$APP_PID")"
+expect_onscreen_windows "the window is one window" "$UPDATE_PID" "1"
+expect_onscreen_windows "the menu bar app still has no window" "$APP_PID" "0"
 expect_equal "one click sent one request" "1" "$(update_requests)"
 expect_one_line "offline" "Couldn't reach GitHub"
 BUTTONS_FACTS="$(printf '%s\n' "$FACTS" | grep '^button ')"
@@ -300,6 +301,7 @@ send "$APP_SOCK" "update-script hold on" >/dev/null
 BEFORE_HOLD="$(update_requests)"
 send_slow "$APP_SOCK" "menu-click check-for-updates" >/dev/null
 wait_until 5 requests_are "$((BEFORE_HOLD + 1))"
+wait_until 10 uval_is state checking
 expect_equal "the window says it is checking" "checking" "$(uval state)"
 expect_no_internet "the menu bar app while a (fixture) check waits for its answer" "$APP_PID"
 expect_equal "with Checking for updates… as its line" "Checking for updates…" "$(uval headline)"
@@ -326,6 +328,7 @@ if wait_until 10 u_no_helper; then pass "closing the window during a check quits
 send_slow "$APP_SOCK" "menu-click check-for-updates" >/dev/null
 sleep 1
 expect_equal "a click after closing joins the check still running: no second request" "$((BEFORE_CLOSE + 1))" "$(update_requests)"
+wait_until 10 uval_is state checking
 expect_equal "the new window says it is checking" "checking" "$(uval state)"
 send "$APP_SOCK" "update-script hold off" >/dev/null
 if wait_until 10 update_settled; then pass "the answer arrives in the new window"; else fail "the new window never left Checking"; fi
@@ -351,17 +354,17 @@ wait_until 10 update_settled
 expect_equal "it shows the answer in the update window" "snapit 3.0.0 is available." "$(uval headline)"
 expect_equal "it sent one request" "$((BEFORE_ABOUT + 1))" "$(update_requests)"
 UPDATE_PID="$(helper_pid)"
-expect_equal "Settings and the update window are two windows of one helper" "2" "$(onscreen_windows "$UPDATE_PID")"
+expect_onscreen_windows "Settings and the update window are two windows of one helper" "$UPDATE_PID" "2"
 expect_equal "pressing the button again brings the same window forward" "ok" "$(send_slow "$EDITOR_SOCK" "settings-press check-for-updates")"
 if wait_until 5 requests_are "$((BEFORE_ABOUT + 2))"; then pass "and sends a second request: a new check"; else fail "no second request after pressing again (requests: $(update_requests))"; fi
-expect_equal "still two windows" "2" "$(onscreen_windows "$UPDATE_PID")"
+expect_onscreen_windows "still two windows" "$UPDATE_PID" "2"
 
 # 8. Download opens the release page through the browser edge, and the update window closes.
 rm -f "$RUN_ROOT/browser-links"
 expect_equal "Download runs" "ok" "$(send_slow "$EDITOR_SOCK" "update-press download")"
 expect_equal "the browser is asked to open the release page of the tag" "https://github.com/k-electron/snapit/releases/tag/v3.0.0" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
 wait_until 10 onscreen_is "$UPDATE_PID" 1
-expect_equal "the update window closed; Settings is still open" "1" "$(onscreen_windows "$UPDATE_PID")"
+expect_onscreen_windows "the update window closed; Settings is still open" "$UPDATE_PID" "1"
 expect_contains "the update window has gone" "window=none" "$(ufacts)"
 expect_equal "Download with no newer version does nothing" "error no update window" "$(send "$EDITOR_SOCK" "update-press download")"
 send_slow "$EDITOR_SOCK" settings-close >/dev/null

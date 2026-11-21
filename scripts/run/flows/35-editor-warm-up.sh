@@ -17,7 +17,7 @@ WARM_PID="$(helper_pid)"
 expect_equal "exactly one helper process is warming up" "1" "$(helper_count)"
 expect_contains "the warm helper has built its Editor, hidden" "warm window=hidden canvas=built" "$(send "$EDITOR_SOCK" editor-warm-state)"
 expect_equal "a warm helper has no Dock icon (application type UIElement)" "UIElement" "$(app_type "$WARM_PID")"
-expect_equal "a warm helper has no window on screen" "0" "$(onscreen_windows "$WARM_PID")"
+expect_onscreen_windows "a warm helper has no window on screen" "$WARM_PID" "0"
 expect_equal "a warm helper has no Editor open" "" "$(open_editors)"
 expect_equal "pressing the Shortcut again while warm starts no second helper" "ok" "$(send "$APP_SOCK" "editor-warm-up begin")"
 expect_equal "still exactly one helper process" "1" "$(helper_count)"
@@ -27,6 +27,7 @@ expect_equal "Cancel: the warm-up is cancelled" "ok" "$(send "$APP_SOCK" "editor
 if wait_until 10 gone "$WARM_PID"; then pass "Cancel quits a helper that was never shown"; else fail "the warm helper is still running after Cancel"; fi
 expect_equal "Cancel leaves the warm-up idle" "idle" "$(warm_state)"
 expect_equal "no helper process at rest after Cancel" "0" "$(helper_count)"
+wait_until 10 no_app_type "$WARM_PID"
 expect_equal "the helper's Dock icon never existed and is not there now" "" "$(app_type "$WARM_PID")"
 
 # 3. Cancel right after the Shortcut, before the helper is even up: it must still end up gone.
@@ -53,13 +54,13 @@ if capture_into_editor "menu-click capture.screen"; then
   send "$APP_SOCK" "editor-warm-up begin" >/dev/null
   if wait_until 10 warm_is warm; then pass "a helper with an Editor open warms the next one"; else fail "no warm-up while an Editor is open (state '$(warm_state)')"; fi
   expect_contains "the next Editor is built hidden beside the open one" "warm window=hidden" "$(send "$EDITOR_SOCK" editor-warm-state)"
-  expect_equal "the open Editor is the only window" "1" "$(onscreen_windows "$OPEN_PID")"
+  expect_onscreen_windows "the open Editor is the only window" "$OPEN_PID" "1"
   send "$APP_SOCK" "editor-warm-up cancel" >/dev/null
   if wait_until 10 bash -c "[[ \"\$(printf 'editor-warm-state\n' | nc -U -w 2 '$EDITOR_SOCK')\" == cold ]]"; then pass "Cancel throws the warm Editor away"; else fail "the warm Editor is still there after Cancel"; fi
   sleep 1
   expect_equal "Cancel leaves the helper running while an Editor is open" "$OPEN_PID" "$(helper_pid)"
   expect_equal "Cancel leaves the open Editor open" "$OPEN_N" "$(open_editors)"
-  expect_equal "the open Editor's window is still on screen" "1" "$(onscreen_windows "$OPEN_PID")"
+  expect_onscreen_windows "the open Editor's window is still on screen" "$OPEN_PID" "1"
   send "$EDITOR_SOCK" "editor-key $OPEN_N escape" >/dev/null
   if wait_until 10 gone "$OPEN_PID"; then pass "the helper quits when the last Editor closes after a Cancel"; else fail "the helper is still running"; fi
 fi
@@ -72,7 +73,7 @@ for round in 1 2 3; do
   if ! wait_until 10 warm_is warm; then fail "warm round $round: the helper did not warm up"; continue; fi
   if capture_into_editor "press-shortcut capture-screen"; then
     expect_contains "warm round $round: the Editor was built before its Capture" "warm=yes" "$(send "$EDITOR_SOCK" "editor-facts $EDITOR_N")"
-    expect_equal "warm round $round: the warm Editor is on screen once it opened" "1" "$(onscreen_windows "$HELPER_PID")"
+    expect_onscreen_windows "warm round $round: the warm Editor is on screen once it opened" "$HELPER_PID" "1"
     send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
     wait_until 10 gone "$HELPER_PID"
   fi
@@ -110,7 +111,7 @@ fi
 if wait_until 10 some_helper; then
   PIN_PID="$(helper_pid)"
   if is_foreground "$PIN_PID"; then fail "a helper launched on its own has a Dock icon"; else pass "a helper launched on its own has no Dock icon"; fi
-  expect_equal "a helper launched on its own shows no window" "0" "$(onscreen_windows "$PIN_PID")"
+  expect_onscreen_windows "a helper launched on its own shows no window" "$PIN_PID" "0"
   if wait_until 10 gone "$PIN_PID"; then pass "a helper launched on its own through LaunchServices quits"; else fail "a helper launched on its own is still running"; fi
 else
   pass "a helper launched on its own through LaunchServices already quit"

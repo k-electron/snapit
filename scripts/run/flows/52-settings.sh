@@ -101,7 +101,7 @@ expect_equal "Pick Color has no Shortcut by default" "none" "$(sval shortcut.pic
 expect_equal "Area shows ⌃⌥⌘4" "⌃⌥⌘4" "$(sdisplay capture-area)"
 expect_contains "the Shortcuts section has the button that opens macOS's Screenshots shortcuts" "control open-screenshot-shortcuts|button|" "$FACTS"
 expect_contains "About shows the version" "control version|text|Version|" "$FACTS"
-expect_equal "the menu bar app has no window of its own" "0" "$(onscreen_windows "$APP_PID")"
+expect_onscreen_windows "the menu bar app has no window of its own" "$APP_PID" "0"
 
 # 3. A second request brings the same window forward: still one window, still one helper.
 send_slow "$APP_SOCK" "menu-click settings" >/dev/null
@@ -175,6 +175,7 @@ if capture_into_editor "menu-click capture.screen"; then
   spress close-editor-after-copy >/dev/null
   spress close-editor-after-save >/dev/null
   send_slow "$EDITOR_SOCK" "editor-press $EDITOR_N copy" >/dev/null
+  wait_until 10 open_editors_are ""
   expect_equal "with Close the Editor after Copy on again, Copy closes the Editor" "" "$(open_editors)"
   expect_equal "the helper stays up because Settings is still open" "$SETTINGS_PID" "$(helper_pid)"
 fi

@@ -22,6 +22,7 @@ lc_no_folder() { [[ ! -e "$CAPS" ]]; }
 lc_no_helper() { [[ -z "$(helper_pid)" ]]; }
 lc_stamp() { stat -f '%i %Fm %z' "$1" 2>/dev/null; }
 lc_entries() { ls -A "$CAPS" 2>/dev/null | LC_ALL=C sort | tr '\n' ' '; }
+lc_entries_are() { [[ "$(lc_entries)" == "$1" ]]; }
 lc_written() { send "$EDITOR_SOCK" last-capture-writes | sed -n 's/.*written=\([0-9]*\).*/\1/p'; }
 lc_dropped() { send "$EDITOR_SOCK" last-capture-writes | sed -n 's/.*dropped=\([0-9]*\).*/\1/p'; }
 # The Annotations, Undo and Redo steps and revision of the open Editor, without the selection
@@ -256,6 +257,7 @@ if capture_into_editor "menu-click capture.screen"; then
     drag 40 30 120 90 >/dev/null
     sleep 1   # the write is queued and held
     send_slow "$EDITOR_SOCK" "editor-key $C escape" >/dev/null
+    wait_until 10 open_editors_are "$KEEP"
     expect_equal "the Last Capture's Editor closed, the other stays" "$KEEP" "$(open_editors)"
     send_slow "$APP_SOCK" "menu-click capture.screen" >"$RUN_ROOT/last-capture-bg.txt" &
     BG_PID=$!
@@ -368,7 +370,7 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 10 gone "$OLD_APP_PID"; then pass "snapit quits with a Last Capture"; else fail "snapit is still running"; fi
   send "$EDITOR_SOCK" "last-capture-hold off" >/dev/null
   if wait_until 10 gone "$OLD_HELPER"; then pass "the Editor helper quits with it"; else fail "the helper outlived snapit"; fi
-  sleep 1
+  wait_until 10 lc_entries_are "unrelated.txt "
   expect_equal "quitting removes the Capture's pixels and state, and nothing else" "unrelated.txt " "$(lc_entries)"
   expect_equal "the folder stays while something that is not snapit's is in it" "not snapit" "$(cat "$CAPS/unrelated.txt")"
 
@@ -402,7 +404,7 @@ if capture_into_editor "menu-click capture.screen"; then
   send "$EDITOR_SOCK" "last-capture-hold off" >/dev/null
   if wait_until 15 gone "$OLD_APP_PID"; then pass "snapit quits once the write is dropped"; else fail "snapit is still running after the held write was released"; fi
   if wait_until 10 gone "$OLD_HELPER"; then pass "the Editor helper quits with it"; else fail "the helper outlived snapit"; fi
-  sleep 1
+  wait_until 10 lc_entries_are ""
   expect_equal "the Capture's files are gone, folder and all" "" "$(lc_entries)"
   relaunch_app
 fi

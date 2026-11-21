@@ -41,7 +41,7 @@ expect_equal "a normal place is not a disk image" "false" "$(location_field on-d
 expect_equal "the launch check has nothing to do from a normal place" "none" "$(send "$APP_SOCK" install-check)"
 expect_contains "the real statfs does not take the read-only system volume for a disk image" "on-disk-image=false" "$(send "$APP_SOCK" "install-detect /System/Library")"
 expect_contains "the real statfs finds a path under /AppTranslocation/ translocated" "translocated=true" "$(send "$APP_SOCK" "install-detect /tmp/AppTranslocation/X/d/snapit.app")"
-expect_equal "no window opens in the menu bar app for the check" "0" "$(onscreen_windows "$APP_PID")"
+expect_onscreen_windows "no window opens in the menu bar app for the check" "$APP_PID" "0"
 
 # The fixtures: snapit's own bundle on a fake read-only volume, approved with Open Anyway.
 mkdir -p "$VOL" "$APPS"
@@ -74,7 +74,7 @@ expect_contains "the Move to Applications button has a tooltip" "button move|Mov
 expect_contains "the Not Now button has a tooltip" "button later|Not Now|Keep running" "$FACTS"
 expect_contains "the helper is a regular app while the Move screen shows" "activation=regular" "$FACTS"
 if wait_until 5 has_onscreen_window "$HELPER_PID"; then pass "the Move screen is on screen according to the window server"; else fail "the window server lists no on-screen window for the helper"; fi
-expect_equal "the Move screen is the helper's only window" "1" "$(onscreen_windows "$HELPER_PID")"
+expect_onscreen_windows "the Move screen is the helper's only window" "$HELPER_PID" "1"
 expect_equal "the menu bar app stays an agent with no window while the Move screen shows" "UIElement" "$(app_type "$APP_PID")"
 expect_equal "Not Now answers ok" "ok" "$(send "$EDITOR_SOCK" "move-screen-press later")"
 if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits when the Move screen closes"; else fail "the helper is still running after Not Now"; fi
