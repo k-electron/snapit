@@ -1,4 +1,6 @@
 import AppKit
+import ImageIO
+import UniformTypeIdentifiers
 
 nonisolated extension SocketCommand {
     /// `export-name <N>`: the file name Editor N's Export has, from its Capture's time
@@ -14,6 +16,10 @@ nonisolated extension SocketCommand {
     /// `editor-drag-thumbnail <N>`: the drag-out thumbnail view of Editor N: `view=<w>x<h> thumbnail=<w>x<h>|none`
     /// (point size of the view, pixel size of its image). Test mode only.
     static let editorDragThumbnail = SocketCommand("editor-drag-thumbnail")
+    /// `editor-drag-image <N>`: presses the thumbnail of Editor N (what the mouse going down does), writes the
+    /// image the drag would show to the run's `probe` folder as a PNG and replies `ok <path>`; the press is then
+    /// let go. Test mode only.
+    static let editorDragImage = SocketCommand("editor-drag-image")
 }
 
 extension SocketCommandRegistry {
@@ -49,6 +55,23 @@ extension SocketCommandRegistry {
             let size = view.image.map { "\($0.width)x\($0.height)" } ?? "none"
             return "view=\(Int(view.bounds.width))x\(Int(view.bounds.height)) thumbnail=\(size)"
         }
+        register(.editorDragImage) { request in
+            guard let content = Self.exportSession(request)?.window?.contentView,
+                let view = Self.find(DragOutView.self, in: content), let folder = TestMode.folder("probe")
+            else { return "error editor-drag-image <N>" }
+            view.press()
+            defer { view.finishDrag(operation: []) }
+            let url = folder.appendingPathComponent("drag-image.png")
+            guard let image = view.dragImage, Self.writePNG(image, to: url) else { return "error no drag image" }
+            return "ok \(url.path)"
+        }
+    }
+
+    private static func writePNG(_ image: CGImage, to url: URL) -> Bool {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+        else { return false }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination)
     }
 
     private static func exportSession(_ request: SocketRequest) -> EditorSession? {

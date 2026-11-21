@@ -2,8 +2,10 @@ import AppKit
 import SwiftUI
 
 /// The drag-out thumbnail in the top toolbar: a small preview of the Capture as it will be
-/// Exported (crop and Annotations included), made by the engine off the main thread. Dragging it
-/// out of the Editor offers the Export as a file.
+/// Exported (crop, Redactions and Annotations included), drawn at thumbnail size from the document
+/// as it is (`ExportThumbnail`), off the main thread, again after every finished edit. Dragging it
+/// out of the Editor offers the Export as a file, and the drag's image is drawn again at the press,
+/// so it is the Capture as it is then.
 struct DragOutThumbnail: View {
     let session: EditorSession
     @State private var image: CGImage?
@@ -12,10 +14,6 @@ struct DragOutThumbnail: View {
     static let tooltip = "Drag the Capture out as a file"
     /// Pixels on the longest side: twice the point size, so it is sharp on Retina.
     nonisolated static let maxPixelSide = 96
-    /// After an edit the thumbnail waits this long for the next one before it is made again (a
-    /// one-shot wait that the next edit cancels, never a timer).
-    private static let settleTime = Duration.milliseconds(400)
-
     /// What the thumbnail is made from: it is made again when either changes.
     private struct Source: Equatable {
         let captureNumber: Int?
@@ -28,8 +26,6 @@ struct DragOutThumbnail: View {
             .help(Self.tooltip)
             .task(id: Source(captureNumber: session.document?.captureNumber, revision: session.toolbarState.revision)) {
                 guard let document = session.document else { return }
-                if image != nil { try? await Task.sleep(for: Self.settleTime) }
-                guard !Task.isCancelled else { return }
                 let job = document.makeExportJob(level: .fast)
                 let thumbnail = await Self.makeThumbnail(of: job)
                 guard !Task.isCancelled else { return }
@@ -39,8 +35,7 @@ struct DragOutThumbnail: View {
 
     @concurrent
     private static func makeThumbnail(of job: ExportJob) async -> PixelBuffer? {
-        guard let flattened = try? ExportPipeline.flatten(job) else { return nil }
-        return try? flattened.pixels.makeThumbnail(maxSide: maxPixelSide)
+        try? ExportThumbnail.render(job, maxSide: maxPixelSide)
     }
 }
 
@@ -70,6 +65,9 @@ final class DragOutView: NSView, NSDraggingSource {
     var image: CGImage? {
         didSet { layer?.contents = image }
     }
+    /// The drag's image: the Capture as it was when the button went down (drawn again then, so an
+    /// edit made an instant before the press is in it), or the thumbnail on show until there is one.
+    private(set) var dragImage: CGImage?
 
     private var pending: PendingDragFile?
     private var mouseDownLocation: NSPoint?
@@ -106,7 +104,7 @@ final class DragOutView: NSView, NSDraggingSource {
         didBeginDrag = false
         wantsDrag = false
         lastDragEvent = nil
-        beginPendingFile()
+        press()
         pending?.notify { [weak self] _ in
             DispatchQueue.main.async { self?.beginDragIfReady() }
         }
@@ -125,6 +123,7 @@ final class DragOutView: NSView, NSDraggingSource {
         wantsDrag = false
         lastDragEvent = nil
         pending = nil
+        dragImage = nil
     }
 
     /// Starts the drag session once the pointer has moved far enough and the file is encoded.
@@ -138,7 +137,7 @@ final class DragOutView: NSView, NSDraggingSource {
             NSSound.beep()
         case .success(let file):
             let item = NSDraggingItem(pasteboardWriter: file as NSURL)
-            let preview = image.map { NSImage(cgImage: $0, size: bounds.size) } ?? NSWorkspace.shared.icon(forFile: file.path)
+            let preview = (dragImage ?? image).map { NSImage(cgImage: $0, size: bounds.size) } ?? NSWorkspace.shared.icon(forFile: file.path)
             item.setDraggingFrame(bounds, contents: preview)
             beginDraggingSession(with: [item], event: event, source: self)
         }
@@ -157,10 +156,13 @@ final class DragOutView: NSView, NSDraggingSource {
     func finishDrag(operation: NSDragOperation) {
         if operation != [], let pending { session?.didDragOut(pending) }
         pending = nil
+        dragImage = nil
     }
 
-    /// What pressing the mouse on the thumbnail does: the file is made from the Capture as it is now.
-    func beginPendingFile() {
+    /// What pressing the mouse on the thumbnail does: the file and the drag's image are made from
+    /// the Capture as it is now.
+    func press() {
         pending = session?.startDragOutFile()
+        dragImage = session?.makeThumbnail()?.makeCGImage()
     }
 }

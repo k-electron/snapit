@@ -85,18 +85,24 @@ nonisolated extension PixelBuffer {
     /// the helper's footprint).
     private static var thumbnailRowSamples: UInt32 { 4 }
 
-    /// A small copy of these pixels, averaged down by the engine so that neither side is longer
-    /// than `maxSide` (the drag-out thumbnail). The same color space and profile.
-    func makeThumbnail(maxSide: Int) throws -> PixelBuffer {
-        let longest = max(width, height)
+    /// A small copy of these pixels (or of `window`, a rectangle of them), averaged down by the
+    /// engine so that neither side is longer than `maxSide` (the drag-out thumbnail). The same color
+    /// space and profile.
+    func makeThumbnail(maxSide: Int, window: PixelRect? = nil) throws -> PixelBuffer {
+        let region = window ?? PixelRect(x: 0, y: 0, width: width, height: height)
+        guard region.isInside(width: width, height: height), region.width > 0, region.height > 0 else {
+            throw EngineError(status: .invalidArgument, rawValue: SNAPIT_STATUS_INVALID_ARGUMENT)
+        }
+        let longest = max(region.width, region.height)
         let factor = longest > maxSide ? Double(maxSide) / Double(longest) : 1
-        let thumbnailWidth = max(1, Int((Double(width) * factor).rounded()))
-        let thumbnailHeight = max(1, Int((Double(height) * factor).rounded()))
+        let thumbnailWidth = max(1, Int((Double(region.width) * factor).rounded()))
+        let thumbnailHeight = max(1, Int((Double(region.height) * factor).rounded()))
         let thumbnail = try makeEmptyBuffer(width: thumbnailWidth, height: thumbnailHeight)
         let status = withReadOnlyPixels { source, sourceStride in
             thumbnail.withPixels { destination, destinationStride in
                 snapit_downscale(
-                    source.assumingMemoryBound(to: UInt8.self), UInt32(width), UInt32(height), sourceStride,
+                    source.assumingMemoryBound(to: UInt8.self) + region.y * sourceStride + region.x * 4,
+                    UInt32(region.width), UInt32(region.height), sourceStride,
                     UInt32(thumbnailWidth), UInt32(thumbnailHeight),
                     destination.assumingMemoryBound(to: UInt8.self), destinationStride, Self.thumbnailRowSamples)
             }

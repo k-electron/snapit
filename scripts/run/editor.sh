@@ -33,6 +33,7 @@ capture_into_editor() {
   fi
   EDITOR_N="$(open_editors | tail -1)"
   HELPER_PID="$(helper_pid)"
+  expect_equal "the Capture's frozen frame was freed once its file was written, before the Editor was asked to open it" "yes" "$(send "$APP_SOCK" frame-freed-at-open)"
   [[ -n "$EDITOR_N" && -n "$HELPER_PID" ]]
 }
 

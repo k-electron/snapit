@@ -6,6 +6,10 @@ nonisolated extension SocketCommand {
     static let fixtureDisplay = SocketCommand("fixture-display")
     /// Replies `fixture` when the Capture source is the test one. Test mode only.
     static let captureSource = SocketCommand("capture-source")
+    /// `frame-freed-at-open`: `yes` when the frozen frame of the latest Capture was already gone (its
+    /// file written) when the Editor was asked to open it, `no` while it was still held, `none`
+    /// before any Capture. Test mode only.
+    static let frameFreedAtOpen = SocketCommand("frame-freed-at-open")
 }
 
 extension SocketCommandRegistry {
@@ -25,6 +29,13 @@ extension SocketCommandRegistry {
         }
         register(.captureSource) { _ in
             CaptureSources.current is FixtureCaptureSource ? "fixture" : "screencapturekit"
+        }
+        register(.frameFreedAtOpen) { _ in
+            switch CaptureHandoff.frameFreedAtOpen {
+            case true?: "yes"
+            case false?: "no"
+            case nil: "none"
+            }
         }
     }
 }

@@ -6,6 +6,9 @@
 # Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
+# shellcheck source=../editor-tools.sh
+source "$ROOT_DIR/scripts/run/editor-tools.sh"
+
 SAVE="$RUN_ROOT/save"
 saved_pngs() { ls -A "$SAVE" 2>/dev/null | grep '^snapit-.*\.png$' | LC_ALL=C sort; }
 save_dir_entries() { ls -A "$SAVE" 2>/dev/null | wc -l | tr -d ' '; }
@@ -132,6 +135,32 @@ if capture_into_editor "press-shortcut capture-screen"; then
   fi
   expect_equal "the clipboard is untouched by drag-out" "" "$(send "$APP_SOCK" pasteboard-types)"
 
+  # The image a drag shows is the Capture as it is at the press, drawn at thumbnail size: an edit made an
+  # instant before the press (no waiting) is in it, every Annotation and Redaction included, and Undo takes
+  # it out again. The Capture is 602 x 374 pixels, so the image is 96 x 60 (0.16 of a pixel for each).
+  drag_image() { local reply; reply="$(send_slow "$EDITOR_SOCK" "editor-drag-image $EDITOR_N")"; [[ "$reply" == ok\ * ]] && echo "${reply#ok }"; }
+  looks_red() { local c; c="$(pixel "$1" "$2" "$3")"; (($(channel "$c" 0) >= 200 && $(channel "$c" 1) <= 110 && $(channel "$c" 2) <= 110)); }
+  same_pixel() { [[ "$(pixel "$1" "$2" "$3")" == "$(pixel "$1" "$4" "$5")" ]]; }
+  IMAGE="$(drag_image)"
+  expect_equal "the drag's image is 96 x 60 pixels, drawn at thumbnail size" "96x60" "$(png_field "$("$INSPECT" info "$IMAGE")" width)x$(png_field "$("$INSPECT" info "$IMAGE")" height)"
+  if looks_red "$IMAGE" 48 29; then fail "the drag's image shows a red rectangle before one is drawn"; else pass "the drag's image of the untouched Capture has no rectangle"; fi
+  if same_pixel "$IMAGE" 4 4 9 9; then fail "the untouched Capture's drag image is flat where a Redaction will be"; else pass "the untouched Capture's drag image shows the Capture's own pixels"; fi
+  keystroke r >/dev/null
+  style fill solid >/dev/null
+  drag 100 60 200 120 >/dev/null
+  IMAGE="$(drag_image)"
+  if looks_red "$IMAGE" 48 29; then pass "a rectangle drawn an instant before the press is in the drag's image"; else fail "the drag's image does not show the rectangle drawn just before the press (got $(pixel "$IMAGE" 48 29))"; fi
+  keystroke x >/dev/null
+  drag 10 10 90 90 >/dev/null
+  IMAGE="$(drag_image)"
+  if same_pixel "$IMAGE" 4 4 9 9 && same_pixel "$IMAGE" 12 12 17 17; then pass "a Redaction made an instant before the press is pixelated in the drag's image"; else fail "the Redaction is not pixelated in the drag's image ($(pixel "$IMAGE" 4 4) $(pixel "$IMAGE" 9 9) / $(pixel "$IMAGE" 12 12) $(pixel "$IMAGE" 17 17))"; fi
+  if looks_red "$IMAGE" 48 29; then pass "and the rectangle is still drawn in it"; else fail "the rectangle is gone from the drag's image after the Redaction"; fi
+  keystroke undo >/dev/null
+  keystroke undo >/dev/null
+  IMAGE="$(drag_image)"
+  if ! looks_red "$IMAGE" 48 29 && ! same_pixel "$IMAGE" 4 4 9 9; then pass "Undo takes both out of the drag's image at once"; else fail "the drag's image still shows what Undo took out"; fi
+  style fill outline >/dev/null
+  send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
   # The drag-out file stays after its Editor closes: the app that took the drop may still be reading it.
   OLD_DRAG_N="$EDITOR_N"
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null

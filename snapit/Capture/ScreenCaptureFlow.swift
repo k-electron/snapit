@@ -32,8 +32,8 @@ enum ScreenCaptureFlow {
         // The Capture has started: the Editor helper warms up while the pixels are taken.
         EditorWarmUp.begin()
         do {
-            let screen = try await CaptureSources.current.captureDisplayUnderPointer()
-            let number = try await CaptureHandoff.publish(screen)
+            // The frame is passed on as it is taken, never named, so it is freed when `publish` returns.
+            let number = try await CaptureHandoff.publish(try await CaptureSources.current.captureDisplayUnderPointer())
             do {
                 try await EditorHelperLauncher.open(capture: number)
             } catch {

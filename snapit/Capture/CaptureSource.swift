@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// One Capture's pixels as the system produced them, before they move into engine memory.
 nonisolated struct CapturedScreen: @unchecked Sendable {
@@ -6,6 +7,16 @@ nonisolated struct CapturedScreen: @unchecked Sendable {
     let image: CGImage
     /// Pixels per point: 2 on a Retina display, 1 otherwise.
     let scale: Double
+
+    /// Test mode only: an object that lives exactly as long as this frame does (every copy of
+    /// the struct shares it), so the scripted run can tell when the frame is gone.
+    let lifetimeProbe: AnyObject?
+
+    init(image: CGImage, scale: Double) {
+        self.image = image
+        self.scale = scale
+        lifetimeProbe = TestMode.isActive ? NSObject() : nil
+    }
 
     /// The resolution the PNG records: 72 dpi at 1x, 144 on Retina.
     var dpi: Int { Int((72 * scale).rounded()) }

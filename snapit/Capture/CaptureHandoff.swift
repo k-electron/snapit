@@ -13,10 +13,15 @@ enum CaptureHandoff {
     /// helper that outlived a crashed menu bar app never mistakes a new Capture for one of its own.
     private static var nextNumber = Int(Date().timeIntervalSince1970 * 1000)
     private static var latestNumber: Int?
+    /// Test mode only: the frame being written for the latest Capture, held weakly, and whether it
+    /// was already gone when the Editor was asked to open that Capture (`nil` until then).
+    private static weak var frameForTest: AnyObject?
+    private(set) static var frameFreedAtOpen: Bool?
 
     /// Writes `screen` as the next Capture's file and returns its number. Call `didOpen` once
     /// the Editor has it, or `discard` when it could not be opened.
     static func publish(_ screen: CapturedScreen) async throws -> Int {
+        trackFrameForTest(screen)
         let number = nextNumber
         nextNumber += 1
         try await write(number: number, screen: screen)
@@ -26,10 +31,23 @@ enum CaptureHandoff {
     /// Writes the pixel rectangle `area` of a frozen display's `screen` (an Area Capture) as the
     /// next Capture's file: the engine crops it straight into the file.
     static func publish(_ screen: CapturedScreen, cropping area: PixelRect) async throws -> Int {
+        trackFrameForTest(screen)
         let number = nextNumber
         nextNumber += 1
         try await write(number: number, screen: screen, area: area)
         return number
+    }
+
+    private static func trackFrameForTest(_ screen: CapturedScreen) {
+        guard TestMode.isActive else { return }
+        frameForTest = screen.lifetimeProbe
+        frameFreedAtOpen = nil
+    }
+
+    /// The Editor is about to be asked to open a Capture that was just written (test mode only).
+    static func noteOpenForTest() {
+        guard TestMode.isActive, frameFreedAtOpen == nil else { return }
+        frameFreedAtOpen = frameForTest == nil
     }
 
     /// Capture N is open in the Editor: it is now the Last Capture, and the one before goes.
