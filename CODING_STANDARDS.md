@@ -25,6 +25,8 @@ Resource review is a reading of the code against these four questions. Tests cov
 ## Language
 
 - **Vocabulary.** UI copy, code, comments and docs use the terms in `GLOSSARY.md` (Capture, Area, Editor, Annotation, Export, Last Capture, and so on), and avoid the synonyms it lists.
+- **Screenshot.** User-facing prose (README, User Guide, UI copy) may use "screenshot" as the everyday word. Capture stays the term for the concept, and is the only term in code and tickets.
+- **No third-party app is named.** Docs, UI copy, comments and shots name no other app. macOS's own places (System Settings, Finder) are named where the user must use them.
 - **Positive statements.** Docs, UI copy and comments describe what snapit does. When a feature or topic is dropped, its mentions are removed outright, with no note that it was dropped and no statement that snapit lacks it.
 
 ## Design
