@@ -1,0 +1,17 @@
+name: Feature request
+description: Describe a problem and how you would like snapit to behave.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: desired-behaviour
+    attributes:
+      label: Desired behaviour
+      description: What you would like snapit to do.
+    validations:
+      required: true
