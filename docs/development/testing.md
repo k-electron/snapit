@@ -35,7 +35,7 @@ Flow 56 of that run covers Check for Updates with the HTTP request faked (no rea
 
 Flow 57 covers a missing permission: a Capture Shortcut or menu item (every Capture mode) pressed without Screen Recording shows the Permission guide, or Onboarding while that is unfinished, takes no Capture and leaves nothing running, in each state of the fake macOS (never granted, granted to the build before an update with the fixture `tccutil` resetting snapit's own entry, turned off, waiting for a relaunch), and Captures work after the grant and Relaunch snapit; a Save into a folder that can't be written to (read-only, missing, a seam for the macOS privacy denial and a read-only volume) keeps the Editor open and shows the folder Permission guide worded for the cause, with Choose another folder, Open System Settings and Try again; a Save that fails after the hand-over shows the same window from a helper started for it; and the helper's lifecycle and memory around them.
 
-Flow 58 covers the User Guide: the menu item and Onboarding's link open one window in the helper (a second request brings it forward), the guide is read from the helper's bundle and covers a checklist of the spec's flows (`scripts/user-guide-checklist.txt`, also checked on the source by `scripts/check-docs.sh`), every anchor resolves, sections link to each other in the window, a link to GitHub goes through the fake browser edge and any other link is dropped, search finds sections, and the menu bar app stays at its baseline and idle while the helper hosts the guide and quits with its window.
+Flow 58 covers the User Guide: the menu item and Onboarding's link open one window in the helper (a second request brings it forward), the guide is read from the helper's bundle and covers a checklist of the spec's flows (`scripts/user-guide-checklist.txt`, also checked on the source by `scripts/check-docs.sh`), every section has the icon its source gives and every anchor resolves, a guide with image lines draws no image block and no alt text, sections link to each other in the window, a link to GitHub goes through the fake browser edge and any other link is dropped, search finds sections, and the menu bar app stays at its baseline and idle while the helper hosts the guide and quits with its window.
 
 Run `scripts/test.sh` locally first: it is the first line of defense. CI is the final check, run on pushes to `main` and `integration/**` only (`.github/workflows/ci.yml`: `scripts/test.sh` on the hosted `xcode-27` arm64 runner, macOS 27 with Xcode 27). OSV-Scanner runs on the same pushes, on Ubuntu, from `.github/workflows/osv-scanner.yml`.
 
@@ -807,31 +807,48 @@ app makes it; the Editor helper shows the update window and never touches a netw
 
 ## The User Guide
 
-The User Guide is a window in the Editor helper (`snapit-editor/UserGuide/`), drawn natively from a bundled
-Markdown file: no web view, no network, no image. The menu bar app only asks for it
-(`UserGuideMenu` → `show-user-guide`, `Shared/Commands/UserGuideCommands.swift`); the helper reads
-`UserGuide.md` from its own bundle (`Contents/Resources`) when the window opens and drops it when it closes.
-`UserGuideWindow` is one window (a second request brings it forward), `UserGuideModel` is what it shows (the section on
-the page, the search, the one `follow(_:)` every link goes through, every tooltip), `UserGuideView` draws it and
-`GuideDocument` parses the Markdown. `UserGuideLink.open` (Onboarding's Done step) is set in
-`registerUserGuideHelperCommands()` when the helper launches, not when the window opens.
+The User Guide is a window in the Editor helper (`snapit-editor/UserGuide/`), drawn natively from one Markdown file,
+`docs/UserGuide.md`: no web view, no network, no image. The same file is the guide on GitHub, where its image lines show
+screenshots. The Xcode project lists it as a resource of the helper (a file reference in the `docs` group and a build
+file in the helper's Resources phase, since `docs/` is not a synchronized folder), so it lands at
+`snapit Editor.app/Contents/Resources/UserGuide.md`, once, and `scripts/check-bundle.sh` asserts that and that the menu
+bar app has none. No other copy exists in the repo. The menu bar app only asks for the guide
+(`UserGuideMenu` → `show-user-guide`, `Shared/Commands/UserGuideCommands.swift`); the helper reads the bundled file when
+the window opens and drops it when it closes. `UserGuideWindow` is one window (a second request brings it forward),
+`UserGuideModel` is what it shows (the section on the page, the search, the one `follow(_:)` every link goes through, every
+tooltip), `UserGuideView` draws it and `GuideDocument` parses the Markdown. `UserGuideLink.open` (Onboarding's Done step) is
+set in `registerUserGuideHelperCommands()` when the helper launches, not when the window opens.
 
-The source, `UserGuide.md`, is a small subset: `# Group`, `## Title {#id icon=sf.symbol}` for a section (the id is its anchor),
-`###`, paragraphs (one per line), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline Markdown. A link is `[text](#id)`
-to a section or an `https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other
-link is dropped. Write its words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never from memory.
+The source is a small subset of Markdown that reads well on GitHub and in the window: `# Group`, a section written
+`## <a id="id"></a>Title <!-- icon: sf.symbol -->` (the anchor makes the id a link target on GitHub, the comment carries
+the SF Symbol, and GitHub shows neither), `###`, paragraphs (the window draws one per line; keep a blank line between
+paragraphs, notes and lists so GitHub does not join them), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline
+Markdown. A link is `[text](#id)` to a section, which works in the window and on GitHub, or an
+`https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other link is
+dropped. An image is a line of its own, `![alt](images/…)`, a relative path into `docs/images/`: the window skips the line
+entirely, with no block and no alt text. The window also skips HTML comments, whether on one line, inline or across
+several lines. Write the words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never
+from memory.
 
 | To add | Do |
 |---|---|
-| a section | a `## Title {#id}` in `UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-docs.sh` |
+| a section | a `## <a id="id"></a>Title <!-- icon: sf.symbol -->` in `docs/UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-docs.sh` |
 | a flow to the checklist | a line in `scripts/user-guide-checklist.txt`: the section id, a bar, then the terms it must hold separated by semicolons. `scripts/check-docs.sh` (run by `scripts/test.sh` before the build) checks the source, and flow 58 checks the guide the helper loaded |
 | a block kind | a case in `GuideBlock`, its parsing in `GuideDocument.init(markdown:)` and its view in `UserGuideView.swift` |
 
+The docs check reads the source and names the file and line of every failure: a duplicate section id, a section without
+an anchor and an icon, a `#id` link that names no section, an image outside the docs images folder (the path must start
+`images/`, with no `..` and no scheme), and a link that goes anywhere but a section or snapit's GitHub repository.
+
 `58-user-guide.sh` drives it: the menu order, one window for any number of requests (and a Dock icon), the checklist read back
-through `user-guide-facts` and `user-guide-text <id>`, navigation (`user-guide-select`, `user-guide-link`, `user-guide-press`),
-search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle
-and memory. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
-(`docs/development/manual-checks.md`).
+through `user-guide-facts` and `user-guide-text <id>`, the icon of every section and the count of section links against the
+source, the blocks the selected section draws (`block <kind>|<text>` lines of the facts), navigation (`user-guide-select`,
+`user-guide-link`, `user-guide-press`), search, links (GitHub reaches `<root>/browser-links`, everything else is refused),
+Onboarding's link, and the helper's lifecycle and memory. The flow also writes a guide with image lines, a linked image,
+an inline image and comments in every form to the root and opens it with
+`user-guide-fixture <file in the root>` (`off` drops it): the next window parses that file with the same parser instead of the
+bundled one, and the flow shows that no image block, alt text or comment text is drawn or found by search. `user-guide-snapshot`
+renders only part of a SwiftUI view: for the look use a real screen (`docs/development/manual-checks.md`).
 
 ## CI environment
 

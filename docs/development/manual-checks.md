@@ -220,7 +220,7 @@ Run after changing `snapit/Onboarding/`, `snapit-editor/Onboarding/` (the Permis
 
 ## User Guide (#35)
 
-Run after changing `snapit-editor/UserGuide/` or `UserGuide.md`, and before a release. The scripted run reads the guide through test commands and checks its sections against the spec's flows; only a person can read it against the real macOS, and see the look. Use a normal build in `/Applications`.
+Run after changing `snapit-editor/UserGuide/` or `docs/UserGuide.md`, and before a release. The scripted run reads the guide through test commands and checks its sections against the spec's flows; only a person can read it against the real macOS, and see the look. Use a normal build in `/Applications`.
 
 1. **Open it.** Choose User Guide in the menu bar menu (between Settings… and Check for Updates…): one window opens with a Dock icon. Choose it again: the same window comes forward, no second one. Close it: the Dock icon goes and no `snapit Editor` process is left (`pgrep -f "snapit Editor"`). In Onboarding, at Done, "Open the User Guide" opens it beside Onboarding; closing it leaves Onboarding open.
 2. **Look.** The sidebar is macOS 26 glass with a glass search capsule, the page reads well in Light and Dark, and tables and notes sit on soft cards. Every sidebar row, the Previous and Next buttons and the search field's clear button have a hover tooltip and are clickable over their whole area.
