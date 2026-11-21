@@ -44,6 +44,8 @@ enum AreaCaptureFlow {
     static var previousApp: NSRunningApplication?
     private static var result: Result?
     private static var waiters: [CheckedContinuation<Result, Never>] = []
+    /// Test mode only: the latest overlay's frozen frames, held weakly (see `overlayFramesFreed`).
+    private static var framesForTest: [WeakProbe]?
 
     /// Shows the overlay for an Area Capture, for a Window Capture (`.window`: the same overlay, but it
     /// picks the window under the pointer and a click captures that window alone) or for the Color
@@ -74,6 +76,7 @@ enum AreaCaptureFlow {
             let source = AreaCaptureSources.current
             let displays = try await source.freezeDisplays()
             guard !displays.isEmpty else { throw ScreenCaptureError.noDisplay }
+            if TestMode.isActive { framesForTest = displays.map { WeakProbe($0.screen.lifetimeProbe) } }
 
             let controller = AreaOverlayController(
                 displays: displays, windows: windows, pointer: source.pointerLocation, mode: mode)
@@ -93,6 +96,16 @@ enum AreaCaptureFlow {
     static func waitForResult() async -> Result {
         if let result { return result }
         return await withCheckedContinuation { waiters.append($0) }
+    }
+
+    /// Test mode only: `yes` when every frozen frame of the latest overlay (each display's
+    /// `CapturedScreen`) is gone, `no` while one is still held (the overlay is up, or something kept
+    /// it), `none` before any overlay, `unknown` when a frame carried no lifetime probe. After an
+    /// overlay has ended this reads `yes`: the app holds nothing of its pixels.
+    static var overlayFramesFreed: String {
+        guard let probes = framesForTest else { return "none" }
+        if probes.contains(where: { $0.missing }) { return "unknown" }
+        return probes.allSatisfy { $0.object == nil } ? "yes" : "no"
     }
 
     /// The overlay that is showing now, if any.
@@ -172,6 +185,17 @@ enum AreaCaptureFlow {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending { waiter.resume(returning: outcome) }
+    }
+}
+
+/// A lifetime probe held weakly, for `AreaCaptureFlow.overlayFramesFreed`.
+struct WeakProbe {
+    weak var object: AnyObject?
+    let missing: Bool
+
+    init(_ probe: AnyObject?) {
+        object = probe
+        missing = probe == nil
     }
 }
 

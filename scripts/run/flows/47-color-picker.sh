@@ -54,6 +54,7 @@ picked() {
   expect_equal "$1: the overlay ends with the pick" "picked $2" "$reply"
   expect_equal "$1: the pasteboard holds the uppercase hex" "$2" "$(send "$APP_SOCK" pasteboard-string)"
   expect_equal "$1: the toast says it was copied" "Copied $2" "$(send "$APP_SOCK" color-toast)"
+  expect_equal "$1: the frozen frames are gone" "yes" "$(send "$APP_SOCK" overlay-frames-freed)"
 }
 
 # set_after_selecting <value>: stores the setting through the test store.
@@ -68,7 +69,6 @@ send "$APP_SOCK" "fixture-delay 0" >/dev/null
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
 set_after_selecting showActionBar
-PICK_BEFORE="$(precise_mb "$APP_PID")"
 
 # 1. The menu item and the Shortcut: Pick Color after Capture Screen, unassigned until the user records one.
 expect_in_order "the menu offers Pick Color after Capture Screen" "$(send "$APP_SOCK" menu-titles)" "Capture Screen" "Pick Color"
@@ -204,6 +204,7 @@ send "$APP_SOCK" "overlay-key p" >/dev/null
 expect_equal "P does nothing in the picker" "pickingColor" "$(fact state)"
 send "$APP_SOCK" "overlay-key escape" >/dev/null
 expect_equal "Esc cancels a picker opened from the menu" "cancelled" "$(send_slow "$APP_SOCK" overlay-wait)"
+expect_equal "Esc: the frozen frames are gone" "yes" "$(send "$APP_SOCK" overlay-frames-freed)"
 expect_equal "the overlay is gone" "" "$(overlay_panels)"
 expect_equal "nothing was copied" "none" "$(send "$APP_SOCK" pasteboard-string)"
 expect_equal "and there is no toast" "none" "$(send "$APP_SOCK" color-toast)"
@@ -329,12 +330,17 @@ for PLACE in left above; do
 done
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 
-# 7. Memory. A 5120 x 2880 pixel display (56 MB of pixels): ten picks leave memory where it
-#    was, and the picker peaks in proportion to its frozen frame.
+# 7. Memory. A 5120 x 2880 pixel display (56 MB of pixels): ten picks leave memory where the first
+#    left it, the picker peaks in proportion to its frozen frame, and the app's own hold on the frame
+#    is gone after every pick (`overlay-frames-freed`). The last frame of a closed overlay can stay in
+#    the footprint for a long while on a CI runner's virtual display (the CI log shows it after flows
+#    40, 42 and 47 alike) without the app holding any of it, so the baseline is taken after the first
+#    pick and the release is asserted on the app's side.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 area_start "menu-click capture.pick-color" >/dev/null
 picker_click 0 400.5 300.5
 send_slow "$APP_SOCK" overlay-wait >/dev/null
+expect_equal "the first pick on the 5K display: the frozen frame is gone" "yes" "$(send "$APP_SOCK" overlay-frames-freed)"
 wait_until 5 toast_gone
 sleep 1
 PICK_BASELINE="$(precise_mb "$APP_PID")"
@@ -348,11 +354,13 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   PICK_PEAK="$(awk -v a="$PICK_PEAK" -v b="$NOW" 'BEGIN { print (b > a ? b : a) }')"
   send "$APP_SOCK" "overlay-key enter" >/dev/null
   send_slow "$APP_SOCK" overlay-wait >/dev/null
+  PICK_FREED="$(send "$APP_SOCK" overlay-frames-freed)"
+  [[ "$PICK_FREED" == yes ]] || break
   wait_until 5 toast_gone
 done
+expect_equal "ten picks on the 5K display: every frozen frame is gone once its pick ends" "yes" "$PICK_FREED"
 expect_memory_returns "memory returns to baseline after ten picks" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 5120 2880)"
 expect_peak_proportionate "the picker with a frozen frame on screen" "$PICK_PEAK" "$PICK_BASELINE" "$(pixels_mb 5120 2880)"
-expect_memory_returns "memory is where it was before the first pick" "$APP_PID" "$PICK_BEFORE" "$(pixels_mb 5120 2880)"
 expect_equal "no Editor helper process exists after the picks" "" "$(helper_pid)"
 
 # Leave what the next flows expect, and hold the process to its baseline here, not in a later flow.
