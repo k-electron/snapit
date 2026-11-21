@@ -46,6 +46,9 @@ enum AreaCaptureFlow {
     private static var waiters: [CheckedContinuation<Result, Never>] = []
     /// Test mode only: the latest overlay's frozen frames, held weakly (see `overlayFramesFreed`).
     private static var framesForTest: [WeakProbe]?
+    /// Test mode only: the latest overlay's controller, panels, scene views, scenes and container views,
+    /// held weakly by name (see `overlayObjectsAlive`).
+    private static var objectsForTest: [(name: String, probe: WeakProbe)]?
 
     /// Shows the overlay for an Area Capture, for a Window Capture (`.window`: the same overlay, but it
     /// picks the window under the pointer and a click captures that window alone) or for the Color
@@ -83,6 +86,18 @@ enum AreaCaptureFlow {
             controller.onFinish = { outcome in finish(outcome) }
             overlay = controller
             controller.show(takesFocus: !TestMode.isActive)
+            if TestMode.isActive {
+                var objects = [(name: "controller", probe: WeakProbe(controller))]
+                for (index, panel) in controller.panels.enumerated() { objects.append(("panel \(index)", WeakProbe(panel))) }
+                for (index, view) in controller.views.enumerated() {
+                    objects.append(("view \(index)", WeakProbe(view)))
+                    objects.append(("scene \(index)", WeakProbe(view.scene)))
+                }
+                for (index, container) in controller.containers.enumerated() {
+                    objects.append(("container \(index)", WeakProbe(container)))
+                }
+                objectsForTest = objects
+            }
             if mode == .window { WindowCaptureSources.current.prepare() }
             return .overlayShown
         } catch {
@@ -106,6 +121,15 @@ enum AreaCaptureFlow {
         guard let probes = framesForTest else { return "none" }
         if probes.contains(where: { $0.missing }) { return "unknown" }
         return probes.allSatisfy { $0.object == nil } ? "yes" : "no"
+    }
+
+    /// Test mode only: `yes` when the latest overlay's controller, panels, scene views, scenes and
+    /// container views are all deallocated, `none` before any overlay, else `no` and the names of those still alive (`no panel 0`).
+    /// After an overlay has ended this reads `yes`: nothing of the overlay is left in the app.
+    static var overlayObjectsAlive: String {
+        guard let objects = objectsForTest else { return "none" }
+        let alive = objects.filter { $0.probe.object != nil }.map(\.name)
+        return alive.isEmpty ? "yes" : "no " + alive.joined(separator: ", ")
     }
 
     /// The overlay that is showing now, if any.

@@ -80,7 +80,74 @@ expect_memory_returns() {
   else
     now="$(footprint_mb "$pid")"
     fail "$label: memory is '${now}' MB, its baseline was ${baseline} MB (margin ${margin} MB)"
+    memory_diagnosis "$pid"
   fi
+}
+
+# limited <seconds> <command...>: runs the command and stops it after that many seconds, whatever it is
+# doing; always returns 0, so a diagnostic tool that is missing, fails or hangs never fails the run.
+limited() {
+  local seconds="$1" child watcher
+  shift
+  "$@" 2>&1 &
+  child=$!
+  { sleep "$seconds"; kill "$child"; } >/dev/null 2>&1 &
+  watcher=$!
+  wait "$child" 2>/dev/null
+  kill "$watcher" >/dev/null 2>&1
+  wait "$watcher" 2>/dev/null
+  return 0
+}
+
+# memory_diagnosis <pid>: what the log of a failed memory check says, so a failure that only happens on one
+# machine names its holder without another run. It reads, in this order, the footprint's largest categories
+# (`footprint`), the regions with 500 dirty pages or more (`footprint -vv`: an IOSurface names its size),
+# the VM summary's IOSurface, CoreAnimation, CG image and MALLOC lines (`vmmap --summary`), the regions of
+# IOSurface, CG image and CoreAnimation and those with 8 MB or more dirty (`vmmap -v`), the live counts of
+# window, layer, image and surface classes (`heap`), the leaks line (`leaks`), and, for the menu bar app,
+# the windows and overlay objects it still holds (`live-windows`, `overlay-panels-freed`). Then
+# memory_nudges. Read-only apart from the nudges, short, only on failure, every tool limited in time.
+memory_diagnosis() {
+  local pid="$1"
+  echo "     footprint categories of pid $pid:"
+  limited 20 footprint "$pid" | sed -n '2p;5,16p' | sed 's/^/       /'
+  echo "     footprint -vv: regions with about 8 MB or more dirty (pages, dirty pages, what):"
+  limited 30 footprint -vv "$pid" | awk '$2 == "-" && $6 + 0 >= 500 { w = $9; for (i = 10; i <= NF; i++) w = w " " $i; print "       " $5, $6, w }' | head -8
+  echo "     vmmap summary (IOSurface, CoreAnimation, CG image, MALLOC):"
+  limited 30 vmmap --summary "$pid" | grep -E "^(IOSurface|CoreAnimation|CG image|MALLOC|TOTAL|Physical footprint)" | cut -c1-110 | head -12 | sed 's/^/       /'
+  echo "     vmmap -v: IOSurface, CG image, CoreAnimation of 1 MB or more, and any region with 8 MB or more dirty:"
+  limited 40 vmmap -v "$pid" | awk '
+    function mb(s,   n, u) { n = substr(s, 1, length(s) - 1) + 0; u = substr(s, length(s)); return u == "K" ? n / 1024 : u == "G" ? n * 1024 : n }
+    match($0, /\[ *[0-9.]+[KMG] +[0-9.]+[KMG] +[0-9.]+[KMG] +[0-9.]+[KMG]\]/) {
+      split(substr($0, RSTART + 1, RLENGTH - 2), c, " ")
+      if (($0 ~ /^(IOSurface|CG image|CoreAnimation)/ && mb(c[1]) >= 1) || mb(c[3]) + mb(c[4]) >= 8) print "       " substr($0, 1, 110)
+    }' | head -12
+  echo "     heap: live objects of window, layer, image and surface classes:"
+  limited 40 heap "$pid" | grep -E "NSWindow|NSPanel|AreaOverlay|ColorToast|NSGlass|CGImage|CALayer|CAContext|IOSurface|CVPixelBuffer" | cut -c1-110 | head -16 | sed 's/^/       /'
+  echo "     leaks:"
+  limited 60 leaks "$pid" | grep -E "nodes malloced|leaks for" | head -2 | sed 's/^/       /'
+  if [[ "$pid" == "${APP_PID:-}" ]]; then
+    echo "     what the menu bar app still holds:"
+    echo "       overlay objects: $(send "$APP_SOCK" overlay-panels-freed)"
+    echo "       overlay frames: $(send "$APP_SOCK" overlay-frames-freed)"
+    send "$APP_SOCK" live-windows | sed 's/^/       /'
+    memory_nudges "$pid"
+  fi
+}
+
+# memory_nudges <pid>: after a failed memory check, tries what a lazy release could be waiting for and logs
+# `nudge <name>: <before> -> <after> MB` for each, in this order: three more seconds; a window the app
+# shows and closes (`ca-nudge`: a Core Animation commit and a window server round trip); the fixture display
+# back to a small one and two more seconds. Whether the footprint falls tells a late release by the system
+# from memory that is held for good.
+memory_nudges() {
+  local pid="$1" before after
+  before="$(footprint_mb "$pid")"; sleep 3; after="$(footprint_mb "$pid")"
+  echo "     nudge wait 3 s: $before -> $after MB"
+  before="$after"; send "$APP_SOCK" ca-nudge >/dev/null; sleep 0.5; after="$(footprint_mb "$pid")"
+  echo "     nudge a window shown and closed: $before -> $after MB"
+  before="$after"; send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null; sleep 2; after="$(footprint_mb "$pid")"
+  echo "     nudge fixture display reset: $before -> $after MB"
 }
 
 # expect_steady_across_cycles <label> <lowest MB> <highest MB> [<feature MB>]: a footprint measured once per

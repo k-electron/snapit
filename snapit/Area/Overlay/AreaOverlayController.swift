@@ -163,14 +163,18 @@ final class AreaOverlayController: ActionBarHost {
         screenObserver = nil
         for view in views { view.scene.releaseFrame() }
         for container in containers { container.releaseActionBar() }
-        for panel in panels {
-            panel.contentView = nil
-            panel.orderOut(nil)
-            panel.close()
+        // Inside a pool: the panels, views and layers (and the frozen frames they read) are released
+        // here, not at some later turn of the run loop.
+        autoreleasepool {
+            for panel in panels {
+                panel.contentView = nil
+                panel.orderOut(nil)
+                panel.close()
+            }
+            panels.removeAll()
+            views.removeAll()
+            containers.removeAll()
         }
-        panels.removeAll()
-        views.removeAll()
-        containers.removeAll()
         // Core Animation holds on to what it last committed until the next commit: do it now, so
         // the frozen frames are freed with the overlay and not at some later event.
         CATransaction.flush()
