@@ -24,7 +24,7 @@ The scripts that call Xcode's tools source `scripts/xcode-env.sh`: when `DEVELOP
 `scripts/test.sh` runs, in order:
 
 1. Repo layout checks, and `scripts/check-network.sh`: the only code in snapit that may open a network connection is `snapit/Updates/GitHubReleaseEndpoint.swift` (Check for Updates), and the engine uses none.
-2. `scripts/check-docs.sh`, the docs check: the User Guide's sections, links and checklist (see "The User Guide" below), and every relative link in every Markdown file in the repo outside build output and Cargo's `target/` folder, which has to resolve to a file that exists. The check names the file and line of a link that does not resolve, and skips code spans and fenced code.
+2. `scripts/check-docs.sh`, the docs check: the User Guide's sections, links and checklist (see "The User Guide" below), and, over every Markdown file in the repo outside build output and Cargo's `target/` folder: every relative link and every image (a Markdown image, an HTML `img` `src`, each candidate of a `source` `srcset`) resolves to a file that exists, every file under `docs/images/` is in the shot list, and every slot marker names a shot in it (see "Images and the shot list" below). The check names the file and line of each failure, and skips code spans and fenced code.
 3. `cargo fmt --check`, `cargo clippy` and `cargo test`. The Cargo tests call the engine through the same C-ABI functions Swift calls.
 4. The cbindgen header check: the committed header must match the engine.
 5. The Xcode build.
@@ -825,9 +825,10 @@ the SF Symbol, and GitHub shows neither), `###`, paragraphs (the window draws on
 paragraphs, notes and lists so GitHub does not join them), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline
 Markdown. A link is `[text](#id)` to a section, which works in the window and on GitHub, or an
 `https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other link is
-dropped. An image is a line of its own, `![alt](images/…)`, a relative path into `docs/images/`: the window skips the line
-entirely, with no block and no alt text. The window also skips HTML comments, whether on one line, inline or across
-several lines. Write the words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never
+dropped. An image is a line of its own, `![alt](images/user-guide/<id>.png)`, a relative path into `docs/images/`: the window
+skips the line entirely, with no block and no alt text. The window also skips HTML comments, whether on one line, inline or
+across several lines, which is how a slot marker (`<!-- shot: <id> -->`, see "Images and the shot list") shows nothing in the
+window and on GitHub. Write the words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never
 from memory.
 
 | To add | Do |
@@ -835,6 +836,7 @@ from memory.
 | a section | a `## <a id="id"></a>Title <!-- icon: sf.symbol -->` in `docs/UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-docs.sh` |
 | a flow to the checklist | a line in `scripts/user-guide-checklist.txt`: the section id, a bar, then the terms it must hold separated by semicolons. `scripts/check-docs.sh` (run by `scripts/test.sh` before the build) checks the source, and flow 58 checks the guide the helper loaded |
 | a block kind | a case in `GuideBlock`, its parsing in `GuideDocument.init(markdown:)` and its view in `UserGuideView.swift` |
+| a shot (an image) | an entry in `docs/development/shot-list.md`, and a slot marker where it goes in the doc; the steps for taking it are in the shot list |
 
 The docs check reads the source and names the file and line of every failure: a duplicate section id, a section without
 an anchor and an icon, a `#id` link that names no section, an image outside the docs images folder (the path must start
@@ -849,6 +851,27 @@ an inline image and comments in every form to the root and opens it with
 `user-guide-fixture <file in the root>` (`off` drops it): the next window parses that file with the same parser instead of the
 bundled one, and the flow shows that no image block, alt text or comment text is drawn or found by search. `user-guide-snapshot`
 renders only part of a SwiftUI view: for the look use a real screen (`docs/development/manual-checks.md`).
+
+### Images and the shot list
+
+Images live under `docs/images/user-guide/` and `docs/images/readme/`. Git does not track an empty folder, so a folder
+exists once its first shot does, and the check does not need it. `docs/development/shot-list.md` has one entry per image
+(`### <id>`, then a `File:` line with the path under `docs/images/`, the surface, the setup and the docs that use it) and
+the shooting guidance. A shot not yet taken is a slot marker, `<!-- shot: <id> -->`, on a line of its own in the doc.
+
+The docs check, over all Markdown, fails with the file and line on:
+
+- an image that points at a file that does not exist (a Markdown image, an `img` `src`, any candidate of a `source`
+  `srcset`);
+- a file under `docs/images/` (any depth, any extension, Finder's `.DS_Store` aside) that is not in the shot list;
+- a slot marker that names a shot not in the shot list;
+- a shot-list entry whose heading is not a lowercase-kebab id, that has no `File:` line, or whose file is not
+  `user-guide/<id>.png` or `readme/<id>.png` (`.gif` for an animation).
+
+It reports a slot marker whose file is not there yet as pending, as a count and a list before its `ok` line, and never
+fails on it, so the pre-commit hook stays green while shots are outstanding. Code spans, fenced code and HTML comments are
+not looked in for links and images, and a marker in a code span is not a marker. Each rule is proven on a temporary bad
+input (a missing image in each form, an unlisted file, an unknown marker, a malformed entry) and green on the repo.
 
 ## CI environment
 
