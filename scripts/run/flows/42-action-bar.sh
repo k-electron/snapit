@@ -267,6 +267,11 @@ expect_equal "a drag away from the selection replaces it" "0 20,300 60x40" "$(fa
 expect_equal "and it is adjustable" "adjusting" "$(fact state)"
 expect_equal "with its eight handles on the new selection" "8" "$(fact handles)"
 mouse move 0 10 10 >/dev/null
+# Moving the pointer while adjusting changes nothing on screen: no layer work.
+wait_until 10 scene_updates_quiet
+UPDATES_BEFORE="$(fact scene-updates)"
+for i in $(seq 1 50); do mouse move 0 $((20 + i * 5)) $((20 + i * 3)) >/dev/null; done
+expect_equal "pointer moves while adjusting redraw nothing" "$UPDATES_BEFORE" "$(fact scene-updates)"
 area_cancel
 
 # 8. Esc cancels with the Action bar up, and the Shortcut works again at once.
@@ -417,9 +422,9 @@ expect_contains "overlay-mouse refuses a click count of 0" "error" "$(mouse down
 expect_equal "overlay-mouse takes a click count" "ok" "$(mouse move 0 10 10 1)"
 area_cancel
 
-# 15. Memory. A 2560 x 1600 pixel display (16 MB of pixels): five Captures through the Action
+# 15. Memory. A 5120 x 2880 pixel display (56 MB of pixels): five Captures through the Action
 #     bar leave memory where it was, and the overlay with the bar up peaks in proportion to its frame.
-send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100.5 100.5 600.5 500.5
 send "$APP_SOCK" "overlay-key enter" >/dev/null
@@ -438,21 +443,16 @@ for _ in 1 2 3 4 5; do
   send "$APP_SOCK" "overlay-key enter" >/dev/null
   area_result && copy_closes_editor
 done
-expect_memory_returns "memory returns to baseline after five Action bar Captures" "$APP_PID" "$BAR_BASELINE" "$(pixels_mb 2560 1600)"
-expect_memory_returns "memory is where it was before the first Action bar" "$APP_PID" "$BAR_FIRST_BEFORE" "$(pixels_mb 2560 1600)"
-expect_peak_proportionate "the overlay with the Action bar: a frozen frame held on screen" "$BAR_PEAK" "$BAR_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory returns to baseline after five Action bar Captures" "$APP_PID" "$BAR_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "memory is where it was before the first Action bar" "$APP_PID" "$BAR_FIRST_BEFORE" "$(pixels_mb 5120 2880)"
+expect_peak_proportionate "the overlay with the Action bar: a frozen frame held on screen" "$BAR_PEAK" "$BAR_BASELINE" "$(pixels_mb 5120 2880)"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Action bar Captures"; else fail "an Editor helper is still running"; fi
-
-send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
-area_start "press-shortcut capture-area" >/dev/null
-area_drag 0 100 60 300 160
-area_cancel
 
 # Leave what the next flows expect: no helper, a small fixture display, nothing on the pasteboard.
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 area_no_helper
 # The flows after this one see the process as flow 20 measured it at rest, plus what is allowed.
-expect_memory_returns "memory is back near the at-rest footprint after the Action bar flow" "$APP_PID" "$AT_REST" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory is back near the at-rest footprint after the Action bar flow" "$APP_PID" "$AT_REST" "$(pixels_mb 5120 2880)"
 
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

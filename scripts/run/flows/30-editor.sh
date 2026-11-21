@@ -61,8 +61,6 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_in_order "the helper's Edit menu has Copy" "$(menu_items "$MENUS" Edit)" "Copy"
   expect_in_order "the helper's Window menu has Minimize and Close" "$(menu_items "$MENUS" Window)" "Minimize" "Close"
 
-  # An open Editor costs nothing at rest.
-
     # Activation: a scripted run never takes focus; a normal run asks LaunchServices to bring the
   # helper forward when it launches and again when the Editor shows.
   expect_contains "test mode does not activate the helper at launch" "activate-at-launch=false" "$(send "$APP_SOCK" "activation-plan test")"

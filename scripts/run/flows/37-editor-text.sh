@@ -171,7 +171,6 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_contains "a swatch clicked while typing colors the text" "annotation $LAST_ID text" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N")"
   expect_contains "in that color" "0a84ff" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep "^annotation $LAST_ID ")"
 
-  # At rest, nothing is ticking: the caret's timer went with the text view.
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi

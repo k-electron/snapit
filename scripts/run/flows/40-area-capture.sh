@@ -25,6 +25,16 @@ overlay_panels() {
   [[ -z "$lines" ]] || printf '%s\n' "$lines"
 }
 
+# scene_updates_quiet: the overlay's scene has stopped redrawing (a move's own redraw can land late on a busy
+# machine, so the count an idle check starts from is read once this holds).
+scene_updates_quiet() {
+  local before after
+  before="$(fact scene-updates)"
+  sleep 0.3
+  after="$(fact scene-updates)"
+  [[ "$before" == "$after" ]]
+}
+
 # Drags from (x1, y1) to (x2, y2) on one display, in points from its top-left corner, in a few
 # steps, and lets go.
 area_drag() {
@@ -276,9 +286,9 @@ done
 send "$APP_SOCK" "fixture-pixel-layout alpha-first" >/dev/null
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 
-# 7. Memory returns to baseline over repeated Captures. A 2560 x 1600 pixel display (16 MB of
-#    pixels): a retained frozen frame or Capture would show.
-send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
+# 7. Memory returns to baseline over repeated Captures. A 5120 x 2880 pixel display (56 MB of
+#    pixels): a frozen frame or Capture kept after the overlay closes would show.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100.5 100.5 600.5 500.5
 area_result && copy_closes_editor   # warm up allocator pools
@@ -293,9 +303,9 @@ for _ in 1 2 3 4 5; do
   area_drag 0 100.5 100.5 600.5 500.5
   area_result && copy_closes_editor
 done
-expect_memory_returns "memory returns to baseline after five Area Captures of a 2560 x 1600 display" "$APP_PID" "$AREA_BASELINE" "$(pixels_mb 2560 1600)"
-expect_memory_returns "memory is back near the at-rest footprint" "$APP_PID" "$AREA_AT_REST" "$(pixels_mb 2560 1600)"
-expect_peak_proportionate "the overlay: a frozen frame held on screen" "$OVERLAY_PEAK" "$AREA_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory returns to baseline after five Area Captures of a 5120 x 2880 display" "$APP_PID" "$AREA_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "memory is back near the at-rest footprint" "$APP_PID" "$AREA_AT_REST" "$(pixels_mb 5120 2880)"
+expect_peak_proportionate "the overlay: a frozen frame held on screen" "$OVERLAY_PEAK" "$AREA_BASELINE" "$(pixels_mb 5120 2880)"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Editors closed"; else fail "an Editor helper is still running"; fi
 
 # 8. The overlay on a 1920 x 1080 display at 1x (an 8 MB frame) holds a peak proportionate to its frame on top of the
@@ -323,6 +333,7 @@ send_slow "$APP_SOCK" overlay-wait >/dev/null
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 
 area_start "press-shortcut capture-area" >/dev/null
+expect_not_spinning "the menu bar app with the overlay up" "$APP_PID" 5
 send "$APP_SOCK" "overlay-key escape" >/dev/null
 send_slow "$APP_SOCK" overlay-wait >/dev/null
 

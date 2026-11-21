@@ -104,8 +104,6 @@ if capture_into_editor "menu-click capture.screen"; then
   drag 200 130 250 170 >/dev/null
   if wait_until 5 lc_state_is "$N" exported false; then pass "a change after an Export clears the exported flag"; else fail "the exported flag is still set after a change"; fi
 
-  # Idle once the write has landed.
-
   # 3. Annotations of every kind in the registry, a crop and the Undo history come back.
   KINDS="$(send "$EDITOR_SOCK" annotation-kinds)"
   KIND_COUNT="$(printf '%s\n' "$KINDS" | grep -c .)"

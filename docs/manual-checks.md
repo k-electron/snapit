@@ -2,7 +2,7 @@
 
 Things only a person can check, because they need Gatekeeper, macOS's own permission dialogs or a real Finder window. Each section says when to run it and how to clean up afterwards.
 
-Where a step looks at memory or CPU, read it with the four questions of `AGENTS.md` ("Engineering priorities"): is what snapit holds justified by the feature, proportionate to what the running feature needs, released when the flow ends, and well chosen. There are no numbers to match.
+Where a step looks at memory or CPU, read it with the four questions in `AGENTS.md` ("Engineering priorities").
 
 ## Release DMG install (#34)
 
@@ -98,7 +98,7 @@ Run on a real install, with Screen Recording granted, before a release and after
 5. Click a highlighted window: it becomes the Area with its handles and the bar. Press Enter: the window's frame is captured.
 6. With another app frontmost, press ⌃⌥⌘4, drag an Area and press Esc (and again with the Cancel button): the overlay goes, that app is frontmost with the keyboard, and ⌃⌥⌘4 works again at once.
 7. With two displays, make an Area on one and drag a handle toward the other: the Area stops at its own display's edge, and the bar is on that display.
-8. Memory and CPU, with `footprint <pid>` and Activity Monitor: the Action bar's glass is what the bar holds, it returns to the resting footprint after the bar is cancelled, and snapit is not busy while the bar and a tooltip show.
+8. Memory and CPU, with `footprint <pid>` and Activity Monitor: the Action bar's glass is what the bar holds, it returns to near the resting footprint after the bar is cancelled, and snapit is not busy while the bar and a tooltip show.
 
 ## Timed Capture on a real screen (#20)
 

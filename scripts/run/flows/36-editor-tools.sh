@@ -313,7 +313,6 @@ if capture_into_editor "menu-click capture.screen"; then
   BIG_BBOX="$(png_field "$BIG_DIFF" bbox)"
   IFS=, read -r BX0 BY0 BX1 BY1 <<<"$BIG_BBOX"
   if ((BX0 >= 399 && BX0 <= 401 && BY0 >= 199 && BY0 <= 201 && BX1 >= 1399 && BX1 <= 1401 && BY1 >= 799 && BY1 <= 801)); then pass "its edges are at (400,200) and (1400,800) pixels ($BIG_BBOX)"; else fail "the Rectangle's pixels are $BIG_BBOX, expected 400,200,1400,800"; fi
-  # With an Annotation selected the canvas rests: nothing animates.
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi

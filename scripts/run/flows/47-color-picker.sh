@@ -329,9 +329,9 @@ for PLACE in left above; do
 done
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 
-# 7. Memory. A 2560 x 1600 pixel display (16 MB of pixels): ten picks leave memory where it
+# 7. Memory. A 5120 x 2880 pixel display (56 MB of pixels): ten picks leave memory where it
 #    was, and the picker peaks in proportion to its frozen frame.
-send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 area_start "menu-click capture.pick-color" >/dev/null
 picker_click 0 400.5 300.5
 send_slow "$APP_SOCK" overlay-wait >/dev/null
@@ -350,15 +350,12 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   send_slow "$APP_SOCK" overlay-wait >/dev/null
   wait_until 5 toast_gone
 done
-expect_memory_returns "memory returns to baseline after ten picks" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"
-expect_peak_proportionate "the picker with a frozen frame on screen" "$PICK_PEAK" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"
-expect_memory_returns "memory is where it was before the first pick" "$APP_PID" "$PICK_BEFORE" "$(pixels_mb 2560 1600)"
-area_start "menu-click capture.pick-color" >/dev/null
-send "$APP_SOCK" "overlay-key escape" >/dev/null
-send_slow "$APP_SOCK" overlay-wait >/dev/null
+expect_memory_returns "memory returns to baseline after ten picks" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 5120 2880)"
+expect_peak_proportionate "the picker with a frozen frame on screen" "$PICK_PEAK" "$PICK_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "memory is where it was before the first pick" "$APP_PID" "$PICK_BEFORE" "$(pixels_mb 5120 2880)"
 expect_equal "no Editor helper process exists after the picks" "" "$(helper_pid)"
 
 # Leave what the next flows expect, and hold the process to its baseline here, not in a later flow.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
-expect_memory_returns "memory is where the ten picks left it after the Color picker flow" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory is where the ten picks left it after the Color picker flow" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 5120 2880)"

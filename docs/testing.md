@@ -353,7 +353,7 @@ no machine's noise reaches, and it runs the same on every machine. The checks, a
   Last Capture, and only PNGs in `drag-out/`.
 - **Nothing spins at rest** (`expect_not_spinning <label> <pid> <seconds>`): the process averaged under 5% of
   one CPU over the seconds given. It runs on the Editor helper holding the heaviest Editor of the run
-  (flow 38) and on the menu bar app at the end of the run (flow 90).
+  (flow 38), on the menu bar app with the Area overlay up (flow 40) and at the end of the run (flow 90).
 
 Flow `05-run-helpers.sh` checks the spin check on a process that burns CPU and on one that sleeps, and the
 cache check on a leftover export file.
@@ -393,7 +393,7 @@ coordinates). The fixture frames are
 IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
 
-The Action bar is drawn in layers on Liquid Glass: layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
+The Action bar is layers over one `NSGlassEffectView` (Liquid Glass), because AppKit and SwiftUI controls keep memory for good once a process has shown them. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
 `AreaOverlayView` (the scene) fills it and, once an Area is being adjusted, the bar sits above it as
 two small views, `ActionBarBackdropView` (an `NSGlassEffectView`, the Liquid Glass capsule) and
 `ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
