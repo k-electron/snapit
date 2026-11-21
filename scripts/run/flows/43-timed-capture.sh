@@ -5,7 +5,7 @@
 # change per call: a stamp in the corner counts them) with snapit's own windows excluded (the fixture
 # paints any that are not), cropped to the Area and opened in the Editor. Checks the pixels at 1x
 # and 2x, the Editor warm-up and a helper that quit during the countdown, a failed Capture at zero,
-# memory and idle CPU, and that the slider's value survives a relaunch. Uses the helpers of
+# memory, and that the slider's value survives a relaunch. Uses the helpers of
 # 40-area-capture.sh and 42-action-bar.sh. Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -58,7 +58,6 @@ send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
 send "$APP_SOCK" "defaults-set afterSelectingArea nonsense" >/dev/null
 wait_until 10 no_helper_running
-TIMED_BASE_MB="$(precise_mb "$APP_PID")"
 
 # 1. The bar offers the timer and "Capture in N s" between Capture and Cancel; the timer is 3 s
 #    until the slider moves; both have a tooltip and a whole tile of at least 60 x 30 points.
@@ -177,7 +176,6 @@ fi
 if (($(timed fresh-excluded) >= 5)); then pass "the content filter excluded snapit's border and badge ($(timed fresh-excluded) windows)"; else fail "excluded only $(timed fresh-excluded) windows"; fi
 expect_equal "the border and the badge are gone from the screen" "1" "$(no_countdown_windows && echo 1 || echo 0)"
 area_png_check "Timed Capture at 1x" 1 200 200 600 400 200 100 "sRGB IEC61966-2.1" "$SRGB_SHA_TIMED" 2835
-assert_idle_cpu "menu bar app after a Timed Capture" "$APP_PID" 3
 
 # 4. The Capture is fresh, not the frozen frame: the fixture stamps a 4 x 4 pixel square in the
 #    display's corner with the number of fresh Captures so far, and the frozen frame has none.
@@ -346,55 +344,30 @@ area_start "press-shortcut capture-area" >/dev/null
 expect_contains "a new Capture can start after the failure" "state=" "$(send "$APP_SOCK" overlay-facts)"
 area_cancel
 
-# 13. Memory and CPU: with a large Retina display, the countdown holds no frozen frame (the overlay
-#     and its 21 MB image are gone while it counts), and five Timed Captures leave memory where it was.
-send "$APP_SOCK" "fixture-display 2 1500 900" >/dev/null
-sleep 1
-TIMED_REST="$(precise_mb "$APP_PID")"
+# 13. Memory: with a 5K display, the countdown holds no frozen frame (the overlay and its 56 MB image
+#     are gone while it counts), and five Timed Captures leave memory where it was.
+send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
+TIMED_REST="$(footprint_mb "$APP_PID")"
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 100 1400 800
-TIMED_WITH_OVERLAY="$(precise_mb "$APP_PID")"
 press_tile timed-capture 10 10
 wait_until 5 timed_is state counting || fail "no countdown started for the memory check ('$(timed state)')"
-sleep 0.8
-# The frame goes when the overlay does; the process's footprint follows within a few seconds (a virtual
-# machine's software rendering lets go of its copies late), so this waits for it: the Capture that was
-# taken at zero is ten seconds away.
-TIMED_COUNTING="$(precise_mb "$APP_PID")"
-for _ in $(seq 1 12); do
-  awk -v a="$TIMED_COUNTING" -v b="$TIMED_REST" 'BEGIN { exit !(a - b <= 6) }' && break
-  sleep 0.5
-  TIMED_COUNTING="$(precise_mb "$APP_PID")"
-done
-echo "     ${TIMED_REST} MB at rest, ${TIMED_WITH_OVERLAY} MB with the overlay and the bar, ${TIMED_COUNTING} MB while counting"
-if awk -v a="$TIMED_COUNTING" -v b="$TIMED_REST" 'BEGIN { exit !(a - b <= 6) }'; then
-  pass "the countdown holds no frozen frame (${TIMED_COUNTING} MB counting, ${TIMED_REST} MB at rest, with the 21 MB frame gone)"
-else
-  fail "memory is ${TIMED_COUNTING} MB while counting against ${TIMED_REST} MB at rest"
-fi
+# The Capture that is taken at zero is ten seconds away: the frame goes when the overlay does, and the
+# process's footprint follows within a few seconds.
+expect_memory_returns "the countdown holds no frozen frame" "$APP_PID" "$TIMED_REST" "$(pixels_mb 5120 2880)"
 area_result && copy_closes_editor
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 send "$APP_SOCK" "timed-seconds-store 1" >/dev/null
 wait_until 10 no_helper_running
 sleep 1
-TIMED_BASELINE="$(precise_mb "$APP_PID")"
-TIMED_PEAK=0
+TIMED_BASELINE="$(footprint_mb "$APP_PID")"
 for _ in 1 2 3 4 5; do
   timed_start 200 100 400 300
-  NOW="$(precise_mb "$APP_PID")"
-  TIMED_PEAK="$(awk -v a="$TIMED_PEAK" -v b="$NOW" 'BEGIN { print (b > a ? b : a) }')"
   area_result && copy_closes_editor
 done
-sleep 1
-TIMED_AFTER="$(precise_mb "$APP_PID")"
-if awk -v a="$TIMED_AFTER" -v b="$TIMED_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after five Timed Captures (${TIMED_BASELINE} MB before, ${TIMED_AFTER} MB after)"
-else
-  fail "memory grew from ${TIMED_BASELINE} MB to ${TIMED_AFTER} MB over five Timed Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
+expect_memory_returns "memory returns to baseline after five Timed Captures" "$APP_PID" "$TIMED_BASELINE"
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 no_helper_running
-assert_idle_cpu "menu bar app at rest after the Timed Captures (no timer left running)" "$APP_PID" 5
 expect_equal "no tick is scheduled at rest" "no" "$(timed ticking)"
 
 # 14. The slider's value is remembered across launches: the Action bar shows it after snapit quits

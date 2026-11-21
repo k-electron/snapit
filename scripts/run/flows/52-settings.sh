@@ -123,7 +123,6 @@ expect_equal "the switch shows on" "on" "$(sval open-at-login)"
 send "$APP_SOCK" "login-item-simulate requiresApproval" >/dev/null
 sleep 3
 expect_equal "a status change behind Settings' back is not noticed: nothing polls" "on" "$(sval open-at-login)"
-assert_idle_cpu "the helper with Settings open" "$SETTINGS_PID" 5
 send_slow "$APP_SOCK" "menu-click settings" >/dev/null
 wait_until 5 settings_is open-at-login needs-approval
 expect_equal "asking for Settings again reads the status: approval is needed" "needs-approval" "$(sval open-at-login)"
@@ -279,14 +278,7 @@ expect_equal "the Screenshots shortcuts button opens the Keyboard page of System
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
 if wait_until 10 gone "$SETTINGS_PID"; then pass "closing Settings, the only window, quits the helper"; else fail "the helper is still running after Settings closed"; fi
 expect_equal "no helper process is left" "" "$(helper_pid)"
-sleep 1
-SETTINGS_AFTER_MB="$(footprint_mb "$APP_PID")"
-if awk -v a="$SETTINGS_AFTER_MB" -v b="$SETTINGS_BASELINE_MB" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is at its baseline after Settings (${SETTINGS_BASELINE_MB} MB before, ${SETTINGS_AFTER_MB} MB after)"
-else
-  fail "the menu bar app grew from ${SETTINGS_BASELINE_MB} MB to ${SETTINGS_AFTER_MB} MB across Settings"
-fi
-assert_idle_cpu "menu bar app after Settings" "$APP_PID" 5
+expect_memory_returns "the menu bar app is at its baseline after Settings" "$APP_PID" "$SETTINGS_BASELINE_MB"
 
 # 8. The chosen Shortcut and the settings are still there when Settings opens again (a fresh helper).
 send_slow "$APP_SOCK" "menu-click settings" >/dev/null

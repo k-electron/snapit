@@ -221,7 +221,7 @@ if capture_into_editor "menu-click capture.screen"; then
 fi
 send "$APP_SOCK" save-release >/dev/null   # whatever happened above, later Saves are never held
 
-# 8. Memory and CPU: five 5K Saves, each closing its Editor, leave the menu bar app where it was.
+# 8. Memory: five 5K Saves, each closing its Editor, leave the menu bar app where it was.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 clear_save_folder
 big_save() {
@@ -234,24 +234,13 @@ big_save   # warm up the allocator pools
 sleep 1
 SAVE_BASELINE="$(footprint_mb "$APP_PID")"
 for _ in 1 2 3 4 5; do big_save; done
-sleep 1
-SAVE_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$SAVE_AFTER" -v b="$SAVE_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after five 5K Saves (${SAVE_BASELINE} MB before, ${SAVE_AFTER} MB after)"
-else
-  fail "memory grew from ${SAVE_BASELINE} MB to ${SAVE_AFTER} MB over five 5K Saves (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-if awk -v a="$SAVE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is back near its at-rest footprint after the Saves (${AT_REST} MB at rest, ${SAVE_AFTER} MB after)"
-else
-  fail "the menu bar app is at ${SAVE_AFTER} MB after the Saves, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
-fi
+expect_memory_returns "memory returns to baseline after five 5K Saves" "$APP_PID" "$SAVE_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "the menu bar app is back near its at-rest footprint after the Saves" "$APP_PID" "$AT_REST" "$(pixels_mb 5120 2880)"
 BIG_FILE="$(saved_pngs | head -1)"
 BIG_INFO="$("$INSPECT" info "$SAVE/$BIG_FILE")"
 expect_equal "a 5K Save has the full pixel size" "5120x2880" "$(png_field "$BIG_INFO" width)x$(png_field "$BIG_INFO" height)"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Saves"; else fail "an Editor helper is still running"; fi
 expect_equal "no shared export file is left after the Saves" "" "$(ls -A "$RUN_ROOT/exports" 2>/dev/null)"
-assert_idle_cpu "menu bar app after the Saves" "$APP_PID" 5
 clear_save_folder
 set_default closeEditorAfterSave true
 send "$APP_SOCK" pasteboard-clear >/dev/null

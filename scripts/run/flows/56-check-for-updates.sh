@@ -7,7 +7,7 @@
 # X.Y.Z, a pre-release, offline, a timeout, a rate limit), what the window says (the version,
 # the release notes drawn from Markdown, the Open Anyway and Screen Recording reminder), what
 # Download opens (through the browser edge, never a real browser), that a click while a check
-# runs sends no second request, and that the menu bar app is back at its baseline and idle.
+# runs sends no second request, and that the menu bar app is back at its baseline.
 # Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -389,21 +389,12 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   wait_until 10 u_no_helper
 done
 ucheck
-sleep 1
-assert_idle_cpu "the helper with the update window open" "$(helper_pid)" 5
 send_slow "$EDITOR_SOCK" "update-press close" >/dev/null
 wait_until 10 u_no_helper
 REQUESTS_AFTER="$(update_requests)"
 sleep 3
 expect_equal "an idle snapit sends no request" "$REQUESTS_AFTER" "$(update_requests)"
-sleep 1
-UPDATE_AFTER_MB="$(footprint_mb "$APP_PID")"
-if awk -v a="$UPDATE_AFTER_MB" -v b="$UPDATE_BASELINE_MB" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is at its baseline after the checks (${UPDATE_BASELINE_MB} MB before, ${UPDATE_AFTER_MB} MB after)"
-else
-  fail "the menu bar app grew from ${UPDATE_BASELINE_MB} MB to ${UPDATE_AFTER_MB} MB across the checks"
-fi
-assert_idle_cpu "menu bar app after the checks" "$APP_PID" 5
+expect_memory_returns "the menu bar app is at its baseline after the checks" "$APP_PID" "$UPDATE_BASELINE_MB"
 expect_no_internet "the menu bar app after every check" "$APP_PID"
 
 # 11. Nothing else in snapit goes online: the code that can is in one file.

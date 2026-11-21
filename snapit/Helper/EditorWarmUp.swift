@@ -1,7 +1,7 @@
 import Foundation
 
-/// Warms the Editor helper up while a Capture is being taken, so the Editor appears about 50 ms
-/// after the Capture.
+/// Warms the Editor helper up while a Capture is being taken, so the Editor is ready when the
+/// Capture is.
 ///
 /// Every Capture mode calls `begin()` the moment it starts (its Shortcut was pressed and its UI,
 /// if any, appears) and `cancel()` if it ends without a Capture. Opening the Capture
@@ -28,8 +28,6 @@ enum EditorWarmUp {
     private static var begun = false
     private static var generation = 0
     private static var tail: Task<Void, Never>?
-
-    static var isWarm: Bool { state == .warm }
 
     /// A Capture started: start the helper hidden and have it prepare an Editor. Does nothing
     /// when a warm-up is already under way.

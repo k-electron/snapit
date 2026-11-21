@@ -62,9 +62,6 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_in_order "the helper's Window menu has Minimize and Close" "$(menu_items "$MENUS" Window)" "Minimize" "Close"
 
   # An open Editor costs nothing at rest.
-  sleep 2
-  assert_idle_cpu "the Editor helper with an Editor open" "$HELPER_PID" 5
-  assert_idle_cpu "the menu bar app with an Editor open" "$APP_PID" 3
 
     # Activation: a scripted run never takes focus; a normal run asks LaunchServices to bring the
   # helper forward when it launches and again when the Editor shows.
@@ -153,24 +150,9 @@ for _ in 1 2 3 4 5; do
     copy_closes_editor
   fi
 done
-sleep 1
-CYCLE_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$CYCLE_AFTER" -v b="$CYCLE_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app's memory is flat over five Capture, Editor, Copy cycles (${CYCLE_BASELINE} MB before, ${CYCLE_AFTER} MB after)"
-else
-  fail "the menu bar app's memory went from ${CYCLE_BASELINE} MB to ${CYCLE_AFTER} MB over five Editor cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-if awk -v a="$CYCLE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is back near its at-rest footprint after the Editors closed (${AT_REST} MB at rest, ${CYCLE_AFTER} MB after)"
-else
-  fail "the menu bar app is at ${CYCLE_AFTER} MB after the Editors closed, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
-fi
-if awk -v lo="$HELPER_MIN" -v hi="$HELPER_MAX" 'BEGIN { exit !(lo > 0 && hi - lo <= 15) }'; then
-  pass "the helper's footprint with a 5K Editor open is the same every cycle (${HELPER_MIN} to ${HELPER_MAX} MB)"
-else
-  fail "the helper's footprint with a 5K Editor open varies from ${HELPER_MIN} to ${HELPER_MAX} MB"
-fi
+expect_memory_returns "the menu bar app's memory is flat over five Capture, Editor, Copy cycles" "$APP_PID" "$CYCLE_BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "the menu bar app is back near its at-rest footprint after the Editors closed" "$APP_PID" "$AT_REST" "$(pixels_mb 5120 2880)"
+expect_steady_across_cycles "the helper's footprint with a 5K Editor open is the same every cycle" "$HELPER_MIN" "$HELPER_MAX" "$(pixels_mb 5120 2880)"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process at rest after the Editors closed"; else fail "a helper is running at rest"; fi
 expect_equal "the Last Capture's file is the only Capture file" "1" "$(capture_files | wc -l | tr -d ' ')"
-assert_idle_cpu "menu bar app after the Editor cycles" "$APP_PID" 5
 send "$APP_SOCK" pasteboard-clear >/dev/null

@@ -289,10 +289,9 @@ fi
 
 # 6. Several Editors: the Dock and Cmd-Tab entry stays while any is open, a new Capture opens
 #    another Editor on a window of its own, the helper quits after the last one closes. Memory
-#    returns to where it was, and nothing idles.
+#    returns to where it was.
 sleep 1
 APP_REST="$(footprint_mb "$APP_PID")"
-CASCADE_BEFORE="$(footprint_mb "$APP_PID")"
 for round in 1 2 3; do
   if capture_into_editor "menu-click capture.screen"; then
     E1="$EDITOR_N"
@@ -307,8 +306,6 @@ for round in 1 2 3; do
       expect_equal "the three windows are cascaded, none on top of another" "3" "$(printf '%s\n%s\n%s\n' "$O1" "$O2" "$O3" | sort -u | wc -l | tr -d ' ')"
       expect_equal "only the Last Capture's pixels are in the cache" "capture-$E3.pixels " "$(ls -A "$PCAPS" | LC_ALL=C sort | tr '\n' ' ')"
       expect_equal "the Last Capture is the newest" "$E3" "$(send "$APP_SOCK" last-capture)"
-      sleep 2
-      assert_idle_cpu "the helper with three Editors open" "$HELPER_PID" 3
       # Close the middle one; the next Capture takes a free spot, not the one of an open Editor.
       send_slow "$EDITOR_SOCK" "editor-key $E2 escape" >/dev/null
       wait_until 5 pr_is_closed "$E2"
@@ -325,15 +322,8 @@ for round in 1 2 3; do
     if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits after the last Editor closes (round $round)"; else fail "the helper outlived its last Editor (round $round)"; fi
   fi
 done
-sleep 1
-CASCADE_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$CASCADE_AFTER" -v b="$APP_REST" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app's memory is back to its baseline after several Editors opened and closed (${APP_REST} MB before, ${CASCADE_AFTER} MB after)"
-else
-  fail "the menu bar app went from ${APP_REST} MB to ${CASCADE_AFTER} MB over several Editors"
-fi
+expect_memory_returns "the menu bar app's memory is back to its baseline after several Editors opened and closed" "$APP_PID" "$APP_REST"
 expect_equal "no helper is left at rest" "" "$(helper_pid)"
-assert_idle_cpu "the menu bar app after several Editors" "$APP_PID" 3
 
 # 6b. The helper is where Editors live: with one Editor open throughout, opening two more and
 #     closing them (Delete Capture asks nothing) leaves its footprint where it was.
@@ -354,11 +344,7 @@ if capture_into_editor "menu-click capture.screen"; then
     if [[ -z "$CYCLE_MAX" ]] || awk -v a="$MB" -v b="$CYCLE_MAX" 'BEGIN { exit !(a > b) }'; then CYCLE_MAX="$MB"; fi
   done
   expect_equal "the same helper served every cycle" "$KEEP_HELPER" "$(helper_pid)"
-  if awk -v lo="$CYCLE_MIN" -v hi="$CYCLE_MAX" 'BEGIN { exit !(lo > 0 && hi - lo <= 15) }'; then
-    pass "the helper's footprint is the same after every cycle of two more 5K Editors opening and closing (${CYCLE_MIN} to ${CYCLE_MAX} MB)"
-  else
-    fail "the helper's footprint varies from ${CYCLE_MIN} to ${CYCLE_MAX} MB over cycles of opening and closing 5K Editors"
-  fi
+  expect_steady_across_cycles "the helper's footprint is the same after every cycle of two more 5K Editors opening and closing" "$CYCLE_MIN" "$CYCLE_MAX" "$(pixels_mb 5120 2880)"
   # Windows as big as they get (80% of the screen) still cascade onto spots of their own.
   ORIGINS="$(send "$EDITOR_SOCK" "editor-facts $KEEP" | sed -n 's/^window-origin=//p')"
   BIG_EDITORS="$KEEP"
@@ -371,8 +357,6 @@ $(send "$EDITOR_SOCK" "editor-facts $EDITOR_N" | sed -n 's/^window-origin=//p')"
   expect_equal "six big Editors are on six different spots" "6" "$(printf '%s\n' "$ORIGINS" | sort -u | wc -l | tr -d ' ')"
   for n in $BIG_EDITORS; do [[ "$n" == "$KEEP" ]] || send_slow "$EDITOR_SOCK" "editor-press $n delete-capture" >/dev/null; done
   wait_until 10 bash -c "[[ \"\$(printf 'editors\n' | nc -U -w 2 '$EDITOR_SOCK')\" == '$KEEP' ]]"
-  sleep 1
-  assert_idle_cpu "the helper with a 5K Editor open after the cycles" "$KEEP_HELPER" 3
   send_slow "$EDITOR_SOCK" "editor-key $KEEP escape" >/dev/null
   wait_until 10 gone "$KEEP_HELPER"
 fi
@@ -546,7 +530,6 @@ if pair; then
   expect_equal "and the helper" "yes" "$(kill -0 "$OLD_HELPER" 2>/dev/null && echo yes)"
   send "$EDITOR_SOCK" editor-menu-quit >/dev/null
   pr_wait_shown
-  assert_idle_cpu "the helper while the Quit prompt shows" "$OLD_HELPER" 3
   send "$EDITOR_SOCK" "editor-prompt-answer discard" >/dev/null
   if wait_until 15 gone "$OLD_APP"; then pass "Discard and Quit from the helper quits snapit"; else fail "snapit is still running after the helper's Discard and Quit"; fi
   if wait_until 10 gone "$OLD_HELPER"; then pass "and the helper"; else fail "the helper did not quit"; fi

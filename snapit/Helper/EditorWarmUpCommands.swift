@@ -6,10 +6,6 @@ nonisolated extension SocketCommand {
     /// `settle` waits until every helper start and cancel queued so far has reached the helper,
     /// then replies `ok`. Test mode only.
     static let editorWarmUp = SocketCommand("editor-warm-up")
-    /// Replies `capture-to-editor-ms=<n> warm=yes|no` for the last Capture: how long it took from
-    /// its pixels being ready to the Editor window showing, and whether the helper had an Editor
-    /// built ahead of it. `none` before the first Capture. Test mode only.
-    static let captureTiming = SocketCommand("capture-timing")
     /// `fixture-delay <ms>`: how long the fixture Capture source takes to return, standing in for
     /// the time spent choosing an Area. Test mode only.
     static let fixtureDelay = SocketCommand("fixture-delay")
@@ -37,10 +33,6 @@ extension SocketCommandRegistry {
             default:
                 return "error editor-warm-up begin|cancel|state|settle"
             }
-        }
-        register(.captureTiming) { _ in
-            guard let sample = CaptureTiming.last else { return "none" }
-            return "capture-to-editor-ms=\(String(format: "%.1f", sample.milliseconds)) warm=\(sample.wasWarm ? "yes" : "no")"
         }
         register(.fixtureDelay) { request in
             guard let milliseconds = request.arguments.first.flatMap(Int.init), milliseconds >= 0 else {

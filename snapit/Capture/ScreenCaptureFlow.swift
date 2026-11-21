@@ -33,7 +33,6 @@ enum ScreenCaptureFlow {
         EditorWarmUp.begin()
         do {
             let screen = try await CaptureSources.current.captureDisplayUnderPointer()
-            let clock = CaptureTiming.Clock()
             let number = try await CaptureHandoff.publish(screen)
             do {
                 try await EditorHelperLauncher.open(capture: number)
@@ -41,7 +40,6 @@ enum ScreenCaptureFlow {
                 CaptureHandoff.discard(number: number)
                 throw error
             }
-            clock.stop()
             CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {

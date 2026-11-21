@@ -3,7 +3,7 @@ import Foundation
 
 /// Listens on a Unix-domain socket and runs one command per connection through a
 /// `SocketCommandRegistry`. Event driven: the dispatch source sleeps until a client
-/// connects, so the process stays at 0% CPU at rest. Commands run in a main-actor task,
+/// connects, so the process does nothing at rest. Commands run in a main-actor task,
 /// so a slow handler never blocks the main thread or other connections.
 nonisolated final class CommandSocketServer: @unchecked Sendable {
     private let path: String

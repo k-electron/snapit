@@ -19,8 +19,6 @@ enum WindowCaptureFlow {
     /// Captures `window` alone and opens the Editor on it.
     static func capture(_ window: OnScreenWindow) async -> AreaCaptureFlow.Result {
         do {
-            // The clock starts before the screenshot, so the time to the Editor includes it.
-            let clock = CaptureTiming.Clock()
             let screen = try await WindowCaptureSources.current.captureWindow(window)
             let number = try await CaptureHandoff.publish(screen)
             do {
@@ -29,7 +27,6 @@ enum WindowCaptureFlow {
                 CaptureHandoff.discard(number: number)
                 throw error
             }
-            clock.stop()
             CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {

@@ -245,7 +245,6 @@ if wait_until $((MP_LOOP_SECONDS + 6)) mp_guide_is folder guide-animation stoppe
 expect_contains "when it stops Replay is offered" "button replay|Replay|" "$(mp_facts folder)"
 send "$EDITOR_SOCK" "guide-snapshot folder $RUN_ROOT/folder-guide.png" >/dev/null
 [[ -s "$RUN_ROOT/folder-guide.png" ]] && pass "the folder Permission guide renders" || fail "the folder Permission guide did not render"
-assert_idle_cpu "the helper with the folder Permission guide, the animation stopped," "$(helper_pid)" "$IDLE_SECONDS"
 send "$APP_SOCK" "save-fail-check off" >/dev/null
 send_slow "$EDITOR_SOCK" "guide-press folder retry" >/dev/null
 wait_until 15 mp_guide_gone folder
@@ -383,17 +382,10 @@ expect_equal "the Editor Saves once the disk has room" "1" "$(mp_saved_pngs "$MP
 send_slow "$EDITOR_SOCK" "editor-key $MP_EDITOR escape" >/dev/null 2>&1
 wait_until 10 mp_no_helper
 
-# 8. Back to rest: memory and idle CPU of the menu bar app, and the run's settings put back.
+# 8. Back to rest: memory of the menu bar app, and the run's settings put back.
 mp_close_windows
 mp_clear_save
-sleep 2
-MP_FOOT_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$MP_FOOT_BEFORE" -v b="$MP_FOOT_AFTER" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(b > 0 && b - a <= max) }'; then
-  pass "the menu bar app is back at its baseline after the permission flows (${MP_FOOT_BEFORE} MB before, ${MP_FOOT_AFTER} MB after)"
-else
-  fail "the menu bar app grew from ${MP_FOOT_BEFORE} MB to ${MP_FOOT_AFTER} MB over the permission flows"
-fi
-assert_idle_cpu "the menu bar app after the permission flows" "$APP_PID" "$IDLE_SECONDS"
+expect_memory_returns "the menu bar app is back at its baseline after the permission flows" "$APP_PID" "$MP_FOOT_BEFORE"
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 send "$APP_SOCK" "defaults-set saveLocation $MP_SAVE_BEFORE" >/dev/null

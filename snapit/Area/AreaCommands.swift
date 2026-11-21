@@ -16,10 +16,6 @@ nonisolated extension SocketCommand {
     /// The notification macOS posts for a Dock that moved or a display that changed nothing: the displays
     /// are what they were, so an overlay or a countdown carries on. Replies `ok`.
     static let overlayScreensNoise = SocketCommand("overlay-screens-noise")
-    /// What the machine told this process while the run went on, one `key=value` line each: the real
-    /// screen-parameter notifications (those the run posted itself not counted), the screen sleeps and
-    /// wakes, the session switches, and `screens` (the real displays as they are).
-    static let screenEvents = SocketCommand("screen-events")
     /// Waits until the overlay that is showing has finished, then replies `opened <N>` (Capture N
     /// is in the Editor), `cancelled` or `failed <why>`.
     static let overlayWait = SocketCommand("overlay-wait")
@@ -74,13 +70,11 @@ extension SocketCommandRegistry {
             FixtureCaptureSource.shared.display.skipsAlpha = layout == "skip-first"
             return "ok"
         }
-        ScreenEventRecorder.shared.start()
         register(.overlayScreensChanged) { _ in
             guard AreaCaptureFlow.activeOverlay != nil || AreaCaptureFlow.countdown != nil else {
                 return "error no overlay"
             }
             DisplayConfiguration.simulateChange()
-            ScreenEventRecorder.shared.posted += 1
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
@@ -88,11 +82,9 @@ extension SocketCommandRegistry {
             guard AreaCaptureFlow.activeOverlay != nil || AreaCaptureFlow.countdown != nil else {
                 return "error no overlay"
             }
-            ScreenEventRecorder.shared.posted += 1
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
             return "ok"
         }
-        register(.screenEvents) { _ in ScreenEventRecorder.shared.report().joined(separator: "\n") }
         register(.overlayWait) { _ in
             switch await AreaCaptureFlow.waitForResult() {
             case .opened(let number): "opened \(number)"
@@ -216,7 +208,6 @@ extension AreaOverlayController {
             "hovered=\(hoveredTile?.id ?? "none")",
             "tooltip=\(tooltip ?? "none")",
             "scene-updates=\(views.reduce(0) { $0 + $1.scene.updateCount })",
-            "shown-ms=\(AreaCaptureFlow.lastShownMilliseconds.map { String(format: "%.1f", $0) } ?? "none")",
         ]
     }
 
@@ -241,63 +232,5 @@ extension AreaOverlayController {
         views[index].scene.root.render(in: context)
         guard let image = context.makeImage() else { return nil }
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
-    }
-}
-
-/// Test mode's record of what the machine itself told the menu bar app: the screen-parameter
-/// notifications (those the scripted run posts are counted apart), screens sleeping and waking,
-/// the session switching. A virtual machine can send these with nothing having changed; the scripted
-/// run prints them, so a log shows whether such noise went with a failure.
-@MainActor
-final class ScreenEventRecorder {
-    static let shared = ScreenEventRecorder()
-
-    /// How many parameter notifications the run posted itself.
-    var posted = 0
-    private var acknowledged = 0
-    private var parameters = 0
-    private var counts: [String: Int] = [:]
-    private var started = false
-
-    func start() {
-        guard !started else { return }
-        started = true
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let real = self.acknowledged >= self.posted
-                if real { self.parameters += 1 } else { self.acknowledged += 1 }
-                NSLog("snapit: screen parameters notification (\(real ? "real" : "posted by the run")): \(DisplayConfiguration.current().summary)")
-            }
-        }
-        let names: [Notification.Name] = [
-            NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification,
-            NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification,
-            NSWorkspace.activeSpaceDidChangeNotification,
-        ]
-        for name in names {
-            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) {
-                [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.counts[name.rawValue, default: 0] += 1
-                    NSLog("snapit: \(name.rawValue)")
-                }
-            }
-        }
-    }
-
-    func report() -> [String] {
-        func count(_ name: Notification.Name) -> Int { counts[name.rawValue] ?? 0 }
-        return [
-            "screen-changes=\(parameters)",
-            "screens-slept=\(count(NSWorkspace.screensDidSleepNotification))",
-            "screens-woke=\(count(NSWorkspace.screensDidWakeNotification))",
-            "session-resigned=\(count(NSWorkspace.sessionDidResignActiveNotification))",
-            "session-became-active=\(count(NSWorkspace.sessionDidBecomeActiveNotification))",
-            "space-changes=\(count(NSWorkspace.activeSpaceDidChangeNotification))",
-            "screens=\(DisplayConfiguration.current().summary)",
-        ]
     }
 }

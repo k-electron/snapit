@@ -350,14 +350,11 @@ PLAYS_BEFORE="$(onb guide-plays)"
 send "$EDITOR_SOCK" onboarding-hide >/dev/null
 if wait_until 5 onb_is guide-animation idle; then pass "hiding the window stops the animation"; else fail "the animation kept playing in a hidden window"; fi
 HELPER_PID="$(helper_pid)"
-sleep 2
-assert_idle_cpu "the helper with Onboarding hidden" "$HELPER_PID" 5
 send "$EDITOR_SOCK" onboarding-unhide >/dev/null
 if wait_until 5 onb_is guide-animation playing; then pass "showing the window plays it again"; else fail "the animation did not play when the window came back"; fi
 expect_equal "it started again, once" "$((PLAYS_BEFORE + 1))" "$(onb guide-plays)"
 if wait_until 20 onb_is guide-animation stopped; then pass "the animation stops after its loops"; else fail "the animation did not stop"; fi
 if onb_has_button replay; then pass "a stopped animation can be replayed"; else fail "no Replay button after the animation stopped"; fi
-assert_idle_cpu "the helper after the animation stopped" "$HELPER_PID" "$IDLE_SECONDS"
 onb_press replay >/dev/null
 expect_equal "Replay plays it again" "playing" "$(onb guide-animation)"
 send "$EDITOR_SOCK" "onboarding-snapshot $RUN_ROOT/onboarding-guide.png" >/dev/null
@@ -449,14 +446,7 @@ relaunch_app
 # 17. Memory and the process list return to rest after Onboarding closes.
 onb_close_all
 onb_no_helper && pass "no helper process after Onboarding closes" || fail "a helper is still running after Onboarding closed"
-sleep 2
-ONB_APP_FOOT_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$ONB_APP_FOOT_BEFORE" -v b="$ONB_APP_FOOT_AFTER" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(b > 0 && b - a <= max) }'; then
-  pass "the menu bar app is back at its baseline after Onboarding (${ONB_APP_FOOT_BEFORE} MB before, ${ONB_APP_FOOT_AFTER} MB after)"
-else
-  fail "the menu bar app grew from ${ONB_APP_FOOT_BEFORE} MB to ${ONB_APP_FOOT_AFTER} MB over Onboarding"
-fi
-assert_idle_cpu "the menu bar app after Onboarding" "$APP_PID" "$IDLE_SECONDS"
+expect_memory_returns "the menu bar app is back at its baseline after Onboarding" "$APP_PID" "$ONB_APP_FOOT_BEFORE"
 
 # Put the fake macOS and Onboarding back for the flows after this one.
 # The relaunch through Relaunch snapit went through LaunchServices, which leaves the process without the

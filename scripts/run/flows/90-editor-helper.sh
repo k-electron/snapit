@@ -3,6 +3,9 @@
 # Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
+# At the end of the run the menu bar app is at rest: nothing is spinning.
+expect_not_spinning "the menu bar app at the end of the run" "$APP_PID" 5
+
 # snapit starts the Editor helper, which is an agent, links the same engine and quits when told to.
 expect_equal "snapit starts the Editor helper" "ok" "$(send "$APP_SOCK" start-editor)"
 if wait_until 10 answers "$EDITOR_SOCK"; then pass "Editor helper starts and answers on its socket"; else fail "Editor helper did not answer"; fi
