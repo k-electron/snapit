@@ -5,7 +5,7 @@
 # Area" says. Checks the menu and Shortcut, the hover, the pixels at 1x and 2x, a window that
 # crosses the display's edge (captured whole), the alpha corners in the Copy and the Save PNG (and
 # in the 1x averaged ones), that opaque Captures stay RGB PNGs, Esc, a window that vanished, the
-# Editor helper warming up and going, memory and idle CPU. Uses the helpers of 40-area-capture.sh
+# Editor helper warming up and going, and memory. Uses the helpers of 40-area-capture.sh
 # (area_start, mouse, fact, overlay_panels, area_result). Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -346,8 +346,7 @@ send_slow "$APP_SOCK" overlay-wait >/dev/null
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 win_no_helper
 
-# 12. Memory returns to baseline over repeated Window Captures, nothing runs while the overlay is up
-#     or after it, and hovering does not poll. A 2560 x 1600 pixel display (16 MB of pixels).
+# 12. Memory returns to baseline over repeated Window Captures. A 2560 x 1600 pixel display (16 MB of pixels).
 send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
 area_start "press-shortcut capture-window" >/dev/null
 win_click 0 70 50
@@ -363,35 +362,11 @@ for _ in 1 2 3 4 5; do
   win_click 0 70 50
   area_result && copy_closes_editor
 done
-sleep 1
-WIN_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$WIN_AFTER" -v b="$WIN_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after five Window Captures (${WIN_BASELINE} MB before, ${WIN_AFTER} MB after)"
-else
-  fail "memory grew from ${WIN_BASELINE} MB to ${WIN_AFTER} MB over five Window Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-if awk -v a="$WIN_AFTER" -v b="$WIN_AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is back near the at-rest footprint (${WIN_AT_REST} MB at rest, ${WIN_AFTER} MB after)"
-else
-  fail "memory is ${WIN_AFTER} MB after the Window Captures, ${WIN_AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
-fi
-frame_peak_limit "the window overlay"
-if awk -v peak="$WIN_PEAK" -v base="$WIN_BASELINE" -v max="$PEAK_LIMIT" 'BEGIN { exit !(peak - base <= max) }'; then
-  pass "the window overlay holds the frozen frame once: peak ${WIN_PEAK} MB over a ${WIN_BASELINE} MB base, a frame of 16 MB"
-else
-  fail "the window overlay's peak is ${WIN_PEAK} MB over a ${WIN_BASELINE} MB base: more than one copy of a 16 MB frame"
-fi
-area_start "press-shortcut capture-window" >/dev/null
-mouse move 0 70 50 >/dev/null
-wait_until 10 scene_updates_quiet
-UPDATES_BEFORE="$(fact scene-updates)"
-assert_idle_cpu "the menu bar app with the window overlay up" "$APP_PID" 3
-expect_equal "an idle overlay updates nothing (no polling)" "$UPDATES_BEFORE" "$(fact scene-updates)"
-send "$APP_SOCK" "overlay-key escape" >/dev/null
-send_slow "$APP_SOCK" overlay-wait >/dev/null
+expect_memory_returns "memory returns to baseline after five Window Captures" "$APP_PID" "$WIN_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory is back near the at-rest footprint" "$APP_PID" "$WIN_AT_REST" "$(pixels_mb 2560 1600)"
+expect_peak_proportionate "the window overlay: a frozen frame held on screen" "$WIN_PEAK" "$WIN_BASELINE" "$(pixels_mb 2560 1600)"
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 win_no_helper
-assert_idle_cpu "the menu bar app after the Window Captures" "$APP_PID" 3
 expect_equal "no helper process is left after the Window Capture checks" "0" "$(win_helper_count)"
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

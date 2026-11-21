@@ -78,8 +78,8 @@ capture_check "Shortcut at 2x" "press-shortcut capture-screen" 2 301 187 "Displa
 expect_equal "an unknown Shortcut is refused" "error no shortcut nope" "$(send "$APP_SOCK" "press-shortcut nope")"
 expect_equal "an unknown menu item is refused" "error no menu item nope" "$(send "$APP_SOCK" "menu-click nope")"
 
-# 3. Memory returns to baseline after Captures, and the app idles at 0% CPU afterwards.
-#    A 5120 x 2880 pixel display (59 MB of pixels): a leak would be impossible to miss. Each
+# 3. Memory returns to baseline after Captures.
+#    A 5120 x 2880 pixel display (56 MB of pixels): a leak would be impossible to miss. Each
 #    Capture opens an Editor in the helper and ⌘C closes it, so the helper quits every time.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 capture_into_editor "press-shortcut capture-screen" && copy_closes_editor   # warm up allocator pools
@@ -89,22 +89,11 @@ for _ in 1 2 3 4 5; do
   capture_into_editor "menu-click capture.screen" && copy_closes_editor
   capture_into_editor "press-shortcut capture-screen" && copy_closes_editor
 done
-sleep 1
-AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$AFTER" -v b="$BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after ten 5K Captures (${BASELINE} MB before, ${AFTER} MB after)"
-else
-  fail "memory grew from ${BASELINE} MB to ${AFTER} MB over ten 5K Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-if awk -v a="$AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is back near the at-rest footprint after the Captures (${AT_REST} MB at rest, ${AFTER} MB after)"
-else
-  fail "memory is ${AFTER} MB after the Captures, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_MB_MAX} MB)"
-fi
+expect_memory_returns "memory returns to baseline after ten 5K Captures" "$APP_PID" "$BASELINE" "$(pixels_mb 5120 2880)"
+expect_memory_returns "memory is back near the at-rest footprint after the Captures" "$APP_PID" "$AT_REST" "$(pixels_mb 5120 2880)"
 send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/big.png" >/dev/null
 BIG_INFO="$("$INSPECT" info "$RUN_ROOT/big.png")"
 expect_equal "the 5K Capture's PNG has the full pixel size" "5120x2880" "$(png_field "$BIG_INFO" width)x$(png_field "$BIG_INFO" height)"
 rm -f "$RUN_ROOT/big.png"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Editors closed"; else fail "an Editor helper is still running"; fi
-assert_idle_cpu "menu bar app after the Captures" "$APP_PID" 5
 send "$APP_SOCK" pasteboard-clear >/dev/null

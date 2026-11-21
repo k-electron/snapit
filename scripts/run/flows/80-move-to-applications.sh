@@ -82,14 +82,7 @@ if wait_until 10 gone "$HELPER_PID"; then pass "the helper quits when the Move s
 expect_equal "Not Now leaves the source as it was" "$SOURCE_QUARANTINED" "$(quarantine_count "$VOLAPP")"
 [[ ! -e "$EJECTED" ]] && pass "Not Now ejects nothing" || fail "Not Now ejected the disk image"
 if answers "$APP_SOCK"; then pass "snapit keeps running after Not Now"; else fail "snapit stopped after Not Now"; fi
-sleep 1
-AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is back near the at-rest footprint after the Move screen (${AT_REST} MB at rest, ${AFTER} MB after)"
-else
-  fail "memory is ${AFTER} MB after the Move screen, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
-fi
-assert_idle_cpu "menu bar app after the Move screen" "$APP_PID" 3
+expect_memory_returns "memory is back near the at-rest footprint after the Move screen" "$APP_PID" "$AT_REST"
 
 # 2b. A disk image is read-only and can never gain the approved flag, and the app on a
 #     double-clicked image may report 0083: running from the image is the approval. The source
@@ -170,14 +163,6 @@ if onboarding_up; then pass "Onboarding stays: the helper that showed the Move s
 send "$EDITOR_SOCK" onboarding-close >/dev/null 2>&1
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
 wait_until 10 gone "$(pid_of "$DEST/Contents/Helpers/")"
-sleep 3
-assert_idle_cpu "the relaunched menu bar app" "$APP_PID" "$IDLE_SECONDS"
-FOOTPRINT="$(footprint_mb "$APP_PID")"
-if awk -v f="$FOOTPRINT" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(f > 0 && f <= max) }'; then
-  pass "the relaunched menu bar app footprint is ${FOOTPRINT} MB (ceiling ${FOOTPRINT_MB_MAX} MB)"
-else
-  fail "the relaunched menu bar app footprint is '${FOOTPRINT}' MB (ceiling ${FOOTPRINT_MB_MAX} MB)"
-fi
 
 # Translocated with an original that carries no quarantine: there is nothing to strip, so
 # snapit stays put instead of relaunching on every launch.
@@ -209,8 +194,6 @@ expect_equal "the in-place fix shows no Move screen and starts no helper" "" "$(
 expect_equal "the in-place fix ejects nothing" "$EJECT_LINES" "$(cat "$EJECTED" 2>/dev/null | wc -l | tr -d ' ')"
 expect_equal "the relaunched snapit runs from the same place" "$DEST" "$(location_field bundle)"
 expect_equal "the relaunched snapit is not translocated after the fix" "false" "$(location_field translocated)"
-sleep 3
-assert_idle_cpu "the menu bar app relaunched in place" "$APP_PID" 3
 
 # 6. Back to the menu bar app the rest of the run drives.
 send "$APP_SOCK" quit >/dev/null

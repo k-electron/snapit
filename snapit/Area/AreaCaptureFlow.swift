@@ -44,9 +44,6 @@ enum AreaCaptureFlow {
     private static var result: Result?
     private static var waiters: [CheckedContinuation<Result, Never>] = []
 
-    /// Milliseconds from the start of the last `start()` until its overlay was on screen.
-    private(set) static var lastShownMilliseconds: Double?
-
     /// Shows the overlay for an Area Capture, for a Window Capture (`.window`: the same overlay, but it
     /// picks the window under the pointer and a click captures that window alone) or for the Color
     /// picker (`.pickColor`: the overlay opens in the picker).
@@ -59,7 +56,6 @@ enum AreaCaptureFlow {
             return .countdownCancelled
         }
         guard CaptureGate.enter() else { return .busy }
-        let began = ContinuousClock.now
         result = nil
         previousApp = TestMode.isActive ? nil : NSWorkspace.shared.frontmostApplication
         guard ScreenRecordingPermission.current.isGranted else {
@@ -84,7 +80,6 @@ enum AreaCaptureFlow {
             overlay = controller
             controller.show(takesFocus: !TestMode.isActive)
             if mode == .window { WindowCaptureSources.current.prepare() }
-            lastShownMilliseconds = milliseconds(since: began)
             return .overlayShown
         } catch {
             NSLog("snapit: \(mode) Capture failed: \(error)")
@@ -139,7 +134,6 @@ enum AreaCaptureFlow {
     /// file and opens the Editor on it.
     static func capture(_ screen: CapturedScreen, area: PixelRect) async -> Result {
         do {
-            let clock = CaptureTiming.Clock()
             let number = try await CaptureHandoff.publish(screen, cropping: area)
             do {
                 try await EditorHelperLauncher.open(capture: number)
@@ -147,7 +141,6 @@ enum AreaCaptureFlow {
                 CaptureHandoff.discard(number: number)
                 throw error
             }
-            clock.stop()
             CaptureHandoff.didOpen(number: number)
             return .opened(number: number)
         } catch {
@@ -176,10 +169,5 @@ enum AreaCaptureFlow {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending { waiter.resume(returning: outcome) }
-    }
-
-    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
-        let elapsed = ContinuousClock.now - start
-        return Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
     }
 }

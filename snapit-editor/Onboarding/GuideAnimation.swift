@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Permission guide's cursor animation: a few loops of one finite SwiftUI animation, then it
 /// stops and the drawing rests on its last pose. Nothing runs when it is not playing: no timer, no
-/// display link, no repeat-forever animation, so a window that sits idle or hidden costs 0% CPU.
+/// display link, no repeat-forever animation, so a window that sits idle or hidden does no work.
 ///
 /// `progress` only ever grows. A play animates it by `loops`; stopping sets it to the next whole
 /// number without animation, which ends an animation in flight. The drawing reads the fraction of

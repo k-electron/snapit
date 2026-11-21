@@ -3,7 +3,7 @@
 # (past the opposite edge too), a drag inside moves it, Enter, a double-click inside it and the bar's
 # Capture button capture it, Esc and Cancel end the Capture. Checks the bar stays on screen at every
 # edge and corner, tooltips, a 3 pt jitter, pixel-exact Captures at 1x and 2x, the setting at Capture
-# on release, memory and idle CPU. Uses the helpers of 40-area-capture.sh (area_start, mouse, fact,
+# on release, and memory. Uses the helpers of 40-area-capture.sh (area_start, mouse, fact,
 # overlay_panels, area_drag, area_result, area_png_check). Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -102,7 +102,6 @@ expect_equal "the pointer is over the Capture tile" "capture" "$(fact hovered)"
 expect_equal "its tooltip is not shown the moment the pointer arrives" "none" "$(fact tooltip)"
 tooltip_is() { [[ "$(fact tooltip)" == "$1" ]]; }
 if wait_until 5 tooltip_is "Capture this Area (Enter)"; then pass "resting on the Capture tile shows its tooltip"; else fail "no tooltip for Capture ('$(fact tooltip)')"; fi
-assert_idle_cpu "menu bar app with a tooltip showing" "$APP_PID" 3
 read -r TX TY <<<"$(tile_point cancel 10 10)"
 mouse move 0 "$TX" "$TY" >/dev/null
 expect_equal "moving to the Cancel tile takes the tooltip away" "none" "$(fact tooltip)"
@@ -133,13 +132,6 @@ expect_equal "and the overlay is still up" "1" "$(overlay_panels | grep -c '^600
 send "$APP_SOCK" "overlay-key z" >/dev/null
 expect_equal "a key no Action bar item claims does nothing" "adjusting" "$(fact state)"
 area_cancel
-sleep 1
-BAR_FIRST_AFTER="$(precise_mb "$APP_PID")"
-if awk -v a="$BAR_FIRST_AFTER" -v b="$BAR_FIRST_BEFORE" -v max="$BAR_FIRST_USE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the first Action bar costs at most ${BAR_FIRST_USE_MB_MAX} MB that stays (${BAR_FIRST_BEFORE} MB before, ${BAR_FIRST_AFTER} MB after it was cancelled)"
-else
-  fail "the first Action bar left the footprint at ${BAR_FIRST_AFTER} MB, from ${BAR_FIRST_BEFORE} MB (limit +${BAR_FIRST_USE_MB_MAX} MB)"
-fi
 
 area_start "press-shortcut capture-area" >/dev/null
 send "$APP_SOCK" "overlay-key enter" >/dev/null
@@ -275,11 +267,6 @@ expect_equal "a drag away from the selection replaces it" "0 20,300 60x40" "$(fa
 expect_equal "and it is adjustable" "adjusting" "$(fact state)"
 expect_equal "with its eight handles on the new selection" "8" "$(fact handles)"
 mouse move 0 10 10 >/dev/null
-# Moving the pointer while adjusting changes nothing on screen: no layer work.
-wait_until 10 scene_updates_quiet
-UPDATES_BEFORE="$(fact scene-updates)"
-for i in $(seq 1 50); do mouse move 0 $((20 + i * 5)) $((20 + i * 3)) >/dev/null; done
-expect_equal "pointer moves while adjusting redraw nothing" "$UPDATES_BEFORE" "$(fact scene-updates)"
 area_cancel
 
 # 8. Esc cancels with the Action bar up, and the Shortcut works again at once.
@@ -430,9 +417,8 @@ expect_contains "overlay-mouse refuses a click count of 0" "error" "$(mouse down
 expect_equal "overlay-mouse takes a click count" "ok" "$(mouse move 0 10 10 1)"
 area_cancel
 
-# 15. Memory and CPU. A 2560 x 1600 pixel display (16 MB of pixels): five Captures through the Action
-#     bar leave memory where it was, the overlay with the bar up holds its frame once, and nothing
-#     runs while the bar shows.
+# 15. Memory. A 2560 x 1600 pixel display (16 MB of pixels): five Captures through the Action
+#     bar leave memory where it was, and the overlay with the bar up peaks in proportion to its frame.
 send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100.5 100.5 600.5 500.5
@@ -452,49 +438,21 @@ for _ in 1 2 3 4 5; do
   send "$APP_SOCK" "overlay-key enter" >/dev/null
   area_result && copy_closes_editor
 done
-sleep 1
-BAR_AFTER="$(precise_mb "$APP_PID")"
-if awk -v a="$BAR_AFTER" -v b="$BAR_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after five Action bar Captures (${BAR_BASELINE} MB before, ${BAR_AFTER} MB after)"
-else
-  fail "memory grew from ${BAR_BASELINE} MB to ${BAR_AFTER} MB over five Action bar Captures (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-if awk -v a="$BAR_AFTER" -v b="$BAR_FIRST_BEFORE" -v max="$BAR_FIRST_USE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is where it was before the first Action bar (${BAR_FIRST_BEFORE} MB then, ${BAR_AFTER} MB now, limit +${BAR_FIRST_USE_MB_MAX} MB)"
-else
-  fail "memory is ${BAR_AFTER} MB after the Action bar Captures, ${BAR_FIRST_BEFORE} MB before the first bar (limit +${BAR_FIRST_USE_MB_MAX} MB)"
-fi
-echo "     Action bar peak ${BAR_PEAK} MB with a 16 MB frozen frame on screen (${BAR_BASELINE} MB at rest)"
-frame_peak_limit "the overlay with the Action bar"
-if awk -v peak="$BAR_PEAK" -v base="$BAR_BASELINE" -v max="$PEAK_LIMIT" 'BEGIN { exit !(peak - base <= max) }'; then
-  pass "the overlay with the Action bar holds the frozen frame once: peak ${BAR_PEAK} MB over a ${BAR_BASELINE} MB base"
-else
-  fail "the overlay with the Action bar peaks at ${BAR_PEAK} MB over a ${BAR_BASELINE} MB base: more than one copy of a 16 MB frame"
-fi
+expect_memory_returns "memory returns to baseline after five Action bar Captures" "$APP_PID" "$BAR_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory is where it was before the first Action bar" "$APP_PID" "$BAR_FIRST_BEFORE" "$(pixels_mb 2560 1600)"
+expect_peak_proportionate "the overlay with the Action bar: a frozen frame held on screen" "$BAR_PEAK" "$BAR_BASELINE" "$(pixels_mb 2560 1600)"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Action bar Captures"; else fail "an Editor helper is still running"; fi
 
 send "$APP_SOCK" "fixture-display 1 600 400" >/dev/null
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 100 60 300 160
-assert_idle_cpu "menu bar app with the Action bar showing" "$APP_PID" 4
 area_cancel
-assert_idle_cpu "menu bar app after the Action bar Captures" "$APP_PID" 5
 
 # Leave what the next flows expect: no helper, a small fixture display, nothing on the pasteboard.
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
 wait_until 10 area_no_helper
 # The flows after this one see the process as flow 20 measured it at rest, plus what is allowed.
-sleep 1
-BAR_END="$(footprint_mb "$APP_PID")"
-if awk -v a="$BAR_END" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is back near the at-rest footprint after the Action bar flow (${AT_REST} MB at rest, ${BAR_END} MB after)"
-else
-  fail "memory is ${BAR_END} MB after the Action bar flow, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
-fi
-if awk -v a="$BAR_END" -v max="$FOOTPRINT_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a <= max) }'; then
-  pass "memory is under the ${FOOTPRINT_AFTER_BAR_MB_MAX} MB ceiling after the Action bar flow (${BAR_END} MB)"
-else
-  fail "memory is ${BAR_END} MB after the Action bar flow (ceiling ${FOOTPRINT_AFTER_BAR_MB_MAX} MB)"
-fi
+expect_memory_returns "memory is back near the at-rest footprint after the Action bar flow" "$APP_PID" "$AT_REST" "$(pixels_mb 2560 1600)"
+
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null

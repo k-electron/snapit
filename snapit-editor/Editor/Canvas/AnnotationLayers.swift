@@ -4,7 +4,7 @@ import QuartzCore
 /// The canvas's Annotation layers: one persistent layer per Annotation, made and updated by its
 /// kind, plus the selection's outline and handles. Everything runs inside one transaction with
 /// actions off, only for what changed, so a drag costs a path update on one layer and nothing is
-/// ever redrawn or animated (0% CPU at rest).
+/// ever redrawn or animated.
 ///
 /// The layers are in the order Export paints: kinds another stage draws (Redaction) in
 /// `effectHost`, beneath `host`, which holds all the others (`AnnotationKinds.paintOrder`).

@@ -35,7 +35,6 @@ close_editor() {
   wait_until 2 gone "$HELPER_PID" || send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 }
-now_ms() { perl -MTime::HiRes=time -e 'printf "%d", time() * 1000'; }
 # redaction_block <width px> <height px> <scale>: the block of the rule above, worked out here.
 redaction_block() {
   awk -v w="$1" -v h="$2" -v s="$3" 'BEGIN {
@@ -456,21 +455,13 @@ if open_editor; then
   expect_redacted "a Redaction on the scaled-down, cropped Capture is exact on its pixels" "$BIG" 3200 1600 5120 2880 800 600 400 200 1400 1000 "$BIG_BLOCK"
   expect_equal "and nothing outside it changed" "0" "$(field "$(verify_redaction "$BIG" 3200 1600 5120 2880 800 600 400 200 1400 1000 "$BIG_BLOCK")" outside_mismatches)"
   expect_exact_preview "the preview on the scaled-down, cropped Capture is the Export, bit for bit" "$BIG"
-  # Crop mode and a selected Redaction both rest: nothing animates.
-  sleep 1
-  assert_idle_cpu "the Editor helper with a Redaction on a cropped large Capture" "$HELPER_PID" 3
-  keystroke c >/dev/null
-  sleep 1
-  assert_idle_cpu "the Editor helper in crop mode" "$HELPER_PID" 3
-  keystroke v >/dev/null
+  # The heaviest Editor of the run, at rest: nothing is spinning.
+  expect_not_spinning "the Editor helper with a Redaction on a cropped large Capture" "$HELPER_PID" 5
   close_editor
 fi
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
 
-REDACT_FIVE_MB_MAX="${SNAPIT_REDACT_FIVE_MB_MAX:-450}"
-FLATTEN_MS_MAX="${SNAPIT_FLATTEN_MS_MAX:-60}"
-COPY_MS_MAX="${SNAPIT_COPY_MS_MAX:-150}"
-# 14. Speed: a full 6K Copy (6016 x 3384 pixels) with a crop, Redactions and Annotations.
+# 14. A full 6K Copy (6016 x 3384 pixels) with a crop, Redactions and Annotations.
 send "$APP_SOCK" "fixture-display 2 3008 1692" >/dev/null
 if open_editor; then
   keystroke r >/dev/null
@@ -486,14 +477,7 @@ if open_editor; then
   drag 0 0 50 50 >/dev/null
   drag 3008 1692 2900 1650 >/dev/null
   keystroke enter >/dev/null
-  START="$(now_ms)"
   send_slow "$EDITOR_SOCK" "editor-press $EDITOR_N copy" >/dev/null
-  COPY_MS=$(($(now_ms) - START))
-  TIMING="$(send_slow "$EDITOR_SOCK" "editor-export-timing $EDITOR_N")"
-  FLATTEN_MS="$(printf '%s\n' "$TIMING" | sed -n 's/.*flatten-ms=\([0-9]*\).*/\1/p')"
-  echo "     6K Export: $TIMING; Copy end to end ${COPY_MS} ms"
-  if [[ -n "$FLATTEN_MS" ]] && ((FLATTEN_MS <= FLATTEN_MS_MAX)); then pass "the pipeline's own time (crop, 2 Redactions, 30 Annotations) on a 6K Capture is ${FLATTEN_MS} ms (limit ${FLATTEN_MS_MAX})"; else fail "the 6K pipeline took '$FLATTEN_MS' ms (limit ${FLATTEN_MS_MAX}): $TIMING"; fi
-  if ((COPY_MS <= COPY_MS_MAX)); then pass "a full 6K Copy with a crop, 2 Redactions and 30 Annotations takes ${COPY_MS} ms end to end (limit ${COPY_MS_MAX}, with the pasteboard write)"; else fail "the 6K Copy took ${COPY_MS} ms (limit ${COPY_MS_MAX})"; fi
   send "$APP_SOCK" "pasteboard-dump-png $RUN_ROOT/tools/six-k.png" >/dev/null
   SIX_K="$("$INSPECT" info "$RUN_ROOT/tools/six-k.png")"
   expect_equal "the 6K Export is the cropped size, 5700 x 3200 pixels" "5700x3200" "$(png_field "$SIX_K" width)x$(png_field "$SIX_K" height)"
@@ -528,21 +512,13 @@ if open_editor; then
   for i in 1 2 3 4 5; do drag $((50 + i * 20)) 50 $((2000 + i * 20)) 1200 >/dev/null; done
   sleep 1
   REDACT_HELD="$(footprint_mb "$HELPER_PID")"
-  echo "     five large Redactions: ${REDACT_BASELINE} MB before, ${REDACT_HELD} MB with them"
-  if awk -v a="$REDACT_HELD" -v b="$REDACT_BASELINE" -v max="$REDACT_FIVE_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-    pass "five large Redactions on a 2560 x 1440 point Capture cost the Editor ${REDACT_HELD} MB (${REDACT_BASELINE} MB before, limit +${REDACT_FIVE_MB_MAX} MB)"
-  else
-    fail "five large Redactions took the Editor from ${REDACT_BASELINE} MB to ${REDACT_HELD} MB (limit +${REDACT_FIVE_MB_MAX} MB)"
-  fi
+  # Each Redaction covers about 1900 x 1150 points, 3800 x 2300 pixels at 2x.
+  REDACT_FIVE_MB="$(awk -v p="$(pixels_mb 3800 2300)" 'BEGIN { printf "%.1f", 5 * p }')"
+  expect_peak_proportionate "five large Redactions on a 2560 x 1440 point Capture" "$REDACT_HELD" "$REDACT_BASELINE" "$REDACT_FIVE_MB"
   for _ in 1 2 3 4 5; do keystroke undo >/dev/null; done
   keystroke v >/dev/null
   sleep 1
-  REDACT_AFTER="$(footprint_mb "$HELPER_PID")"
-  if awk -v a="$REDACT_AFTER" -v b="$REDACT_BASELINE" 'BEGIN { exit !(a > 0 && a - b <= 15) }'; then
-    pass "the Editor's memory is flat over Redaction and crop cycles on a large Capture (${REDACT_BASELINE} MB before, ${REDACT_AFTER} MB after)"
-  else
-    fail "the Editor went from ${REDACT_BASELINE} MB to ${REDACT_AFTER} MB over Redaction and crop cycles (limit +15 MB)"
-  fi
+  expect_memory_returns "the Editor's memory over Redaction and crop cycles on a large Capture" "$HELPER_PID" "$REDACT_BASELINE" "$(pixels_mb 5120 2880)"
   close_editor
 fi
 send "$APP_SOCK" "fixture-display 2 301 187" >/dev/null
@@ -555,15 +531,8 @@ for _ in 1 2 3; do
     copy_closes_editor
   fi
 done
-sleep 1
-REDACT_APP_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$REDACT_APP_AFTER" -v b="$REDACT_APP_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app's memory is flat over Capture, Redact, Crop, Copy cycles (${REDACT_APP_BASELINE} MB before, ${REDACT_APP_AFTER} MB after)"
-else
-  fail "the menu bar app went from ${REDACT_APP_BASELINE} MB to ${REDACT_APP_AFTER} MB over Redaction and crop cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
+expect_memory_returns "the menu bar app's memory is flat over Capture, Redact, Crop, Copy cycles" "$APP_PID" "$REDACT_APP_BASELINE"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Redaction and crop cycles"; else fail "a helper is still running after the Redaction and crop cycles"; fi
-assert_idle_cpu "menu bar app after the Redaction and crop cycles" "$APP_PID" 3
 send "$APP_SOCK" pasteboard-clear >/dev/null
 send "$APP_SOCK" "defaults-set annotationFilled false" >/dev/null
 

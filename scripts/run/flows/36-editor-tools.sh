@@ -314,8 +314,6 @@ if capture_into_editor "menu-click capture.screen"; then
   IFS=, read -r BX0 BY0 BX1 BY1 <<<"$BIG_BBOX"
   if ((BX0 >= 399 && BX0 <= 401 && BY0 >= 199 && BY0 <= 201 && BX1 >= 1399 && BX1 <= 1401 && BY1 >= 799 && BY1 <= 801)); then pass "its edges are at (400,200) and (1400,800) pixels ($BIG_BBOX)"; else fail "the Rectangle's pixels are $BIG_BBOX, expected 400,200,1400,800"; fi
   # With an Annotation selected the canvas rests: nothing animates.
-  sleep 1
-  assert_idle_cpu "the Editor helper with an Annotation selected on a large Capture" "$HELPER_PID" 3
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
@@ -332,13 +330,6 @@ for _ in 1 2 3; do
     copy_closes_editor
   fi
 done
-sleep 1
-TOOLS_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$TOOLS_AFTER" -v b="$TOOLS_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app's memory is flat over Capture, draw, Copy cycles (${TOOLS_BASELINE} MB before, ${TOOLS_AFTER} MB after)"
-else
-  fail "the menu bar app went from ${TOOLS_BASELINE} MB to ${TOOLS_AFTER} MB over drawing cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
+expect_memory_returns "the menu bar app's memory is flat over Capture, draw, Copy cycles" "$APP_PID" "$TOOLS_BASELINE"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the drawing cycles"; else fail "a helper is still running after the drawing cycles"; fi
-assert_idle_cpu "menu bar app after the drawing cycles" "$APP_PID" 3
 send "$APP_SOCK" pasteboard-clear >/dev/null

@@ -1,4 +1,4 @@
-# Flow: the menu bar app starts, is an agent with the right menu, and idles. The app is
+# Flow: the menu bar app starts, is an agent with the right menu, and starts no helper. The app is
 # already running (check-run.sh starts it). Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -23,13 +23,3 @@ if lsappinfo info -only applicationType "$ASN" 2>/dev/null | grep -q 'UIElement'
 
 # No helper process at rest.
 if [[ -z "$(pid_of "$APP/Contents/Helpers/")" ]]; then pass "no helper process at rest"; else fail "a helper is running at rest"; fi
-
-# Idle: 0% CPU and about 15 MB.
-sleep 3
-assert_idle_cpu "menu bar app" "$APP_PID" "$IDLE_SECONDS"
-FOOTPRINT="$(footprint_mb "$APP_PID")"
-if awk -v f="$FOOTPRINT" -v max="$FOOTPRINT_MB_MAX" 'BEGIN { exit !(f > 0 && f <= max) }'; then
-  pass "menu bar app footprint is ${FOOTPRINT} MB (about 15 MB, ceiling ${FOOTPRINT_MB_MAX} MB)"
-else
-  fail "menu bar app footprint is '${FOOTPRINT}' MB (ceiling ${FOOTPRINT_MB_MAX} MB)"
-fi

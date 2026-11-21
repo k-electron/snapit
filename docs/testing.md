@@ -8,7 +8,7 @@ Two seams, both run by `scripts/test.sh` (and CI):
    with fixture buffers.
 
 Tests assert only on what is observable: the pasteboard's PNG, files, sockets and their replies,
-processes, CPU and memory. They never reach into classes or private state.
+processes, memory, CPU at rest and the cache folder's files. They never reach into classes or private state.
 
 ## Test mode
 
@@ -70,10 +70,8 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
 | `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification, with the displays counted as different); the overlay ends, and so does a Timed Capture's countdown |
-| `overlay-screens-noise` | the same notification with the displays as they were (what a Dock that moved, or a virtual machine, posts); the overlay and the countdown carry on. The overlay and the countdown end on that notification only when the displays' IDs, frames or scales differ from when they started (`snapit/Area/DisplayConfiguration.swift`) |
-| `screen-events` | what the machine told the menu bar app during the run: real screen-parameter notifications (those the run posts are not counted), screen sleeps and wakes, session switches, and the real displays. The same events are logged (`snapit:` lines of the run's `app.log`), and a failing run prints that log |
+| `overlay-screens-noise` | the same notification with the displays as they were (what a Dock that moved posts); the overlay and the countdown carry on. The overlay and the countdown end on that notification only when the displays' IDs, frames or scales differ from when they started (`snapit/Area/DisplayConfiguration.swift`) |
 | `fixture-fail on\|off` | makes the fixture Capture fail, so a flow can check what a Capture that ends without a Capture does (it cancels the warm-up) |
-| `capture-timing` | `capture-to-editor-ms=<n> warm=yes\|no` for the last Capture: from its pixels being ready (the Capture itself is not counted) to the Editor window on screen: writing the Capture file, the command to the helper, attaching, showing, and the helper flushing its drawing before it replies. A normal run adds asking macOS to bring the helper forward |
 | `fixture-display <scale> [<w> <h>]` | chooses the fake display (scale 1 or 2, size in points) |
 | `fixture-extra-display <scale> <w> <h> [right\|left\|above]` or `none` | adds a second fake display next to the first, with its own scale and size; left and above put it at negative coordinates (the Area overlay gets one panel per display) |
 | `fixture-pixel-layout alpha-first\|skip-first` | the layout of the first fake display's frozen image: premultiplied BGRA (the engine's in-place crop) or BGRX from a plain bitmap (the crop's fallback) |
@@ -90,7 +88,7 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `overlay-mouse move\|down\|drag\|up <display> <x> <y> [<click count>]` | sends the Area overlay a real mouse `NSEvent` at a point of that display (points from its top-left corner; 0 is the first display), with that click count (1 when omitted; a double-click is a `down` with 2) |
 | `overlay-key escape\|enter\|left\|right\|up\|down\|<letter>\|<key code> [shift]` | sends the overlay a key event through the application's event dispatch (a letter carries the character, as a keyboard's event does; `shift` adds the Shift modifier) |
 | `overlay-wait` | after a mouse-up or Esc: waits for the overlay to finish; replies `opened <N>` (Capture N is in the Editor), `picked #RRGGBB` (the Color picker copied that hex), `cancelled` or `failed <why>` |
-| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `area` (the display and the Area: `<display> <x>,<y> <w>x<h>`, or `none`), `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `shown-ms` (Shortcut to overlay on screen) |
+| `overlay-facts` | what the overlay shows: `displays`, `state` (`idle`, `hoverWindow`, `dragging`, `adjusting`, `pickingColor`), `display`, `display-ids` (each display's `CGDirectDisplayID`; fake ones in test mode), `cursor`, `hover`, `area` (the display and the Area: `<display> <x>,<y> <w>x<h>`, or `none`), `view` (`layer-hosted-scene` when the scene is layer-hosted and no view draws), `after-selecting` (the setting), `handles` (how many show), `action-bar` (its frame, or `none`), `loupe` (`shown` or `hidden`: shown while selecting and while a handle is dragged), `hovered` (the tile under the pointer, or `none`), `tooltip` (its text once the pointer has rested on the tile for 0.5 s, or `none`), `scene-updates` (how many times the scene's layers were updated) |
 | `overlay-actionbar` | the Action bar: `frame=<x>,<y> <w>x<h>` (or `none`), then one `item <id>\|<title>\|<tooltip>\|<key>\|<frame>` line per item, in layout order; frames are display points and an item's frame is its whole tile, its hit area. The bar is clicked with `overlay-mouse` at a point inside a frame (`42-action-bar.sh` has `tile_point` and `press_tile`) |
 | `overlay-picker` | the Color picker: `display`, `pixel=<x>,<y>` (device pixels of that display's frame), `hex`, `origin` (`bar` or `entry`), `frame` (the frame's size in pixels), `loupe` (its frame in display points, or `none`), `outlined` and `swatch` (the centres of the outlined cell and the swatch, in display points, to read back from an `overlay-snapshot`); `none` when the picker is not up |
 | `color-toast` | the text of the "Copied #…" toast showing now, or `none` |
@@ -286,7 +284,7 @@ menu bar app, so a flow after it starts with a freshly started menu bar app: `AT
 is stale and no in-memory state (pretended paths, fixtures, Shortcuts) survives.
 Flow 44 uses the helpers of flow 40: `SNAPIT_FLOWS="40 44" scripts/check-run.sh <app>` runs the two.
 A flow can use everything in `scripts/run/lib.sh` (`send`, `send_slow`, `expect_equal`,
-`expect_contains`, `wait_until`, `footprint_mb`, `assert_idle_cpu`, `png_field`, ...), the Editor
+`expect_contains`, `wait_until`, `footprint_mb`, `expect_memory_returns`, `expect_not_spinning`, `png_field`, ...), the Editor
 helpers in `scripts/run/editor.sh` (`capture_into_editor <trigger>` runs a Capture and sets
 `EDITOR_N` and `HELPER_PID`; `copy_closes_editor`, `app_type <pid>` for Foreground (Dock icon)
 versus UIElement (agent), `onscreen_windows <pid>`, `helper_pid`) and the variables `APP_SOCK`,
@@ -308,8 +306,8 @@ Capture is in the Editor or cancelled, and `png-inspect verify-fixture <file> <w
    `capture_into_editor "menu-click capture.screen"`, then drive the Editor with `editor-key` and
    `editor-press` on `$EDITOR_SOCK`.
 3. Assert on what is observable: dump the pasteboard PNG (`pasteboard-dump-png`), read it with
-   `"$INSPECT" info` and `"$INSPECT" verify-fixture`, look at files under `$RUN_ROOT/save`, measure
-   `footprint_mb` and `assert_idle_cpu`.
+   `"$INSPECT" info` and `"$INSPECT" verify-fixture`, look at files under `$RUN_ROOT/save`, and check
+   that memory returned with `expect_memory_returns` (see "Resource checks").
 4. Delete what you create under `$RUN_ROOT` (the run removes the root at the end).
 
 `check-run.sh` also ends with the isolation assertion: no `dev.snapit.snapit*.plist` in
@@ -327,18 +325,41 @@ count to one of those shapes and is caught. Flow `05-run-helpers.sh` puts a PNG,
 private pasteboard (`png-inspect pasteboard-fixture`, never the general one) and runs the same probe and
 `pasteboard_verdict` over it: the PNG and the hex string fail, the other text does not.
 
-`assert_idle_cpu <label> <pid> <seconds>` reads the process's CPU time over one-second windows (a run of 1 or
-2 seconds is a single window, passing at 0.02 s of CPU as before). Several windows pass when the mean of the
-quietest half is at most 0.5% of a CPU and at most max(2, windows / 4) windows used 10 ms or more, so a short
-burst from a loaded machine drops out, while a loop that runs all the time (1% and up) or a timer that fires
-every second or two (it is in many windows) fails. Flow `05-run-helpers.sh` checks that on a process that burns 2% CPU steadily and on one that
-burns 20 ms every two seconds (both must fail) and on one with a single 60 ms burst (it must pass). `overlay_panels` waits up to 20 s for the window
-server's list to agree with the app's own count.
+`overlay_panels` waits up to 20 s for the window server's list to agree with the app's own count.
 
 The menu bar app is started again with `relaunch_app [<why>]` (after it quit or was killed; sets `APP_PID`),
 `restart_app [<why>]` (quit, wait, relaunch) and `launch_app [<root>]` (a second one under its own root), all in
 `lib.sh`; do not write a flow's own `nohup "$APP_EXE"`. The helper's process count and the warm-up state are
 `helper_count`, `no_helper`, `some_helper`, `warm_state`, `warm_is`, also in `lib.sh`.
+
+## Resource checks
+
+snapit's resources are judged by the four questions in `AGENTS.md` ("Engineering priorities"): justified,
+proportionate, released, well chosen. A review reads the code against them; the run checks release and
+proportion from the outside, against the process's own baseline and the feature's own size, with margins
+no machine's noise reaches, and it runs the same on every machine. The checks, all in `scripts/run/lib.sh`:
+
+- **Memory returns** (`expect_memory_returns <label> <pid> <baseline MB> [<feature MB>]`): after a flow of Captures,
+  Saves, Redactions, Editor cycles and the like, the process's footprint is back within the larger of 25 MB
+  and half of the feature's own size (`pixels_mb <w> <h>`, e.g. 56 MB for a 5K Capture) of its baseline. It polls
+  for up to 10 s, because the system gives some memory back late. `expect_steady_across_cycles` holds
+  the helper's footprint to the same margin from one cycle to the next.
+- **Peak is the feature's size** (`expect_peak_proportionate`): what an overlay or a set of Redactions holds
+  at its peak is at most four times the feature's own size plus 25 MB on top of the baseline.
+- **The helper goes** (`gone "$HELPER_PID"` after the last window closes, in every flow that opens one):
+  no helper process is left at rest.
+- **The cache folder holds only what a flow's end leaves** (`expect_cache_holds_only_expected`, run by
+  `check-run.sh` after every flow): no shared export file, no `.partial` file, the files of at most one
+  Last Capture, and only PNGs in `drag-out/`.
+- **Nothing spins at rest** (`expect_not_spinning <label> <pid> <seconds>`): the process averaged under 5% of
+  one CPU over the seconds given. It runs on the Editor helper holding the heaviest Editor of the run
+  (flow 38) and on the menu bar app at the end of the run (flow 90).
+
+Flow `05-run-helpers.sh` checks the spin check on a process that burns CPU and on one that sleeps, and the
+cache check on a leftover export file.
+
+Review checklist for a change that holds a resource (CPU, memory, GPU, disk, file handles; the questions
+are `AGENTS.md`'s, "Engineering priorities"): justified, proportionate, released, well chosen.
 
 ## Adding an edge or a test-mode command
 
@@ -372,10 +393,7 @@ coordinates). The fixture frames are
 IOSurface-backed like a ScreenCaptureKit capture, so Core Animation shows them without copying
 and the run can check that the overlay holds each frame once and gives it back.
 
-The Action bar is drawn in layers on Liquid Glass. AppKit controls and SwiftUI cost
-memory that never comes back (a bar of `NSButton`s +2.4 MB, of SwiftUI buttons +2.7 MB, of
-SwiftUI on glass +4.2 MB, a bare `NSGlassEffectView` +1.7 MB; each once per process), a layer
-bar about 1 MB; so the bar is layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
+The Action bar is drawn in layers on Liquid Glass: layers over one `NSGlassEffectView`. Each panel's content view is an `AreaOverlayContainerView`: the layer-hosting
 `AreaOverlayView` (the scene) fills it and, once an Area is being adjusted, the bar sits above it as
 two small views, `ActionBarBackdropView` (an `NSGlassEffectView`, the Liquid Glass capsule) and
 `ActionBarTileView` (layer-hosting, the tiles). Both return nil from `hitTest` and so does the
@@ -383,20 +401,11 @@ container (it hands everything to the scene view): every click reaches `AreaOver
 controller finds the tile under the pointer from `ActionBar.control(at:)` and calls its pointer hooks.
 A tile is a full-size hit area. Tooltips are `CATextLayer` pills in the scene, shown after the pointer
 rests 0.5 s on a tile (a one-shot `DispatchWorkItem`, cancelled when the pointer leaves): AppKit
-tooltips sit below the overlay's window level. The glass costs about 1.3 to 1.5 MB more than the
-`NSVisualEffectView` it replaced (which cost +0.4 to +0.55 MB in all), once per process. The container draws nothing (`wantsUpdateLayer`), so
+tooltips sit below the overlay's window level. The container draws nothing (`wantsUpdateLayer`), so
 no full-screen backing store exists.
 
-The scripted run holds the bar to its budget: flow 42 takes the footprint before the first bar of the
-run (flow 40 shows overlays, never a bar), and after that bar is cancelled and memory has settled it is
-at most 2.5 MB higher (`BAR_FIRST_USE_MB_MAX`, set in `scripts/check-run.sh`; measured +0.7 to +1.8 MB
-after it is cancelled and +0.9 to +2.1 MB after five Captures (it varies run to run), nearly all of it the glass, the tiles using the
-overlay labels' font, which is already loaded). Five Captures through the bar leave it where it
-was. From flow 42 on the process holds that glass for good, so what flows 42, 45, 50 and 80 compare
-with flow 20's resting footprint gets the same 2.5 MB on top (`FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX`, 7.5 MB
-instead of 5, and `FOOTPRINT_AFTER_BAR_MB_MAX`, 22.5 MB instead of 20 after flow 42); a process that has not shown a bar
-(the launch check, a relaunched copy) keeps the plain ceilings. The Color picker toast and the countdown
-badge are glass too and share that one cost: once the bar has loaded it a second glass view is nearly free.
+Flow 42 checks that five Captures through the bar leave memory where it was and that the overlay with
+the bar up peaks in proportion to its frozen frame. The Color picker toast and the countdown badge are glass too.
 
 ### The Color picker
 
@@ -424,7 +433,7 @@ and a new toast replaces the old one.
 `47-color-picker.sh` checks the sampled pixel and hex against the fixture formula at 1x and 2x, at the
 frame's corners, on a second display at negative coordinates (left and above), with a BGRX frame,
 under either "After selecting an Area" setting, reads the outlined cell and the swatch back from
-`overlay-snapshot`, and holds memory, CPU, the toast's lifetime and the missing warm-up to the budget.
+`overlay-snapshot`, and checks memory, the toast's lifetime and the missing warm-up.
 `SNAPIT_FLOWS="10 20 40 42 47"` runs just those flows (each builds on the helpers of the ones before it).
 
 ## The Window Capture
@@ -672,7 +681,7 @@ changes the fake macOS (`screen-recording-simulate`), waits, and asserts the gui
 whose whole state is one number, `GuideAnimation.progress`; a play is one finite animation of a few loops
 (`guide-loops`, `guide-loop-seconds`), and hiding the window or leaving the step cancels it by giving the
 drawing a new identity (without that, SwiftUI keeps evaluating the cancelled animation until its
-duration ends: measured at about 5% CPU in a hidden window). `flows/54-onboarding.sh` is the model: it
+duration ends, which keeps a hidden window busy). `flows/54-onboarding.sh` is the model: it
 stores a step, relaunches the menu bar app (a real relaunch keeps the test root), and drives every path.
 
 | To add | Do |
@@ -709,7 +718,7 @@ app makes it; the Editor helper shows the update window and never touches a netw
   package that is not on the script's reviewed lists (a new dependency fails until someone has read it).
   Never write those names, even in a comment, anywhere else. Flow 56 adds the runtime check:
   `lsof -a -i` finds no internet socket in the menu bar app or the helper, whatever API would open one.
-  The real `URLSession`/CFNetwork/TLS path (footprint and idle CPU after a real check, redirects,
+  The real `URLSession`/CFNetwork/TLS path (memory and CPU after a real check, redirects,
   the headers the HTTP client adds itself) is covered by manual check 9 and 8 in `docs/manual-checks.md` only.
 - **The window** is `snapit-editor/Updates/`: `UpdateModel` (every word and tooltip, once),
   `UpdateWindow` (window and view), `ReleaseNotesBlocks` (the notes' Markdown as headings, bullets and
@@ -747,8 +756,8 @@ link is dropped. Write its words from `GLOSSARY.md` and from the code (the menu,
 
 `58-user-guide.sh` drives it: the menu order, one window for any number of requests (and a Dock icon), the checklist read back
 through `user-guide-facts` and `user-guide-text <id>`, navigation (`user-guide-select`, `user-guide-link`, `user-guide-press`),
-search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle,
-memory and idle CPU. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
+search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle
+and memory. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
 (`docs/manual-checks.md`).
 
 ## CI environment
@@ -756,32 +765,18 @@ memory and idle CPU. `user-guide-snapshot` renders only part of a SwiftUI view: 
 CI runs `scripts/test.sh` on a GitHub-hosted macOS runner, which is a virtual machine: a virtual
 display with no GPU, a few CPUs shared with the host, and a window server that may post
 screen-parameter notifications for nothing (a Dock that resized, a display that "changed" to the same
-frame). The run is the same there; what differs is told in the log.
+frame). The run is the same there as anywhere: every check, margin and wait is identical on every machine.
 
 - **The preamble.** `scripts/check-run.sh` starts with `environment:` lines: macOS version and build,
-  model, CPUs, memory, load, whether the kernel says it is a virtual machine, Xcode, and every real
-  screen (frame, visible frame, scale, pixels, color space). The fixture displays are fake; the real
-  screens are only where their panels sit. At the end it prints the ambient events the menu bar app saw
-  (real screen-parameter notifications, screen sleeps, session switches, notifications ignored because
-  the displays were unchanged), and when a check failed it prints the app's `snapit:` log (why each
-  overlay and countdown ended).
-- **Product behaviour, not a test allowance.** The overlay and a Timed Capture's countdown end on a
-  change of displays, and only on one: they compare each display's ID, frame and scale with the ones
-  they started under, never the visible frame (`DisplayConfiguration`). The checks `overlay-screens-noise`
-  makes (flows 40 and 43) say a notification with the same displays does nothing.
-- **Adaptations to a virtual machine** are the only differences, all behind `IS_VM` (the kernel's
-  `kern.hv_vmm_present`; `SNAPIT_VM=0|1` forces either value on any machine), each printed as an `ENV` line
-  and counted in the run's last line (`N adaptation(s) to a virtual machine`, always 0 on a real Mac, where
-  every check keeps its real limit):
-  - an overlay's memory peak over the at-rest footprint (`frame_peak_limit` in `scripts/run/lib.sh`, used by
-    flows 40, 42 and 44) is allowed 90 MB instead of 26 MB, because software rendering keeps copies of the
-    layers' buffers in the process (measured 47 to 62 MB over a 16 MB frame on the runner). Memory returning
-    to its baseline keeps its limit everywhere.
-  - an idle window counts as active from 0.02 s of CPU instead of 0.01 s (`IDLE_ACTIVE_MIN`): `ps` reports in
-    10 ms steps, and a virtual machine's own wake-ups are single steps. A steady load, or a timer that
-    uses 20 ms every two seconds, still fails (flow 05 checks both under either rule).
-- A check that waits for something the VM does late (the memory of a frozen frame coming back while a
-  countdown runs) polls for a few seconds on every machine rather than looking once.
+  model, CPUs, memory, load, Xcode, and every real screen (frame, visible frame, scale, pixels, color
+  space). The fixture displays are fake; the real screens are only where their panels sit. When a check
+  fails the run prints the app's `snapit:` log (why each overlay and countdown ended).
+- **Product behaviour.** The overlay and a Timed Capture's countdown end on a change of displays, and
+  only on one: they compare each display's ID, frame and scale with the ones they started under, never
+  the visible frame (`DisplayConfiguration`). The checks `overlay-screens-noise` makes (flows 40 and 43)
+  say a notification with the same displays does nothing.
+- A check that waits for something the system does late (the memory of a frozen frame coming back while a
+  countdown runs) polls for a few seconds rather than looking once.
 
 ## Engine tests
 

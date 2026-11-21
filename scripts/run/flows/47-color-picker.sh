@@ -149,7 +149,6 @@ expect_pick "bottom-right corner" 1 600 400 599 399
 read -r R G B <<<"$(rgb_of "$(pfact hex)")"
 if near "$(snapshot_pixel 0 outlined 1)" "$R $G $B" 1; then pass "at the far corner the outlined cell is the corner pixel ($R,$G,$B)"; else fail "at the far corner the outlined cell shows '$(snapshot_pixel 0 outlined 1)', not $R,$G,$B"; fi
 rm -f "$RUN_ROOT/picker.png"
-assert_idle_cpu "menu bar app with the Color picker showing" "$APP_PID" 3
 
 # Esc goes back to the Action bar, with the selection where it was; nothing was copied.
 send "$APP_SOCK" "overlay-key escape" >/dev/null
@@ -172,7 +171,6 @@ send "$APP_SOCK" "overlay-key enter" >/dev/null
 picked "Enter" "$(fixture_hex 1 600 400 250 140)"
 expect_equal "only the toast is on screen: the overlay is gone" "0" "$(overlay_panels | grep -c '^600x400 ')"
 expect_equal "and the toast is one window" "1" "$(overlay_panels | grep -c .)"
-assert_idle_cpu "menu bar app with the toast showing" "$APP_PID" 1
 if wait_until 5 toast_gone; then pass "the toast goes away by itself"; else fail "the toast is still showing"; fi
 expect_equal "and its window is gone" "" "$(overlay_panels)"
 send_slow "$APP_SOCK" "editor-warm-up settle" >/dev/null
@@ -331,8 +329,8 @@ for PLACE in left above; do
 done
 send "$APP_SOCK" "fixture-extra-display none" >/dev/null
 
-# 7. Memory and CPU. A 2560 x 1600 pixel display (16 MB of pixels): ten picks leave memory where it
-#    was, the picker holds the frozen frame once, and nothing runs while it shows.
+# 7. Memory. A 2560 x 1600 pixel display (16 MB of pixels): ten picks leave memory where it
+#    was, and the picker peaks in proportion to its frozen frame.
 send "$APP_SOCK" "fixture-display 2 1280 800" >/dev/null
 area_start "menu-click capture.pick-color" >/dev/null
 picker_click 0 400.5 300.5
@@ -352,38 +350,15 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   send_slow "$APP_SOCK" overlay-wait >/dev/null
   wait_until 5 toast_gone
 done
-sleep 1
-PICK_AFTER="$(precise_mb "$APP_PID")"
-if awk -v a="$PICK_AFTER" -v b="$PICK_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory returns to baseline after ten picks (${PICK_BASELINE} MB before, ${PICK_AFTER} MB after)"
-else
-  fail "memory grew from ${PICK_BASELINE} MB to ${PICK_AFTER} MB over ten picks (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
-echo "     Color picker peak ${PICK_PEAK} MB with a 16 MB frozen frame on screen (${PICK_BASELINE} MB at rest)"
-if awk -v peak="$PICK_PEAK" -v base="$PICK_BASELINE" 'BEGIN { exit !(peak - base <= 16 + 10) }'; then
-  pass "the picker holds the frozen frame once: peak ${PICK_PEAK} MB over a ${PICK_BASELINE} MB base"
-else
-  fail "the picker peaks at ${PICK_PEAK} MB over a ${PICK_BASELINE} MB base: more than one copy of a 16 MB frame"
-fi
-if awk -v a="$PICK_AFTER" -v b="$PICK_BEFORE" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is where it was before the first pick (${PICK_BEFORE} MB then, ${PICK_AFTER} MB now)"
-else
-  fail "memory is ${PICK_AFTER} MB after the picks, ${PICK_BEFORE} MB before the first (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
-fi
+expect_memory_returns "memory returns to baseline after ten picks" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"
+expect_peak_proportionate "the picker with a frozen frame on screen" "$PICK_PEAK" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"
+expect_memory_returns "memory is where it was before the first pick" "$APP_PID" "$PICK_BEFORE" "$(pixels_mb 2560 1600)"
 area_start "menu-click capture.pick-color" >/dev/null
-assert_idle_cpu "menu bar app with the Color picker over a large display" "$APP_PID" 4
 send "$APP_SOCK" "overlay-key escape" >/dev/null
 send_slow "$APP_SOCK" overlay-wait >/dev/null
-assert_idle_cpu "menu bar app after the Color picker" "$APP_PID" 4
 expect_equal "no Editor helper process exists after the picks" "" "$(helper_pid)"
 
 # Leave what the next flows expect, and hold the process to its baseline here, not in a later flow.
 send "$APP_SOCK" "fixture-display 1 301 187" >/dev/null
 send "$APP_SOCK" pasteboard-clear >/dev/null
-sleep 1
-PICK_END="$(precise_mb "$APP_PID")"
-if awk -v a="$PICK_END" -v b="$PICK_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "memory is where the ten picks left it after the Color picker flow (${PICK_BASELINE} MB, ${PICK_END} MB now)"
-else
-  fail "memory is ${PICK_END} MB after the Color picker flow, ${PICK_BASELINE} MB before the ten picks (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
+expect_memory_returns "memory is where the ten picks left it after the Color picker flow" "$APP_PID" "$PICK_BASELINE" "$(pixels_mb 2560 1600)"

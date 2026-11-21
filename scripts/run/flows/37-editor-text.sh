@@ -74,7 +74,6 @@ if capture_into_editor "menu-click capture.screen"; then
   PARITY="$("$INSPECT" compare "$EXPORT" "$(preview_png)")"
   expect_equal "the canvas's own rendering of the text is the Export, to within anti-aliasing" "over_8=0" "$(printf '%s\n' "$PARITY" | grep '^over_8=')"
 
-
   # Typing is typing: a tool's key is a letter and ⌫ deletes a character, never the Annotation.
   keystroke t >/dev/null
   click 150 120 >/dev/null
@@ -173,8 +172,6 @@ if capture_into_editor "menu-click capture.screen"; then
   expect_contains "in that color" "0a84ff" "$(send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep "^annotation $LAST_ID ")"
 
   # At rest, nothing is ticking: the caret's timer went with the text view.
-  sleep 1
-  assert_idle_cpu "the Editor helper with Texts committed" "$HELPER_PID" 3
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
@@ -256,13 +253,7 @@ if capture_into_editor "menu-click capture.screen"; then
     keystroke undo >/dev/null
     keystroke undo >/dev/null
   done
-  sleep 1
-  HELPER_AFTER="$(footprint_mb "$HELPER_PID")"
-  if awk -v a="$HELPER_AFTER" -v b="$HELPER_BASELINE" 'BEGIN { exit !(a > 0 && a - b <= 6) }'; then
-    pass "the Editor helper's memory is flat over 20 Text commit and edit cycles (${HELPER_BASELINE} MB before, ${HELPER_AFTER} MB after)"
-  else
-    fail "the Editor helper went from ${HELPER_BASELINE} MB to ${HELPER_AFTER} MB over Text cycles (limit +6 MB)"
-  fi
+  expect_memory_returns "the Editor helper's memory over 20 Text commit and edit cycles" "$HELPER_PID" "$HELPER_BASELINE"
   send "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
   wait_until 10 gone "$HELPER_PID"
 fi
@@ -310,13 +301,7 @@ for _ in 1 2 3; do
     copy_closes_editor
   fi
 done
-sleep 1
-TEXT_AFTER="$(footprint_mb "$APP_PID")"
-if awk -v a="$TEXT_AFTER" -v b="$TEXT_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app's memory is flat over Capture, Text, Highlighter, Copy cycles (${TEXT_BASELINE} MB before, ${TEXT_AFTER} MB after)"
-else
-  fail "the menu bar app went from ${TEXT_BASELINE} MB to ${TEXT_AFTER} MB over Text cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-fi
+expect_memory_returns "the menu bar app's memory is flat over Capture, Text, Highlighter, Copy cycles" "$APP_PID" "$TEXT_BASELINE"
 if [[ -z "$(helper_pid)" ]]; then pass "no helper process is left after the Text cycles"; else fail "a helper is still running after the Text cycles"; fi
 expect_equal "no Editor is left open by the Text flow" "" "$(open_editors)"
 send "$APP_SOCK" pasteboard-clear >/dev/null

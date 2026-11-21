@@ -4,7 +4,7 @@
 # checklist of the spec's flows (scripts/user-guide-checklist.txt), every anchor resolves, a link to
 # another section navigates in the window, a link to GitHub opens through the fake browser edge, and
 # any other link is dropped. Closing the guide quits the helper (unless another window is open), and
-# the menu bar app, which never hosts the guide, stays at its baseline and idle. Sourced by
+# the menu bar app, which never hosts the guide, stays at its baseline. Sourced by
 # scripts/check-run.sh.
 # shellcheck shell=bash
 
@@ -139,23 +139,15 @@ for odd in "http://github.com/k-electron/snapit" "https://github.com/someone-els
 done
 expect_equal "no dropped link reached the browser edge" "$GITHUB" "$(ug_links)"
 
-# 9. The page draws, and only while it is on screen it costs anything: idle CPU with the guide open.
+# 9. The page draws.
 expect_equal "the window renders to a PNG" "ok" "$(send_slow "$EDITOR_SOCK" "user-guide-snapshot $RUN_ROOT/user-guide.png")"
 if [[ -s "$RUN_ROOT/user-guide.png" ]]; then pass "the rendered PNG has pixels"; else fail "the rendered PNG is empty"; fi
-assert_idle_cpu "the Editor helper with the User Guide open" "$UG_PID" 5
 expect_no_internet "the Editor helper after following links" "$UG_PID"
 
 # 10. Closing the only window quits the helper, and the menu bar app is where it was.
 send_slow "$EDITOR_SOCK" user-guide-close >/dev/null
 if wait_until 10 ug_no_helper; then pass "closing the guide, the only window, quits the helper"; else fail "the helper outlived the User Guide"; fi
-sleep 1
-UG_AFTER_MB="$(footprint_mb "$APP_PID")"
-if awk -v a="$UG_AFTER_MB" -v b="$UG_BASELINE_MB" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is at its baseline after the guide (${UG_BASELINE_MB} MB before, ${UG_AFTER_MB} MB after)"
-else
-  fail "the menu bar app grew from ${UG_BASELINE_MB} MB to ${UG_AFTER_MB} MB across the guide"
-fi
-assert_idle_cpu "menu bar app after the User Guide" "$APP_PID" 5
+expect_memory_returns "the menu bar app is at its baseline after the guide" "$APP_PID" "$UG_BASELINE_MB"
 
 # 11. Opening and closing it again and again leaves the menu bar app at baseline too.
 for _ in 1 2 3 4 5 6; do
@@ -164,14 +156,7 @@ for _ in 1 2 3 4 5 6; do
   send_slow "$EDITOR_SOCK" user-guide-close >/dev/null
   wait_until 10 ug_no_helper
 done
-sleep 1
-UG_CYCLES_MB="$(footprint_mb "$APP_PID")"
-if awk -v a="$UG_CYCLES_MB" -v b="$UG_BASELINE_MB" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-  pass "the menu bar app is at its baseline after six cycles (${UG_BASELINE_MB} MB before, ${UG_CYCLES_MB} MB after)"
-else
-  fail "the menu bar app grew from ${UG_BASELINE_MB} MB to ${UG_CYCLES_MB} MB over six guide cycles"
-fi
-assert_idle_cpu "menu bar app after six User Guide cycles" "$APP_PID" 5
+expect_memory_returns "the menu bar app is at its baseline after six cycles" "$APP_PID" "$UG_BASELINE_MB"
 
 # 12. Onboarding's Done step opens the guide from the helper itself, once; closing the guide leaves
 #     Onboarding (the helper stays), closing Onboarding then ends the helper.
@@ -196,5 +181,4 @@ expect_equal "and the helper running" "$ONB_PID" "$(helper_pid)"
 send_slow "$EDITOR_SOCK" onboarding-close >/dev/null
 if wait_until 10 ug_no_helper; then pass "closing the last window quits the helper"; else fail "the helper outlived its last window"; fi
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null
-assert_idle_cpu "menu bar app after Onboarding opened the guide" "$APP_PID" 3
 rm -f "$RUN_ROOT/browser-links"

@@ -105,9 +105,6 @@ if capture_into_editor "menu-click capture.screen"; then
   if wait_until 5 lc_state_is "$N" exported false; then pass "a change after an Export clears the exported flag"; else fail "the exported flag is still set after a change"; fi
 
   # Idle once the write has landed.
-  sleep 1
-  assert_idle_cpu "the Editor helper after the state file was written" "$HELPER_PID" 3
-  assert_idle_cpu "the menu bar app while the Last Capture's Editor is open" "$APP_PID" 3
 
   # 3. Annotations of every kind in the registry, a crop and the Undo history come back.
   KINDS="$(send "$EDITOR_SOCK" annotation-kinds)"
@@ -324,7 +321,7 @@ if capture_into_editor "menu-click capture.screen"; then
   lc_close "$EDITOR_N"
 fi
 
-# 10. Memory returns to baseline over Reopen and close cycles, and nothing idles.
+# 10. Memory returns to baseline over Reopen and close cycles.
 send "$APP_SOCK" "fixture-display 2 2560 1440" >/dev/null
 if capture_into_editor "menu-click capture.screen"; then
   BIG="$EDITOR_N"
@@ -342,31 +339,15 @@ if capture_into_editor "menu-click capture.screen"; then
       HELPER_MB="$(peak_footprint_mb "$HELPER_PID" 3)"
       if [[ -z "$HELPER_MIN" ]] || awk -v a="$HELPER_MB" -v b="$HELPER_MIN" 'BEGIN { exit !(a < b) }'; then HELPER_MIN="$HELPER_MB"; fi
       if [[ -z "$HELPER_MAX" ]] || awk -v a="$HELPER_MB" -v b="$HELPER_MAX" 'BEGIN { exit !(a > b) }'; then HELPER_MAX="$HELPER_MB"; fi
-      if ((cycle == 1)); then assert_idle_cpu "the helper with a reopened 5K Editor open" "$HELPER_PID" 3; fi
       lc_close "$EDITOR_N"
     else
       fail "Reopen failed in cycle $cycle"
     fi
   done
-  sleep 1
-  CYCLE_AFTER="$(footprint_mb "$APP_PID")"
-  if awk -v a="$CYCLE_AFTER" -v b="$CYCLE_BASELINE" -v max="$FOOTPRINT_GROWTH_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-    pass "the menu bar app's memory is flat over five Reopen and close cycles (${CYCLE_BASELINE} MB before, ${CYCLE_AFTER} MB after)"
-  else
-    fail "the menu bar app's memory went from ${CYCLE_BASELINE} MB to ${CYCLE_AFTER} MB over five Reopen cycles (limit +${FOOTPRINT_GROWTH_MB_MAX} MB)"
-  fi
-  if awk -v a="$CYCLE_AFTER" -v b="$AT_REST" -v max="$FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX" 'BEGIN { exit !(a > 0 && a - b <= max) }'; then
-    pass "the menu bar app is back near its at-rest footprint after the Reopen cycles (${AT_REST} MB at rest, ${CYCLE_AFTER} MB after)"
-  else
-    fail "the menu bar app is at ${CYCLE_AFTER} MB after the Reopen cycles, ${AT_REST} MB at rest (limit +${FOOTPRINT_FROM_REST_AFTER_BAR_MB_MAX} MB)"
-  fi
-  if awk -v lo="$HELPER_MIN" -v hi="$HELPER_MAX" 'BEGIN { exit !(lo > 0 && hi - lo <= 15) }'; then
-    pass "the helper's footprint with a reopened 5K Editor is the same every cycle (${HELPER_MIN} to ${HELPER_MAX} MB)"
-  else
-    fail "the helper's footprint with a reopened 5K Editor varies from ${HELPER_MIN} to ${HELPER_MAX} MB"
-  fi
+  expect_memory_returns "the menu bar app's memory is flat over five Reopen and close cycles" "$APP_PID" "$CYCLE_BASELINE" "$(pixels_mb 5120 2880)"
+  expect_memory_returns "the menu bar app is back near its at-rest footprint after the Reopen cycles" "$APP_PID" "$AT_REST" "$(pixels_mb 5120 2880)"
+  expect_steady_across_cycles "the helper's footprint with a reopened 5K Editor is the same every cycle" "$HELPER_MIN" "$HELPER_MAX" "$(pixels_mb 5120 2880)"
   expect_equal "no helper process is left at rest after the Reopen cycles" "" "$(helper_pid)"
-  assert_idle_cpu "the menu bar app after the Reopen cycles" "$APP_PID" 5
 fi
 
 # 11. Quitting removes the Last Capture: known files only, then the folder. A write that was

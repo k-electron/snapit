@@ -4,29 +4,9 @@
 # shellcheck shell=bash
 
 failures=0
-# Checks that ran differently because of the machine's environment (see docs/testing.md, "CI environment"):
-# always 0 on a machine that is not a virtual machine, and always printed in the run's last line.
-adaptations=0
 
 pass() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; failures=$((failures + 1)); }
-# adapt <what changed and why>: a check below this line is measured against what a virtual machine can do
-# (software rendering, a noisy CPU) rather than a real Mac's. Loud, counted, and only when IS_VM is 1.
-adapt() { echo "ENV  $1"; adaptations=$((adaptations + 1)); }
-# frame_peak_limit <what>: sets PEAK_LIMIT, the most MB over the at-rest footprint that an overlay showing one
-# 16 MB frozen frame may hold at its peak. A real Mac holds the frame once (16 MB) and a little more (10 MB).
-# A virtual machine renders in software, which keeps copies of the layers' buffers in the process: the same
-# overlay measured 47 to 62 MB over there, so it is allowed five frames and ten MB. A frame kept by mistake
-# still shows in the checks of memory returning to its baseline, which keep their limits everywhere.
-frame_peak_limit() {
-  PEAK_LIMIT=26
-  if [[ "${IS_VM:-0}" == 1 ]]; then
-    PEAK_LIMIT=90
-    adapt "$1: the peak over the at-rest footprint is allowed 90 MB (five copies of a 16 MB frame) instead of 26 MB: a virtual machine renders in software"
-  fi
-}
-# vm_or <real Mac's value> <virtual machine's value>: the value for this machine.
-vm_or() { if [[ "${IS_VM:-0}" == 1 ]]; then echo "$2"; else echo "$1"; fi; }
 expect_equal() { # description, expected, actual
   if [[ "$2" == "$3" ]]; then pass "$1"; else fail "$1 (expected '$2', got '$3')"; fi
 }
@@ -74,63 +54,95 @@ gone() { ! kill -0 "$1" 2>/dev/null; }
 cpu_seconds() { ps -o cputime= -p "$1" | awk -F'[:]' '{ print ($1 * 60) + $2 }'; }
 footprint_mb() { footprint -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "Footprint:") { v = $(i+1); u = $(i+2); if (u == "KB") v = v / 1024; if (u == "GB") v = v * 1024; printf "%.1f", v; exit } }'; }
 
-# idle_cpu_sample <pid> <seconds>: reads the process's CPU time over one-second windows (a run of 1 or 2
-# seconds is one window, as long as it is) and prints `<rate> <busiest> <active> <windows>`: `rate` is the mean
-# CPU seconds per second over the quietest half of the windows, `busiest` the CPU seconds of the busiest window,
-# `active` how many windows used 10 ms or more, `windows` how many there were. A short burst (a loaded
-# machine, a timer of the system's) lands in one or two windows and drops out of `rate`; a loop or a timer
-# of snapit's that fires again and again is in every window, or in many windows spread out, and stays.
-idle_cpu_sample() {
-  local pid="$1" seconds="$2" windows="$2" length=1 index previous current
-  # `ps` reports CPU time in 10 ms steps, so one step is the smallest "active" window. A virtual machine's
-  # own wake-ups (display and session events) show as single steps; IDLE_ACTIVE_MIN says how many seconds
-  # make a window active (0.01 on a real Mac; 0.02 in a virtual machine, where a 20 ms timer still counts).
-  local active_min="${IDLE_ACTIVE_MIN:-0.01}"
-  local -a used=()
-  if ((seconds < 3)); then windows=1; length="$seconds"; fi
-  previous="$(cpu_seconds "$pid")"
-  for ((index = 0; index < windows; index++)); do
-    sleep "$length"
-    current="$(cpu_seconds "$pid")"
-    used+=("$(awk -v a="$previous" -v b="$current" 'BEGIN { printf "%.2f", b - a }')")
-    previous="$current"
-  done
-  printf '%s\n' "${used[@]}" | sort -n | awk -v n="$windows" -v len="$length" -v min="$active_min" '
-    NF { v[++count] = $1; if ($1 >= min) active++ }
-    END { k = int((n + 1) / 2); for (i = 1; i <= k; i++) sum += v[i]; printf "%.4f %.2f %d %d", sum / k / len, v[count], active, n }'
-}
-# idle_cpu_ok <sample>: a run of several windows passes when the quietest half averages at most 0.5% of a CPU
-# (a steady 1% fails) and at most max(2, windows / 4) windows were active (one burst and the process's own start make two) (a timer that fires every few
-# seconds fails); a single short window (1 or 2 s) passes at 0.02 s of CPU, as it always did.
-idle_cpu_ok() {
-  local rate busiest active windows
-  read -r rate busiest active windows <<<"$1"
-  if ((windows == 1)); then
-    awk -v used="$busiest" 'BEGIN { exit !(used <= 0.02) }'
+# Resources are judged by AGENTS.md's four questions (docs/testing.md, "Resource checks"). A check here
+# measures a process against its own baseline and the size of what the feature holds, with margins that
+# no machine's noise reaches, and it is the same on every machine.
+
+# pixels_mb <width> <height>: the size in MB of a 4-byte-per-pixel image of that many pixels.
+pixels_mb() { awk -v w="$1" -v h="$2" 'BEGIN { printf "%.1f", w * h * 4 / 1048576 }'; }
+
+# memory_margin_mb [<feature MB>]: how far above its baseline a process may stand once a flow has ended: the
+# larger of 25 MB and half of the feature's own size (a 5K Capture's pixels are 56 MB, so 28 MB).
+memory_margin_mb() { awk -v f="${1:-0}" 'BEGIN { m = f / 2; if (m < 25) m = 25; printf "%.1f", m }'; }
+
+# expect_memory_returns <label> <pid> <baseline MB> [<feature MB>]: the process's footprint is back near
+# <baseline> (see memory_margin_mb). Memory the system gives back late is waited for, up to 10 s; what a
+# flow keeps for good stays above the margin and fails.
+expect_memory_returns() {
+  local label="$1" pid="$2" baseline="$3" margin now=""
+  margin="$(memory_margin_mb "${4:-0}")"
+  memory_is_back() {
+    now="$(footprint_mb "$pid")"
+    awk -v a="$now" -v b="$baseline" -v max="$margin" 'BEGIN { exit !(a > 0 && a - b <= max) }'
+  }
+  if wait_until 10 memory_is_back; then
+    pass "$label (${baseline} MB before, ${now} MB after, margin ${margin} MB)"
   else
-    awk -v rate="$rate" -v active="$active" -v n="$windows" 'BEGIN { max = int(n / 4); if (max < 2) max = 2; exit !(rate <= 0.005 && active <= max) }'
+    now="$(footprint_mb "$pid")"
+    fail "$label: memory is '${now}' MB, its baseline was ${baseline} MB (margin ${margin} MB)"
   fi
 }
 
-# assert_idle_cpu <label> <pid> <seconds>: the process used no CPU for <seconds> (see idle_cpu_sample).
-assert_idle_cpu() {
-  local sample rate busiest active windows
-  sample="$(idle_cpu_sample "$2" "$3")"
-  read -r rate busiest active windows <<<"$sample"
-  if idle_cpu_ok "$sample"; then
-    pass "$1 idles at 0% CPU (busiest of $windows window(s) ${busiest}s of CPU, $active active, over ${3}s)"
+# expect_steady_across_cycles <label> <lowest MB> <highest MB> [<feature MB>]: a footprint measured once per
+# cycle stayed within the margin of memory_margin_mb from one cycle to the next.
+expect_steady_across_cycles() {
+  local label="$1" low="$2" high="$3" margin
+  margin="$(memory_margin_mb "${4:-0}")"
+  if awk -v lo="$low" -v hi="$high" -v max="$margin" 'BEGIN { exit !(lo > 0 && hi - lo <= max) }'; then
+    pass "$label (${low} to ${high} MB, margin ${margin} MB)"
   else
-    fail "$1 used CPU at idle: $active of $windows window(s) active (from ${IDLE_ACTIVE_MIN:-0.01}s), ${rate}s of CPU per second in the quietest half, busiest ${busiest}s, over ${3}s; $(ambient_events)"
+    fail "$label: it varies from '${low}' to '${high}' MB (margin ${margin} MB)"
   fi
 }
 
-# ambient_events: what the machine told the menu bar app so far (from its log, which the app writes in test
-# mode): screen-parameter notifications nobody in the run posted, screens sleeping, the session switching. A
-# virtual machine can send these with nothing having changed.
-ambient_events() {
-  local log="$RUN_ROOT/app.log"
-  [[ -f "$log" ]] || { echo "ambient events: no app log"; return; }
-  echo "ambient events: $(grep -c 'screen parameters notification (real)' "$log") real screen-parameter notifications, $(grep -c 'NSWorkspaceScreensDidSleep' "$log") screen sleeps, $(grep -c 'NSWorkspaceSessionDidResignActive' "$log") session switches, $(grep -c 'displays notification .* changed=false' "$log") ignored (displays unchanged)"
+# expect_peak_proportionate <label> <peak MB> <baseline MB> <feature MB>: what a feature held at its peak is
+# roughly its own size on top of the baseline: at most four times the feature plus 25 MB.
+expect_peak_proportionate() {
+  local label="$1" peak="$2" baseline="$3" feature="$4"
+  if awk -v p="$peak" -v b="$baseline" -v f="$feature" 'BEGIN { exit !(p > 0 && p - b <= 4 * f + 25) }'; then
+    pass "$label: peak ${peak} MB over a ${baseline} MB baseline, for a feature of ${feature} MB"
+  else
+    fail "$label: peak ${peak} MB over a ${baseline} MB baseline is far more than a feature of ${feature} MB needs"
+  fi
+}
+
+# expect_not_spinning <label> <pid> <seconds>: the process used under 5% of one CPU, on average, over
+# <seconds> (5 or more). A loop or a timer that never stops shows; an event the system sends does not.
+expect_not_spinning() {
+  local label="$1" pid="$2" seconds="$3" before after used
+  if gone "$pid"; then fail "$label: the process is not running"; return; fi
+  before="$(cpu_seconds "$pid")"
+  sleep "$seconds"
+  after="$(cpu_seconds "$pid")"
+  used="$(awk -v a="$before" -v b="$after" 'BEGIN { printf "%.2f", b - a }')"
+  if [[ -n "$before" && -n "$after" ]] && awk -v used="$used" -v s="$seconds" 'BEGIN { exit !(used <= 0.05 * s) }'; then
+    pass "$label is not spinning (${used} s of CPU over ${seconds} s)"
+  else
+    fail "$label is using CPU at rest (${used} s of CPU over ${seconds} s)"
+  fi
+}
+
+# expect_cache_holds_only_expected <label>: the cache folder (the run's root) holds only what a flow's end
+# leaves: no shared export file, no partial file, the files of at most one Last Capture, and PNGs in drag-out.
+expect_cache_holds_only_expected() {
+  local unexpected
+  unexpected="$(cache_leftovers)"
+  if [[ -z "$unexpected" ]]; then
+    pass "$1: the cache folder holds only the expected files"
+  else
+    fail "$1: the cache folder holds unexpected files: ${unexpected//$'\n'/ | }"
+  fi
+}
+cache_leftovers() {
+  (
+    cd "$RUN_ROOT" || exit 0
+    find exports -type f 2>/dev/null
+    find captures -type f ! -name 'capture-*.pixels' ! -name 'capture-*.state' 2>/dev/null
+    find captures -type f \( -name 'capture-*.pixels' -o -name 'capture-*.state' \) 2>/dev/null |
+      sed -E 's/^captures\/capture-([0-9]+)\..*/\1/' | sort -u | tail -n +2 | sed 's/^/a second Last Capture, number /'
+    find drag-out -type f ! -name '*.png' 2>/dev/null
+    find . -name '*.partial' 2>/dev/null
+  ) | sort -u
 }
 
 # expect_no_internet <label> <pid>: the process has no internet (TCP or UDP) socket open. The fixture

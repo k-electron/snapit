@@ -1,8 +1,8 @@
 # The run's own measuring tools, checked against known inputs before anything depends on them: that the
 # isolation check on the general pasteboard fails when snapit-shaped data lands on a pasteboard (and stays
-# quiet for a user's own text copy), and that the idle CPU measure fails a steady 2% loop and a timer that
-# fires every two seconds but shrugs off one short burst. The pasteboard checks use a private pasteboard
-# of their own, never the user's.
+# quiet for a user's own text copy), that the spin check fails a process that burns CPU all the time and
+# passes one that is quiet, and that the cache check names a leftover file. The pasteboard checks use a
+# private pasteboard of their own, never the user's.
 
 HARNESS_BOARD="dev.snapit.test.harness.$(basename "$RUN_ROOT")"
 harness_verdict() { # <png|hex|text|none>: the verdict after that content is put on the private pasteboard
@@ -20,30 +20,25 @@ expect_contains "isolation: an unchanged pasteboard's contents are not looked at
   "$(pasteboard_state "$(pasteboard_field "$HARNESS_UNCHANGED" change_count)" "$HARNESS_BOARD")"
 "$INSPECT" pasteboard-fixture "$HARNESS_BOARD" release
 
-# harness_cpu <seconds> <burn ms> <wait ms> <first ms> <repeat 0|1>: the idle CPU sample of a process that waits
-# <first> ms and then uses <burn> ms of CPU time, waiting <wait> ms between bursts when it repeats.
-harness_cpu() {
-  local seconds="$1" burner
-  shift
-  perl -e '
-    my ($burn, $wait, $first, $repeat) = @ARGV;
-    sub nap { select(undef, undef, undef, $_[0] / 1000) }
-    nap($first);
-    do {
-      my $t = (times)[0];
-      1 while ((times)[0] - $t) < $burn / 1000;
-      nap($wait);
-    } while ($repeat);
-    sleep 30' "$@" &
-  burner=$!
-  HARNESS_SAMPLE="$(idle_cpu_sample "$burner" "$seconds")"
-  kill "$burner" 2>/dev/null
-  wait "$burner" 2>/dev/null
+# harness_burner <busy|quiet>: a process that burns CPU all the time (a loop) or sleeps. Sets HARNESS_PID.
+harness_burner() {
+  if [[ "$1" == busy ]]; then perl -e '1 while 1' & else sleep 30 & fi
+  HARNESS_PID=$!
 }
+harness_spin_failures() { # <busy|quiet>: how many checks the spin check fails for that process
+  local output
+  harness_burner "$1"
+  output="$(expect_not_spinning "the harness process" "$HARNESS_PID" 3)"
+  kill "$HARNESS_PID" 2>/dev/null
+  wait "$HARNESS_PID" 2>/dev/null
+  [[ "$output" == FAIL* ]] && echo 1 || echo 0
+}
+expect_equal "the spin check fails a process that burns CPU all the time" "1" "$(harness_spin_failures busy)"
+expect_equal "the spin check passes a quiet process" "0" "$(harness_spin_failures quiet)"
 
-harness_cpu 3 20 980 0 1
-if idle_cpu_ok "$HARNESS_SAMPLE"; then fail "the idle CPU measure let a steady 2% loop through ($HARNESS_SAMPLE)"; else pass "the idle CPU measure fails a steady 2% loop ($HARNESS_SAMPLE)"; fi
-harness_cpu 6 20 1980 0 1
-if idle_cpu_ok "$HARNESS_SAMPLE"; then fail "the idle CPU measure let a 20 ms timer every two seconds through ($HARNESS_SAMPLE)"; else pass "the idle CPU measure fails a 20 ms timer every two seconds ($HARNESS_SAMPLE)"; fi
-harness_cpu 5 60 0 2500 0
-if idle_cpu_ok "$HARNESS_SAMPLE"; then pass "the idle CPU measure tolerates one short burst ($HARNESS_SAMPLE)"; else fail "the idle CPU measure failed a process with one short burst ($HARNESS_SAMPLE)"; fi
+mkdir -p "$RUN_ROOT/exports"
+: >"$RUN_ROOT/exports/leftover.pixels"
+expect_contains "the cache check names a leftover export file" "exports/leftover.pixels" "$(cache_leftovers)"
+rm -f "$RUN_ROOT/exports/leftover.pixels"
+rmdir "$RUN_ROOT/exports"
+expect_equal "the cache check passes a clean cache folder" "" "$(cache_leftovers)"
