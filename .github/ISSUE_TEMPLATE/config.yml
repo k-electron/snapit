@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: User Guide
+    url: https://github.com/k-electron/snapit/blob/main/docs/UserGuide.md
+    about: How each part of snapit works, from Capture to Export.
+  - name: Report a security vulnerability
+    url: https://github.com/k-electron/snapit/blob/main/SECURITY.md
+    about: Report vulnerabilities privately, as SECURITY.md describes, and not in a public issue.

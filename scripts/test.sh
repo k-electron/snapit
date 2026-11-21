@@ -41,8 +41,8 @@ echo "ok"
 stage "network use only in Check for Updates"
 scripts/check-network.sh
 
-stage "User Guide covers the spec's flows"
-scripts/check-user-guide.sh
+stage "docs: User Guide and every relative link"
+scripts/check-docs.sh
 
 stage "cargo fmt"
 "$CARGO" fmt --all --check

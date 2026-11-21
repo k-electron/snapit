@@ -3,10 +3,15 @@ import AppKit
 nonisolated extension SocketCommand {
     /// Facts about the User Guide window: `window`, `title`, `occlusion-visible`, `miniaturized`,
     /// `activation`, `section` (the id on the page), `section-title`, `query`, `visible <ids>`, `sections`
-    /// (how many), `duplicate-ids`, `broken-links`, `external-links`, `last-link`, `first-responder-is-text`, then one
-    /// `section <group>|<id>|<title>` line per section and one `button <id>|<title>|<tooltip>` line per
-    /// button on the page. Test mode only.
+    /// (how many), `duplicate-ids`, `broken-links`, `section-links` (the ids that links to a section name, in order),
+    /// `external-links`, `last-link`, `first-responder-is-text`, then one
+    /// `section <group>|<id>|<title>|<icon>` line per section, one `block <kind>|<text>` line per block of
+    /// the section on the page (a table's rows are joined by ` // `) and one `button <id>|<title>|<tooltip>`
+    /// line per button on the page. Test mode only.
     static let userGuideFacts = SocketCommand("user-guide-facts")
+    /// `user-guide-fixture <markdown file in the root>|off`: the next User Guide window reads that
+    /// file, through the same parser, instead of the bundled guide. Test mode only.
+    static let userGuideFixture = SocketCommand("user-guide-fixture")
     /// `user-guide-text <section id>`: the section's text, one block per line. Test mode only.
     static let userGuideText = SocketCommand("user-guide-text")
     /// `user-guide-select <section id>`: what clicking the section in the sidebar does. Test mode only.
@@ -38,6 +43,17 @@ extension SocketCommandRegistry {
         }
         guard TestMode.isActive else { return }
         register(.userGuideFacts) { _ in UserGuideFacts.describe() }
+        register(.userGuideFixture) { request in
+            guard let argument = request.arguments.first else { return "error user-guide-fixture <markdown file>|off" }
+            if argument == "off" {
+                UserGuideWindow.fixture = nil
+                return "ok"
+            }
+            guard WindowTesting.isInsideRoot(argument) else { return "error file must be inside the test root" }
+            guard let markdown = try? String(contentsOfFile: argument, encoding: .utf8) else { return "error cannot read \(argument)" }
+            UserGuideWindow.fixture = GuideDocument(markdown: markdown)
+            return "ok"
+        }
         register(.userGuideText) { request in
             guard let guide = UserGuideWindow.shared, let id = request.arguments.first,
                 let section = guide.model.document.section(id: id)
@@ -89,11 +105,13 @@ enum UserGuideFacts {
             "sections=\(document.sections.count)",
             "duplicate-ids=\(document.duplicateIDs.joined(separator: ","))",
             "broken-links=\(document.brokenLinks.joined(separator: ","))",
+            "section-links=\(sectionLinks(document).joined(separator: ","))",
             "external-links=\(externalLinks(document).joined(separator: ","))",
             "last-link=\(model.lastLink.name)",
             "first-responder-is-text=\(window.firstResponder is NSText)",
         ]
-        lines += document.sections.map { "section \($0.group)|\($0.id)|\($0.title)" }
+        lines += document.sections.map { "section \($0.group)|\($0.id)|\($0.title)|\($0.icon)" }
+        lines += (model.selected?.blocks ?? []).map { "block \($0.kind)|\($0.plainText.replacingOccurrences(of: "\n", with: " // "))" }
         if model.previous != nil {
             lines.append(model.previousButton.factsLine)
         }
@@ -103,10 +121,23 @@ enum UserGuideFacts {
         return lines.joined(separator: "\n")
     }
 
+    /// The ids that the links to a section name, in document order.
+    private static func sectionLinks(_ document: GuideDocument) -> [String] {
+        links(document) { link in
+            if case .section(let id) = GuideLink(link) { return id }
+            return nil
+        }
+    }
+
     private static func externalLinks(_ document: GuideDocument) -> [String] {
-        document.sections.flatMap { $0.blocks.flatMap(\.links) }.compactMap { link in
+        links(document) { link in
             if case .external = GuideLink(link) { return link.absoluteString }
             return nil
         }
+    }
+
+    /// What `pick` makes of each link of the guide, in document order, for the links it takes.
+    private static func links(_ document: GuideDocument, _ pick: (URL) -> String?) -> [String] {
+        document.sections.flatMap { $0.blocks.flatMap(\.links) }.compactMap(pick)
     }
 }

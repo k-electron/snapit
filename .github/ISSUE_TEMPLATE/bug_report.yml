@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in snapit does not work as the User Guide says.
+body:
+  - type: input
+    id: snapit-version
+    attributes:
+      label: snapit version
+      description: Settings › About shows it.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu › About This Mac shows it.
+      placeholder: "macOS 26.0"
+    validations:
+      required: true
+  - type: input
+    id: mac-model
+    attributes:
+      label: Mac model
+      description: Apple menu › About This Mac shows it.
+      placeholder: "MacBook Pro (14-inch, 2024)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you did, step by step, from the menu bar or a Shortcut.
+      placeholder: |
+        1. Press the Area Shortcut and drag an Area.
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What you expected snapit to do.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What snapit did.
+    validations:
+      required: true
+  - type: textarea
+    id: captures-or-logs
+    attributes:
+      label: Captures or logs
+      description: A Capture of the problem or a relevant log, if it helps. Check it for anything private first.

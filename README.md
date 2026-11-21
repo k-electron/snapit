@@ -1,104 +1,107 @@
+<p align="center">
+  <img src="Shared/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="snapit app icon" width="128" height="128">
+</p>
+
 # snapit
 
-A brilliantly simple macOS menu bar app for taking a Capture, marking it up and getting it onto the clipboard or disk. It lives in the menu bar and stays light. macOS 26 or later, Apple silicon only. MIT licensed.
+**A brilliantly simple macOS menu bar app: take a screenshot, mark it up, and get it onto the clipboard or into a file.**
 
-The vocabulary (Capture, Editor, Annotation, Export and so on) is in [GLOSSARY.md](GLOSSARY.md).
+[![Latest release](https://img.shields.io/github/v/release/k-electron/snapit)](https://github.com/k-electron/snapit/releases/latest)
+[![CI](https://github.com/k-electron/snapit/actions/workflows/ci.yml/badge.svg)](https://github.com/k-electron/snapit/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/k-electron/snapit)](LICENSE)
 
-## Layout
+<!-- shot: hero-light -->
 
-| Path | What it is |
+<!-- shot: hero-dark -->
+
+<!-- shot: demo -->
+
+snapit lives in the menu bar and does nothing, and costs nothing, until you ask. Drag an Area, add an Arrow and a Redaction, press ⌘C, and the marked-up screenshot is on your clipboard.
+
+## What it does
+
+### Area, Window and Screen Capture
+
+Take a Capture of an Area you drag, of exactly one Window, or of a whole Screen, each from its own Shortcut.
+
+<!-- shot: tour-area -->
+
+<!-- shot: tour-window -->
+
+<!-- shot: tour-screen -->
+
+### The Action bar
+
+After you select an Area, the Action bar floats beside it: Capture, a Timed Capture, the Color picker and Cancel.
+
+<!-- shot: tour-action-bar -->
+
+### Timed Capture
+
+Set a countdown of 1 to 10 seconds and get your desktop back. A thin border marks the Area, and snapit takes the Capture when the badge reaches zero. Use it to catch a menu or a tooltip.
+
+<!-- shot: tour-timed-capture -->
+
+### Color picker
+
+A loupe outlines one pixel of your screen. Click, and its `#RRGGBB` value is on the clipboard.
+
+<!-- shot: tour-color-picker -->
+
+### Editor tools
+
+Every Capture opens in the Editor with Select, Arrow, Rectangle, Oval, Text, Highlighter, Redaction and Crop, in eight Annotation colors and three widths, with Undo and Redo.
+
+<!-- shot: tour-editor-tools -->
+
+### Redaction
+
+A Redaction pixelates what lies beneath it, and destroys those pixels for good when you Export, so the hidden content can't be recovered from the file.
+
+<!-- shot: tour-redaction -->
+
+### Copy, Save and drag-out
+
+Copy puts a PNG on the clipboard, Save writes one into your Save location, and the thumbnail drags into Finder or any app.
+
+<!-- shot: tour-export -->
+
+## Requirements
+
+macOS 26 or later, on a Mac with Apple silicon.
+
+## Download and install
+
+1. Download the disk image (DMG) from the [latest release](https://github.com/k-electron/snapit/releases/latest).
+2. Open it and drag snapit onto Applications.
+3. Open snapit from Applications. snapit is ad-hoc signed, so macOS asks you to confirm it once.
+4. Open System Settings › Privacy & Security, click **Open Anyway** and enter your password. Open snapit again.
+5. Onboarding opens and takes you through the Screen Recording permission, the Save location and the Shortcuts.
+
+## Quick start
+
+The default Shortcuts work from any app:
+
+| Shortcut | Capture |
 |---|---|
-| `snapit/` | The menu bar app (agent, SwiftUI `MenuBarExtra`). One Swift file per feature: `Capture/` (Capture source, Screen Capture flow, the hand-off to the Editor, the Last Capture and Reopen Last Capture), `Area/` (the Area Capture: frozen frames, the overlay and its layers, the pointer and key handling, `ActionBar/`, the Action bar's items, `Timed/`, Timed Capture's border, badge, countdown and fresh Capture, and `Picker/`, the Color picker), `Window/` (the Window Capture: the overlay's window mode and the single-window capture), `Helper/` (starting the Editor helper), `Export/` (Save: check the Save location, encode in the background, write the file, and ask the helper for the folder Permission guide when a Save fails after the hand-over), `Install/` (the launch check for a disk image or a translocated path, and Move to Applications), `Shortcuts/` (KeyboardShortcuts and its test replacement), `Settings/` (Open at Login and what the helper's Settings asks of the menu bar app), `Onboarding/` (when Onboarding and the Screen Recording Permission guide show, the Screen Recording questions the helper asks, resetting snapit's own entry), `Updates/` (Check for Updates: the version comparison, the mapping from GitHub's reply to an answer, and `GitHubReleaseEndpoint.swift`, the one file in snapit that talks to a network), `Menu/`, `Commands/`. |
-| `snapit-editor/` | The Editor helper, nested at `snapit.app/Contents/Helpers/snapit Editor.app`; its executable is named `snapit` too, so the process list shows one name. An agent with no Dock icon until a window shows, then a regular app; it quits when its last window closes. Same name and icon as snapit. `Settings/` is the Settings window, `Updates/` the update window (Check for Updates). `UserGuide/` is the User Guide: a bundled Markdown file (`UserGuide.md`) drawn natively, opened from the menu and from Onboarding. `Onboarding/` is Onboarding and the Permission guides (Screen Recording and the folder Permission guide for a Save location that can't be written to: the drawings and their finite animations). `Editor/` holds the Editor, one file per tool, toolbar item and Export stage, each with a registry, and `Editor/LastCapture/` (the Last Capture's state file and its writer). |
-| `Shared/` | Swift compiled into both targets: the engine wrapper, the Capture file (how pixels move between the processes), Settings keys, the socket command enum and registry, the Shortcut types (`Shortcuts/`), the update answer the two processes pass (`Updates/`), `TestMode` and the edges it replaces (`Shared/Edges/`: pasteboard, defaults, Save location, permission, macOS shortcut clashes, System Settings links, browser links), the app icon. |
-| `engine/` | The Rust engine: a static library behind a C ABI. `engine/include/snapit_engine.h` is generated by cbindgen and committed. |
-| `snapit.xcodeproj` | Buildable folders, three targets: `snapit`, `snapit-editor` and `Engine` (the Run Script phase that runs Cargo). |
-| `scripts/` | Build, header and test scripts. `scripts/run/` holds the scripted run's helpers, flows and PNG checker. |
-| `packaging/` | The release: `dmg/` (dmgbuild settings, the DMG background drawn by a Swift script, the hash-pinned dmgbuild requirements) and the release notes template. |
+| ⌃⌥⌘4 | Area |
+| ⌃⌥⌘5 | Window |
+| ⌃⌥⌘3 | Screen |
 
-## Build
+Take your first Capture:
 
-Dependencies: [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) 3.x (MIT) through Swift Package Manager, pinned in `snapit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+1. Press ⌃⌥⌘4 and drag over part of your screen.
+2. Press Enter, or click **Capture** in the Action bar. The Editor opens.
+3. Mark it up with the tools on the left.
+4. Press ⌘C to copy it, or ⌘S to save it.
 
-You need Xcode 27, [rustup](https://rustup.rs) and [cbindgen](https://github.com/mozilla/cbindgen) 0.29.4 (`cargo install cbindgen --version 0.29.4 --locked`).
+## Privacy
 
-```sh
-xcodebuild -project snapit.xcodeproj -scheme snapit -configuration Release \
-  -destination 'platform=macOS,arch=arm64' -derivedDataPath "$PWD/build/DerivedData.noindex" \
-  -packageCachePath "$PWD/build/swiftpm-cache" build
-```
+snapit makes one network request: Check for Updates, and only when you click it. It talks to GitHub to ask whether a newer release exists. It collects nothing and sends nothing else.
 
-Give `-derivedDataPath` and `-packageCachePath` absolute paths (and create `build/swiftpm-cache`): with a relative path Xcode failed to find the KeyboardShortcuts package.
+## More
 
-Xcode builds the engine through the `Engine` target, which runs `scripts/build-engine.sh`. The script finds `cargo` itself, so no shell profile is needed. The Rust toolchain version is pinned in `rust-toolchain.toml`. Builds are ad-hoc signed.
-
-After changing the engine's C interface, run `scripts/generate-header.sh` and commit the header.
-
-## Test
-
-```sh
-scripts/test.sh          # everything
-scripts/test.sh engine   # repo checks, Cargo fmt, clippy, tests and the header check only
-```
-
-A fresh clone runs `git config core.hooksPath .githooks` once to enable the pre-commit hook, which runs `scripts/test.sh engine`.
-
-The scripts that call Xcode's tools source `scripts/xcode-env.sh`: when `DEVELOPER_DIR` is unset and `xcode-select` points at the Command Line Tools, it uses `/Applications/Xcode.app` (or the newest other `/Applications/Xcode*.app`) for that run, with no `sudo` and no change to system settings.
-
-`scripts/test.sh` runs, in order:
-
-1. Repo layout checks, and `scripts/check-network.sh`: the only code in snapit that may open a network connection is `snapit/Updates/GitHubReleaseEndpoint.swift` (Check for Updates), and the engine uses none.
-2. `cargo fmt --check`, `cargo clippy` and `cargo test`. The Cargo tests call the engine through the same C-ABI functions Swift calls.
-3. The cbindgen header check: the committed header must match the engine.
-4. The Xcode build.
-5. `scripts/check-bundle.sh`: the Editor helper is nested in `Contents/Helpers`, both bundles verify with `codesign --verify --strict`, same name and icon.
-6. `scripts/check-run.sh`, the scripted whole-app run. It starts snapit in test mode (`SNAPIT_TEST_ROOT` points at a fresh temporary folder), so the Capture source returns fixture images, Screen Recording reads as granted, the clipboard is a private pasteboard, and the Save location, cache and defaults live in the temporary folder. It drives the menu item and the Shortcut for a Screen Capture at 1x and 2x, opens each Capture in the Editor helper (Dock icon while it is open, process lifecycle, memory-mapped Capture file), copies it with ⌘C and checks the PNG on the pasteboard pixel by pixel and for its `pHYs` and ICC metadata, draws Rectangles, Ovals and Arrows with synthetic pointer input and Selects, moves, resizes, deletes, undoes and redoes them (checking the Copy output's pixels against the fixture, at 1x, 2x and on a scaled-down Capture), types Text with real key events (Core Text in the Export with the glyph's place, orientation and color checked, a click away commits and starts no new box, tool keys and ⌫ are typing, ⌘Z takes typing back first), draws translucent Highlighter strokes (blend computed from the fixture formula), chooses Annotation colors with the swatches, the eyedropper (the pixel under its hot spot at 1x and 2x, never an Annotation) and the color panel (a drag is one Undo step), and checks width presets, the remembered color, width and text size, and the first click on every control of a background Editor, draws Redactions and checks every pixel under them against block means recomputed from the fixture (the original pixels are gone, the canvas's preview is the Export bit for bit), crops with the Crop tool's handles at 1x, 2x and on a scaled-down Capture (Enter and the toolbar item, Undo and Redo, Annotations and Redactions before and after the crop, a 6K Copy), saves with ⌘S (file names, `-2`/`-3` on a clash, file mode, pixels, dpi and ICC at 2x and with the 1x setting, a Save that finishes after the Editor helper quit or snapit quit, a Save location that can't be written to), checks the drag-out thumbnail's file, saves with ⌘S (file names, `-2`/`-3` on a clash, file mode, pixels, dpi and ICC at 2x and with the 1x setting, a Save that finishes after the Editor helper quit or snapit quit, a Save location that can't be written to), checks the drag-out thumbnail's file, closes Editors with Esc and Delete Capture, checks the Last Capture store (the state file in the private cache after each change, coalesced and skipped writes, stale writes dropped when a new Capture or Delete Capture supersedes them, Reopen Last Capture with Annotations of every kind, crop and Undo history, a damaged store, files removed by a new Capture, Delete Capture, quit and launch, memory over Reopen cycles), warms the Editor helper up when a Capture starts and cancels it (no helper process is left), launches the helper on its own, drives the Area overlay with synthetic mouse events (hover highlight, a drag released into a Capture at 1x and 2x with fractional positions, a click on a highlighted window, the 3 pt click threshold, Esc, displays of another scale and at negative coordinates, a frozen frame in another pixel layout) and checks the crop pixel by pixel and the overlay's memory, drives the Action bar (the selection staying with eight handles, resizing past the opposite edge, moving, the bar on screen at every edge and corner, Enter, a double-click with jitter, the Capture and Cancel buttons, Esc, a window click, the setting at Capture on release), drives the Color picker (from the Action bar, its P key, the menu and its Shortcut: the sampled pixel and its hex against the fixture at 1x and 2x, nudges, clicks and Enter, the toast, Esc, a second display at negative coordinates, memory), drives Timed Capture (the timer slider and its remembered value across a relaunch, a countdown of real click-through border and badge panels, the ✕ on mouse-up and the Area Shortcut cancelling, a fresh Capture at zero told from the frozen frame by a stamp, snapit's own windows kept out of it, a helper that quit during the countdown, a Capture that fails at zero, memory), drives the Window Capture (hover picks the front-most window, a click captures exactly that window at 1x and 2x with its transparent corners kept in the Copy and Save PNGs, no Action bar, Esc, a window that vanished, memory) and checks that opaque Captures still make RGB PNGs, drives Onboarding (the six steps and their stored step, resume at the next launch and at a Shortcut press, never again once finished, the Permission guide through a fake macOS for never granted, Don't Allow, a grant seen only when the window becomes active, Relaunch snapit and the update path with a fixture `tccutil`, the animation playing only while visible and stopping after a few loops, and memory), starts and quits the Editor helper, checks memory over repeated Editor cycles and that nothing spins at rest, checks the cache folder holds only the expected files after each flow, and asserts that your real preferences, cache folder and clipboard were not touched.
-
-Flow 56 of that run covers Check for Updates with the HTTP request faked (no real network): nothing is requested until a click, a version comparison table, every kind of GitHub reply, the update window's words and release notes, what Download opens (through the browser edge), one request per check, and memory afterwards.
-
-Flow 57 covers a missing permission: a Capture Shortcut or menu item (every Capture mode) pressed without Screen Recording shows the Permission guide, or Onboarding while that is unfinished, takes no Capture and leaves nothing running, in each state of the fake macOS (never granted, granted to the build before an update with the fixture `tccutil` resetting snapit's own entry, turned off, waiting for a relaunch), and Captures work after the grant and Relaunch snapit; a Save into a folder that can't be written to (read-only, missing, a seam for the macOS privacy denial and a read-only volume) keeps the Editor open and shows the folder Permission guide worded for the cause, with Choose another folder, Open System Settings and Try again; a Save that fails after the hand-over shows the same window from a helper started for it; and the helper's lifecycle and memory around them.
-
-Flow 58 covers the User Guide: the menu item and Onboarding's link open one window in the helper (a second request brings it forward), the guide is read from the helper's bundle and covers a checklist of the spec's flows (`scripts/user-guide-checklist.txt`, also checked on the source by `scripts/check-user-guide.sh`), every anchor resolves, sections link to each other in the window, a link to GitHub goes through the fake browser edge and any other link is dropped, search finds sections, and the menu bar app stays at its baseline and idle while the helper hosts the guide and quits with its window.
-
-[docs/testing.md](docs/testing.md) explains test mode and how to add a flow, a fixture, a test-mode command or an engine test.
-
-Run `scripts/test.sh` locally first: it is the first line of defense. CI is the final check, run on pushes to `main` and `integration/**` only (`.github/workflows/ci.yml`: `scripts/test.sh` on the hosted `xcode-27` arm64 runner, macOS 27 with Xcode 27). OSV-Scanner runs on the same pushes, on Ubuntu, from `.github/workflows/osv-scanner.yml`.
-
-## Install
-
-snapit is not notarized. The first time you open it, macOS says it can't verify it:
-
-1. Open snapit. macOS blocks it.
-2. Open System Settings > Privacy & Security.
-3. Click **Open Anyway**, then enter your password.
-
-## Release
-
-Releases are made by pushing a tag. Tag a commit on `main` that passed CI:
-
-```sh
-git tag v1.2.3
-git push origin v1.2.3
-```
-
-`.github/workflows/release.yml` runs on every `vX.Y.Z` tag, on the hosted `xcode-27` arm64 runner (macOS 27 with Xcode 27). It runs `scripts/package-release.sh`, then publishes with `gh release create`:
-
-1. **Build.** Release configuration, with the bundle version taken from the tag (`1.2.3`) and the build number from the workflow run.
-2. **Sign.** Ad-hoc (`codesign --sign -`), the Editor helper first, then the outer app, with the hardened runtime, no `--deep` and no entitlements. There is no certificate and no notarization, which is why people need Open Anyway.
-3. **Verify.** `codesign --verify --deep --strict` on the app, the flags and entitlements of both bundles, and `scripts/check-bundle.sh`.
-4. **DMG.** `scripts/make-dmg.sh` runs [dmgbuild](https://github.com/dmgbuild/dmgbuild) 2.x, pinned with hashes in `packaging/dmg/requirements.txt` (Dependabot's `pip` entry keeps it current). The window background, with the arrow into Applications and the line "First open: System Settings › Privacy & Security › Open Anyway", is drawn by `packaging/dmg/make-background.swift` on every build; no image is committed.
-5. **Check.** `scripts/check-dmg.sh` mounts the DMG, checks its contents, layout and signatures, then detaches it.
-6. **SHA-256.** `snapit-X.Y.Z.dmg.sha256` next to the DMG (`shasum -a 256 -c` works on it).
-7. **Publish.** A draft GitHub Release with the DMG and the hash attached, then published. The notes (`packaging/release-notes.md`) repeat the Open Anyway and Screen Recording steps and show the hash, followed by GitHub's generated changelog.
-
-A tag with a suffix (`v1.2.3-beta.1`) publishes as a pre-release, so "latest release" never points at it. The bundle version stays `1.2.3`; the DMG is named `snapit-1.2.3-beta.1.dmg`.
-
-To build the same DMG locally (needs the same tools as the Build section, plus python3 3.11 or later; dmgbuild is installed into `build/dmg-venv` on the first run):
-
-```sh
-scripts/package-release.sh v0.1.0-beta.1   # writes build/release/
-```
-
-`docs/manual-checks.md` lists what only a person can check on a release, such as installing from the DMG.
-
-The workflow needs no secrets. Turning on "Immutable releases" in the repository settings locks a release's tag and assets once it is published.
+- [User Guide](docs/UserGuide.md): every flow, from install to Settings.
+- [Contributing](CONTRIBUTING.md)
+- [Technical index](docs/development/index.md): architecture, building, testing and releasing.
+- [License](LICENSE): MIT.

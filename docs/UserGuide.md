@@ -1,6 +1,6 @@
 # Get started
 
-## Overview {#overview icon=sparkles}
+## <a id="overview"></a>Overview <!-- icon: sparkles -->
 
 snapit is a menu bar app for taking a Capture, marking it up and getting it onto the clipboard or into a file. It does nothing, and costs nothing, until you ask it to.
 
@@ -12,7 +12,7 @@ The most recent Capture stays available as the [Last Capture](#last-capture). sn
 
 Use the list on the left to move between sections, or the search field above it.
 
-## Install and Open Anyway {#install icon=square.and.arrow.down}
+## <a id="install"></a>Install and Open Anyway <!-- icon: square.and.arrow.down -->
 
 snapit comes as one disk image (a DMG) with one app inside.
 
@@ -22,13 +22,17 @@ snapit comes as one disk image (a DMG) with one app inside.
 4. Open System Settings › Privacy & Security, click **Open Anyway** and enter your password.
 5. Open snapit again. It starts in the menu bar and [Onboarding](#onboarding) opens.
 
+<!-- shot: install-dmg-window -->
+
+<!-- shot: install-open-anyway -->
+
 > snapit is not notarized, so macOS blocks it the first time. Every update is a new build and needs **Open Anyway** again. See [After an update](#after-an-update).
 
 You approve snapit once, and you grant the one permission it needs once, to snapit itself: the Editor inside the app is part of snapit.
 
 If you opened snapit straight from the DMG, it offers to [move itself to Applications](#move-to-applications).
 
-## Move to Applications {#move-to-applications icon=folder}
+## <a id="move-to-applications"></a>Move to Applications <!-- icon: folder -->
 
 snapit checks where it runs from every time it launches.
 
@@ -36,9 +40,11 @@ snapit checks where it runs from every time it launches.
 - **A copy already in Applications.** The window says the snapit already in Applications is replaced.
 - **macOS runs it from a temporary location** (a copy in Applications that macOS has moved aside). snapit fixes this in place and relaunches once. You do nothing.
 
+<!-- shot: move-to-applications-offer -->
+
 If the move fails, the window stays open and says why. Nothing in Applications changes.
 
-## Onboarding {#onboarding icon=hand.wave}
+## <a id="onboarding"></a>Onboarding <!-- icon: hand.wave -->
 
 Onboarding opens on the first launch and has six steps. **Continue** and **Back** move between them.
 
@@ -51,9 +57,15 @@ Onboarding opens on the first launch and has six steps. **Continue** and **Back*
 | Open at Login | A switch, on by default. See [Open at Login](#launch-at-login). |
 | Done | "Try it: press ⌃⌥⌘4", and a link that opens this User Guide. |
 
+<!-- shot: onboarding-welcome -->
+
+<!-- shot: onboarding-shortcuts -->
+
+<!-- shot: onboarding-done -->
+
 Close Onboarding at any step. It comes back at that step the next time snapit launches or you press a Shortcut, and never again once you finish it.
 
-## Screen Recording {#screen-recording icon=record.circle}
+## <a id="screen-recording"></a>Screen Recording <!-- icon: record.circle -->
 
 Screen Recording is the one permission snapit needs, and the only one it asks for in Onboarding. macOS lists it under System Settings › Privacy & Security › Screen Recording.
 
@@ -63,25 +75,31 @@ The Permission guide shows a simplified, animated drawing of that screen with sn
 2. Turn snapit on in the Screen Recording list.
 3. macOS offers **Quit & Reopen**. Choose it. snapit relaunches and Onboarding resumes where you left off.
 
+<!-- shot: permission-guide-screen-recording -->
+
 Other ways it goes:
 
 - **You chose Later** on the relaunch. Click back into snapit's window: the guide shows a **Relaunch snapit** button. Use it when you are ready.
 - **You chose Don't Allow.** macOS won't ask again. The guide switches to the System Settings version of the animation. Its **Open System Settings** button opens Privacy & Security › Screen Recording directly.
 - **You press a Capture Shortcut, or choose a Capture in the menu, while Screen Recording is off.** snapit shows the Permission guide instead of failing silently, and takes no Capture.
 
+<!-- shot: permission-guide-screen-recording-denied -->
+
 snapit looks at the permission when its window becomes active, never on a timer.
 
 After an update the permission is lost: see [After an update](#after-an-update). For the occasional notices macOS itself shows, see [periodic notices](#screen-recording-notices).
 
-## Periodic Screen Recording notices {#screen-recording-notices icon=bell}
+## <a id="screen-recording-notices"></a>Periodic Screen Recording notices <!-- icon: bell -->
 
 macOS may occasionally ask again whether an app that can record your screen should keep that access, or tell you that an app has accessed your screen. These are macOS's own messages, shown for any app with Screen Recording. snapit can't turn them off.
+
+<!-- shot: screen-recording-notice-macos -->
 
 If macOS asks, keep snapit allowed. If you turned Screen Recording off by mistake, turn snapit back on in System Settings › Privacy & Security › Screen Recording; the next Capture Shortcut shows the [Permission guide](#screen-recording) if it is off.
 
 # Take a Capture
 
-## The menu bar menu {#menu icon=filemenu.and.selection}
+## <a id="menu"></a>The menu bar menu <!-- icon: filemenu.and.selection -->
 
 Click snapit's icon in the menu bar. The menu has, top to bottom:
 
@@ -97,9 +115,11 @@ Click snapit's icon in the menu bar. The menu has, top to bottom:
 | Check for Updates… | [Asks GitHub](#updates) whether a newer snapit is out. |
 | Quit snapit | [Quits](#quitting) snapit. |
 
+<!-- shot: menu-bar-menu -->
+
 The menu shows each Shortcut next to its item, as you have set it.
 
-## Shortcuts {#shortcuts icon=command}
+## <a id="shortcuts"></a>Shortcuts <!-- icon: command -->
 
 A Shortcut is a key combination that starts a Capture from any app.
 
@@ -110,6 +130,8 @@ A Shortcut is a key combination that starts a Capture from any app.
 | Screen | ⌃⌥⌘3 |
 | Pick Color | none |
 
+<!-- shot: settings-shortcuts -->
+
 To change one, open [Settings](#settings) › Shortcuts, click its recorder and press the keys you want. **Delete** clears it, **Esc** cancels. A change works at once, with no relaunch.
 
 - Recording a combination another snapit Shortcut has removes it from that one.
@@ -118,7 +140,7 @@ To change one, open [Settings](#settings) › Shortcuts, click its recorder and 
 
 To use ⌘⇧3, ⌘⇧4 or ⌘⇧5, first [free them from macOS](#free-system-shortcuts).
 
-## Free ⌘⇧3, ⌘⇧4 and ⌘⇧5 {#free-system-shortcuts icon=keyboard}
+## <a id="free-system-shortcuts"></a>Free ⌘⇧3, ⌘⇧4 and ⌘⇧5 <!-- icon: keyboard -->
 
 macOS keeps ⌘⇧3, ⌘⇧4 and ⌘⇧5 for its own screenshots. To use them for snapit:
 
@@ -128,9 +150,11 @@ macOS keeps ⌘⇧3, ⌘⇧4 and ⌘⇧5 for its own screenshots. To use them fo
 4. Turn off the shortcuts that use ⇧⌘3, ⇧⌘4 and ⇧⌘5.
 5. Back in snapit's Settings › Shortcuts, record the key combination you want for Area, Window or Screen.
 
+<!-- shot: system-settings-screenshot-shortcuts -->
+
 Until you turn them off, macOS uses those keys first, and snapit flags them while you record.
 
-## Area Capture {#capture-area icon=viewfinder}
+## <a id="capture-area"></a>Area Capture <!-- icon: viewfinder -->
 
 Press ⌃⌥⌘4, or choose Capture Area.
 
@@ -140,6 +164,10 @@ Press ⌃⌥⌘4, or choose Capture Area.
 - Click a highlighted window to use that window as the Area.
 - **Esc** cancels. Nothing is captured.
 
+<!-- shot: area-overlay -->
+
+<!-- shot: area-window-highlight -->
+
 What happens when you let go depends on Settings › Capturing › After selecting an Area:
 
 - **Show Action bar** (the default) keeps the Area on screen with eight handles and the [Action bar](#action-bar).
@@ -147,7 +175,7 @@ What happens when you let go depends on Settings › Capturing › After selecti
 
 The Capture is at the display's native pixels and in its color space. The mouse pointer is not in it. The [Editor](#editor) opens right away.
 
-## Window Capture {#capture-window icon=macwindow}
+## <a id="capture-window"></a>Window Capture <!-- icon: macwindow -->
 
 Press ⌃⌥⌘5, or choose Capture Window.
 
@@ -155,13 +183,17 @@ Press ⌃⌥⌘5, or choose Capture Window.
 2. Click it. snapit captures exactly that window, including any part that other windows cover.
 3. **Esc** cancels.
 
+<!-- shot: window-capture-highlight -->
+
 There is no crosshair, no loupe and no Action bar. A Window Capture keeps the window's transparent corners and leaves out its shadow.
 
-## Screen Capture {#capture-screen icon=display}
+## <a id="capture-screen"></a>Screen Capture <!-- icon: display -->
 
 Press ⌃⌥⌘3, or choose Capture Screen. snapit captures the whole display under your pointer at once, at its native pixels. The [Editor](#editor) opens.
 
-## The Action bar {#action-bar icon=slider.horizontal.below.rectangle}
+<!-- shot: screen-capture-editor -->
+
+## <a id="action-bar"></a>The Action bar <!-- icon: slider.horizontal.below.rectangle -->
 
 With After selecting an Area set to Show Action bar, the Action bar floats beside the Area, below it or wherever it fits. It offers:
 
@@ -173,6 +205,8 @@ With After selecting an Area set to Show Action bar, the Action bar floats besid
 | Pick Color | Opens the [Color picker](#color-picker) (P). |
 | Cancel | Ends the Area Capture (Esc). |
 
+<!-- shot: action-bar -->
+
 Without the buttons:
 
 - **Enter**, or a double-click inside the Area, captures it.
@@ -180,7 +214,7 @@ Without the buttons:
 - Drag any of the eight **handles** to resize the Area, even past the opposite edge. Drag inside it to move it. Drag outside it to draw a new Area.
 - Rest the pointer on a button for its tooltip.
 
-## Timed Capture {#timed-capture icon=timer}
+## <a id="timed-capture"></a>Timed Capture <!-- icon: timer -->
 
 A Timed Capture takes a Capture of your Area after a countdown, while the rest of the desktop stays usable. Use it to catch a menu or a tooltip.
 
@@ -189,9 +223,11 @@ A Timed Capture takes a Capture of your Area after a countdown, while the rest o
 3. A thin border marks the Area and a small badge shows the seconds left with a ✕. Clicks pass through the border to the apps beneath.
 4. At zero snapit takes a fresh Capture of the screen as it is at that moment. Its own border and badge are not in it.
 
+<!-- shot: timed-capture-countdown -->
+
 To cancel, click the ✕ or press the Area Shortcut again. The Editor opens when the Capture is taken.
 
-## Color picker {#color-picker icon=eyedropper.halffull}
+## <a id="color-picker"></a>Color picker <!-- icon: eyedropper.halffull -->
 
 The Color picker reads the color of one pixel on your screen and copies its value. It is not the [Eyedropper](#annotation-color), which takes an Annotation color from a Capture.
 
@@ -202,9 +238,13 @@ Open it from the Action bar's **Pick Color** button, the **P** key while the Act
 - **Click** or **Enter** copies the hex value, in upper case, to the clipboard and shows a brief "Copied #…" toast.
 - **Esc** returns to the Action bar, or cancels when you opened the picker from the menu or its Shortcut.
 
+<!-- shot: color-picker-loupe -->
+
+<!-- shot: color-picker-toast -->
+
 # Mark up and export
 
-## The Editor {#editor icon=pencil.and.scribble}
+## <a id="editor"></a>The Editor <!-- icon: pencil.and.scribble -->
 
 The Editor opens straight after every Capture.
 
@@ -213,11 +253,13 @@ The Editor opens straight after every Capture.
 - **Top right:** Undo, Redo and Delete Annotation, then the drag-out thumbnail, Copy and Save (see [Export](#export)).
 - **Far right:** Delete Capture (see [Delete Capture](#delete-and-prompts)).
 
+<!-- shot: editor-toolbar-labelled -->
+
 Every button has a tooltip. snapit remembers your last Annotation color, width and fill.
 
 While an Editor is open, snapit shows in the Dock and in Cmd-Tab. Both go when the last Editor closes. Taking a new Capture while an Editor is open gives you a second Editor, so you can work on several Captures.
 
-## Tools {#tools icon=wrench.and.screwdriver}
+## <a id="tools"></a>Tools <!-- icon: wrench.and.screwdriver -->
 
 Pick a tool on the left toolbar, or press its key.
 
@@ -232,11 +274,25 @@ Pick a tool on the left toolbar, or press its key.
 | Redaction | X | Drag a box. It pixelates what lies beneath it in bold blocks. |
 | Crop | C | Drag a crop rectangle, adjust its handles, then press Enter or **Apply Crop**. Esc cancels. |
 
+<!-- shot: annotation-arrow -->
+
+<!-- shot: annotation-rectangle -->
+
+<!-- shot: annotation-oval -->
+
+<!-- shot: annotation-text -->
+
+<!-- shot: annotation-highlighter -->
+
 - **Redaction** is what you see is what you get: the preview is the same pixelate the Export uses. On Export the pixels beneath it are destroyed for good, so the hidden content can't be recovered from the file.
 - **Crop** fixes a loose Area. It is one Undo step.
 - While you type a Text, tool keys and ⌫ are typing, and ⌘Z takes the typing back first.
 
-## Annotation color and width {#annotation-color icon=paintpalette}
+<!-- shot: redaction -->
+
+<!-- shot: crop-handles -->
+
+## <a id="annotation-color"></a>Annotation color and width <!-- icon: paintpalette -->
 
 - **Swatches:** Red, Orange, Yellow, Green, Blue, Purple, Black and White. A click sets the color of the selected Annotation and of the ones you draw next.
 - **Eyedropper:** takes the Annotation color from a pixel of the Capture, never from the screen. Click its button, then click in the Capture. Esc, or another tool, ends it.
@@ -244,9 +300,15 @@ Pick a tool on the left toolbar, or press its key.
 - **Width and text size:** three presets in one control. Lines (Arrow, Rectangle and Oval outlines) are 3, 5 or 8 pt, the Highlighter is 14, 22 or 34 pt, and Text is 14, 20 or 32 pt.
 - **Outline or Solid:** for Rectangle and Oval, a box to frame something or a fill to block it out.
 
+<!-- shot: annotation-color-swatches -->
+
+<!-- shot: annotation-eyedropper -->
+
+<!-- shot: annotation-width-presets -->
+
 Every button's whole area is clickable, and the Editor accepts the first click on any control even when it is a background window, except Delete Capture (see [Delete Capture](#delete-and-prompts)).
 
-## Undo, Redo and keys {#undo-and-keys icon=arrow.uturn.backward}
+## <a id="undo-and-keys"></a>Undo, Redo and keys <!-- icon: arrow.uturn.backward -->
 
 | Key | What it does |
 |---|---|
@@ -260,7 +322,7 @@ Every button's whole area is clickable, and the Editor accepts the first click o
 
 Undo and Redo also have buttons at the top right.
 
-## Export {#export icon=square.and.arrow.up}
+## <a id="export"></a>Export <!-- icon: square.and.arrow.up -->
 
 Exporting gets the edited Capture out of snapit. The order is crop, Redactions, Annotations, then the PNG.
 
@@ -268,13 +330,19 @@ Exporting gets the edited Capture out of snapit. The order is crop, Redactions, 
 - **Save (⌘S)** writes a PNG into your Save location with no dialog. Choose the folder in [Settings](#settings) › General. Files are named `snapit-YYYYMMDD-HHMMSS.png` from the time of the Capture, for example `snapit-20261119-155058.png`. A clash adds `-2`, `-3` and so on.
 - **Drag-out:** drag the thumbnail at the top right into Finder or another app. The file has the same name a Save would give it.
 
+<!-- shot: export-copy -->
+
+<!-- shot: export-save -->
+
+<!-- shot: export-drag-out -->
+
 Exports are at the display's native pixels, tagged at 144 dpi on a Retina display. To share smaller images, turn on **Export at standard resolution (1x)** in Settings › Export.
 
 By default the Editor closes after Copy and after Save. Turn either off with **Close the Editor after Copy** and **Close the Editor after Save** in Settings › Editor. PNG is the only format.
 
 If a Save can't write into the Save location, the Editor stays open and shows the [folder Permission guide](#folder-permission).
 
-## Save location access {#folder-permission icon=lock.folder}
+## <a id="folder-permission"></a>Save location access <!-- icon: lock.folder -->
 
 If a Save fails because of folder access, the Editor stays open, so nothing is lost, and the **folder Permission guide** opens.
 
@@ -283,7 +351,9 @@ If a Save fails because of folder access, the Editor stays open, so nothing is l
 - **Choose another folder** picks a new Save location and saves there at once.
 - If a Save fails after the Editor was handed the Capture and closed, a window says "Your Capture was not saved" and offers **Choose another folder**.
 
-## The Last Capture {#last-capture icon=clock.arrow.circlepath}
+<!-- shot: permission-guide-folder -->
+
+## <a id="last-capture"></a>The Last Capture <!-- icon: clock.arrow.circlepath -->
 
 snapit keeps your most recent Capture, with its Annotations, crop and Undo history, as the **Last Capture**.
 
@@ -292,16 +362,20 @@ snapit keeps your most recent Capture, with its Annotations, crop and Undo histo
 - A new Capture replaces the Last Capture. snapit keeps only one.
 - **Quitting snapit removes it.**
 
-## Delete Capture and closing Editors {#delete-and-prompts icon=trash}
+<!-- shot: menu-reopen-last-capture -->
+
+## <a id="delete-and-prompts"></a>Delete Capture and closing Editors <!-- icon: trash -->
 
 - **Delete Capture** (the far right button) closes that Editor and removes the Capture immediately, with no confirmation.
 - When an Editor is in the background, the **first click** on Delete Capture only brings it forward, so you never delete by accident. Click it again to delete.
 - Closing an Editor whose Capture is **not** the Last Capture, and has edits you never Exported, asks once: "Discard this Capture?" **Cancel** (Esc) keeps it, **Discard** (⌘D) closes it. Copying, saving or dragging out counts as Exporting.
 - With such an Editor open, quitting brings it forward first and asks "Quit snapit?". **Discard and Quit** quits.
 
+<!-- shot: discard-capture-prompt -->
+
 # snapit itself
 
-## Settings {#settings icon=gearshape}
+## <a id="settings"></a>Settings <!-- icon: gearshape -->
 
 Open Settings from the menu (⌘,). It is one scrolling page.
 
@@ -314,35 +388,43 @@ Open Settings from the menu (⌘,). It is one scrolling page.
 | Export | **Export at standard resolution (1x)**, off by default. |
 | About | The version, and **Check for Updates…**. |
 
+<!-- shot: settings-window -->
+
 Changes take effect at once. The Save location starts as `~/Downloads`.
 
-## Open at Login {#launch-at-login icon=power}
+## <a id="launch-at-login"></a>Open at Login <!-- icon: power -->
 
 **Open at Login** in Settings › General starts snapit when you log in. It is on by default for a copy that runs from Applications, and Onboarding offers it as a switch. From a build folder or the DMG, snapit registers nothing.
 
 If macOS needs your approval first, Settings says so and offers **Open Login Items**. Turning the switch off removes snapit from your login items, and it stays off across relaunches. It also survives updates.
 
-## Check for Updates {#updates icon=arrow.triangle.2.circlepath}
+## <a id="updates"></a>Check for Updates <!-- icon: arrow.triangle.2.circlepath -->
 
 snapit contacts GitHub only when you click **Check for Updates…**, in the menu or in Settings › About. It makes no other network calls.
 
 - **A newer release:** the window shows the new version, its notes and a **Download** button that opens the release page in your browser.
 - **Up to date, or GitHub can't be reached:** the window gives one line.
 
+<!-- shot: update-window-newer-release -->
+
+<!-- shot: update-window-up-to-date -->
+
 Every release is on [GitHub](https://github.com/k-electron/snapit/releases).
 
 To update, download the new DMG, quit snapit, drag the new snapit onto Applications and replace the old one. Then see [After an update](#after-an-update).
 
-## After an update {#after-an-update icon=exclamationmark.arrow.triangle.2.circlepath}
+## <a id="after-an-update"></a>After an update <!-- icon: exclamationmark.arrow.triangle.2.circlepath -->
 
 Every update is a new build, so macOS treats it as a new app twice:
 
 1. **Open Anyway again.** Open the new snapit, then System Settings › Privacy & Security › **Open Anyway**.
 2. **Screen Recording again.** snapit shows only the Screen Recording [Permission guide](#screen-recording), "snapit needs Screen Recording turned back on". It clears its own old entry and asks macOS afresh, so you turn on the new entry and choose **Quit & Reopen**.
 
+<!-- shot: permission-guide-after-update -->
+
 If snapit could not clear its old entry, the guide says so and tells you to select snapit in the Screen Recording list, press − to remove it, choose **Relaunch snapit** and allow Screen Recording when macOS asks.
 
-## Quitting {#quitting icon=xmark.circle}
+## <a id="quitting"></a>Quitting <!-- icon: xmark.circle -->
 
 - **Quit snapit** in the menu quits everything. With an Editor holding edits you never Exported, snapit brings it forward and asks first.
 - Closing the last window (an Editor, Settings or this guide) does not quit snapit. It leaves snapit in the menu bar and the Dock icon goes.

@@ -10,6 +10,37 @@ Two seams, both run by `scripts/test.sh` (and CI):
 Tests assert only on what is observable: the pasteboard's PNG, files, sockets and their replies,
 processes, memory, CPU at rest and the cache folder's files. They never reach into classes or private state.
 
+## Running the tests
+
+```sh
+scripts/test.sh          # everything
+scripts/test.sh engine   # repo checks, the docs check, Cargo fmt, clippy, tests and the header check only
+```
+
+A fresh clone runs `git config core.hooksPath .githooks` once to enable the pre-commit hook, which runs `scripts/test.sh engine`.
+
+The scripts that call Xcode's tools source `scripts/xcode-env.sh`: when `DEVELOPER_DIR` is unset and `xcode-select` points at the Command Line Tools, it uses `/Applications/Xcode.app` (or the newest other `/Applications/Xcode*.app`) for that run, with no `sudo` and no change to system settings.
+
+`scripts/test.sh` runs, in order:
+
+1. Repo layout checks, and `scripts/check-network.sh`: the only code in snapit that may open a network connection is `snapit/Updates/GitHubReleaseEndpoint.swift` (Check for Updates), and the engine uses none.
+2. `scripts/check-docs.sh`, the docs check: the User Guide's sections, links and checklist (see "The User Guide" below), and, over every Markdown file in the repo outside build output and Cargo's `target/` folder: every relative link (a Markdown link or an HTML `href`) and every image (a Markdown image, an HTML `img` `src`, each candidate of a `source` `srcset`) resolves to a file that exists, every file under `docs/images/` is in the shot list, and every slot marker names a shot in it (see "Images and the shot list" below). The check names the file and line of each failure, and skips code spans and fenced code.
+3. `cargo fmt --check`, `cargo clippy` and `cargo test`. The Cargo tests call the engine through the same C-ABI functions Swift calls.
+4. The cbindgen header check: the committed header must match the engine.
+5. The Xcode build.
+6. `scripts/check-bundle.sh`: the Editor helper is nested in `Contents/Helpers`, both bundles verify with `codesign --verify --strict`, same name and icon.
+7. `scripts/check-run.sh`, the scripted whole-app run. It starts snapit in test mode (`SNAPIT_TEST_ROOT` points at a fresh temporary folder), so the Capture source returns fixture images, Screen Recording reads as granted, the clipboard is a private pasteboard, and the Save location, cache and defaults live in the temporary folder. It drives the menu item and the Shortcut for a Screen Capture at 1x and 2x, opens each Capture in the Editor helper (Dock icon while it is open, process lifecycle, memory-mapped Capture file), copies it with ⌘C and checks the PNG on the pasteboard pixel by pixel and for its `pHYs` and ICC metadata, draws Rectangles, Ovals and Arrows with synthetic pointer input and Selects, moves, resizes, deletes, undoes and redoes them (checking the Copy output's pixels against the fixture, at 1x, 2x and on a scaled-down Capture), types Text with real key events (Core Text in the Export with the glyph's place, orientation and color checked, a click away commits and starts no new box, tool keys and ⌫ are typing, ⌘Z takes typing back first), draws translucent Highlighter strokes (blend computed from the fixture formula), chooses Annotation colors with the swatches, the eyedropper (the pixel under its hot spot at 1x and 2x, never an Annotation) and the color panel (a drag is one Undo step), and checks width presets, the remembered color, width and text size, and the first click on every control of a background Editor, draws Redactions and checks every pixel under them against block means recomputed from the fixture (the original pixels are gone, what the Editor draws for a Redaction is the Export bit for bit), crops with the Crop tool's handles at 1x, 2x and on a scaled-down Capture (Enter and the toolbar item, Undo and Redo, Annotations and Redactions before and after the crop, a 6K Copy), saves with ⌘S (file names, `-2`/`-3` on a clash, file mode, pixels, dpi and ICC at 2x and with the 1x setting, a Save that finishes after the Editor helper quit or snapit quit, a Save location that can't be written to), checks the drag-out thumbnail's file, closes Editors with Esc and Delete Capture, checks the Last Capture store (the state file in the private cache after each change, coalesced and skipped writes, stale writes dropped when a new Capture or Delete Capture supersedes them, Reopen Last Capture with Annotations of every kind, crop and Undo history, a damaged store, files removed by a new Capture, Delete Capture, quit and launch, memory over Reopen cycles), warms the Editor helper up when a Capture starts and cancels it (no helper process is left), launches the helper on its own, drives the Area overlay with synthetic mouse events (hover highlight, a drag released into a Capture at 1x and 2x with fractional positions, a click on a highlighted window, the 3 pt click threshold, Esc, displays of another scale and at negative coordinates, a frozen frame in another pixel layout) and checks the crop pixel by pixel and the overlay's memory, drives the Action bar (the Area staying with eight handles, resizing past the opposite edge, moving, the bar on screen at every edge and corner, Enter, a double-click with jitter, the Capture and Cancel buttons, Esc, a window click, the setting at Capture on release), drives the Color picker (from the Action bar, its P key, the menu and its Shortcut: the sampled pixel and its hex against the fixture at 1x and 2x, nudges, clicks and Enter, the toast, Esc, a second display at negative coordinates, memory), drives Timed Capture (the timer slider and its remembered value across a relaunch, a countdown of real click-through border and badge panels, the ✕ on mouse-up and the Area Shortcut cancelling, a fresh Capture at zero told from the frozen frame by a stamp, snapit's own windows kept out of it, a helper that quit during the countdown, a Capture that fails at zero, memory), drives the Window Capture (hover picks the front-most window, a click captures exactly that window at 1x and 2x with its transparent corners kept in the Copy and Save PNGs, no Action bar, Esc, a window that vanished, memory) and checks that opaque Captures still make RGB PNGs, drives Onboarding (the six steps and their stored step, resume at the next launch and at a Shortcut press, never again once finished, the Permission guide through a fake macOS for never granted, Don't Allow, a grant seen only when the window becomes active, Relaunch snapit and the update path with a fixture `tccutil`, the animation playing only while visible and stopping after a few loops, and memory), starts and quits the Editor helper, checks memory over repeated Editor cycles and that nothing spins at rest, checks the cache folder holds only the expected files after each flow, and asserts that your real preferences, cache folder and clipboard were not touched.
+
+Flow 56 of that run covers Check for Updates with the HTTP request faked (no real network): nothing is requested until a click, a version comparison table, every kind of GitHub reply, the update window's words and release notes, what Download opens (through the browser edge), one request per check, and memory afterwards.
+
+Flow 57 covers a missing permission: a Capture Shortcut or menu item (every Capture mode) pressed without Screen Recording shows the Permission guide, or Onboarding while that is unfinished, takes no Capture and leaves nothing running, in each state of the fake macOS (never granted, granted to the build before an update with the fixture `tccutil` resetting snapit's own entry, turned off, waiting for a relaunch), and Captures work after the grant and Relaunch snapit; a Save into a folder that can't be written to (read-only, missing, a seam for the macOS privacy denial and a read-only volume) keeps the Editor open and shows the folder Permission guide worded for the cause, with Choose another folder, Open System Settings and Try again; a Save that fails after the hand-over shows the same window from a helper started for it; and the helper's lifecycle and memory around them.
+
+Flow 58 covers the User Guide: it runs the docs check (`scripts/check-docs.sh`), then the menu item and Onboarding's link open one window in the helper (a second request brings it forward), the guide is read from the helper's bundle and covers a checklist of the spec's flows (`scripts/user-guide-checklist.txt`, also checked on the source by `scripts/check-docs.sh`), every section has the icon its source gives and every anchor resolves, a guide with image lines draws no image block and no alt text, sections link to each other in the window, a link to GitHub goes through the fake browser edge and any other link is dropped, search finds sections, and the menu bar app stays at its baseline and idle while the helper hosts the guide and quits with its window.
+
+Run `scripts/test.sh` locally first: it is the first line of defense. CI is the final check, run on pushes to `main` and `integration/**` only (`.github/workflows/ci.yml`: `scripts/test.sh` on the hosted `xcode-27` arm64 runner, macOS 27 with Xcode 27). OSV-Scanner runs on the same pushes, on Ubuntu, from `.github/workflows/osv-scanner.yml`.
+
+The rest of this doc explains test mode and how to add a flow, a fixture, a test-mode command or an engine test.
+
 ## Test mode
 
 Setting `SNAPIT_TEST_ROOT` to a folder turns test mode on for a process (the menu bar app passes
@@ -22,7 +53,7 @@ the real system is replaced:
 | cache folder and sockets | `~/Library/Caches/dev.snapit.snapit` | the root | `Shared/AppIdentity.swift` |
 | Capture source | ScreenCaptureKit | fixture images, 1x sRGB or 2x Display P3 | `snapit/Capture/` |
 | Area Capture source (frozen displays, the pointer) | one ScreenCaptureKit capture per display | the fixture image for each fake display, the pointer in the middle of the first | `snapit/Area/AreaCaptureSource.swift` |
-| Timed Capture's fresh Capture at zero | a new ScreenCaptureKit screenshot of the display, with snapit's whole application excluded by the content filter (its menu bar icon excepted), built from `OwnWindowExclusion.plan` | the fixture image of the fake display with a 4 x 4 pixel stamp in its corner (`R=250, G=<fresh Captures so far>, B=77`) and any of snapit's windows that the same `OwnWindowExclusion.plan` does not exclude painted over it. The 200 ms hide-and-fetch-again fallback (snapit missing from ScreenCaptureKit's list) is covered by `docs/manual-checks.md` only | `snapit/Area/Timed/TimedCaptureSource.swift` |
+| Timed Capture's fresh Capture at zero | a new ScreenCaptureKit screenshot of the display, with snapit's whole application excluded by the content filter (its menu bar icon excepted), built from `OwnWindowExclusion.plan` | the fixture image of the fake display with a 4 x 4 pixel stamp in its corner (`R=250, G=<fresh Captures so far>, B=77`) and any of snapit's windows that the same `OwnWindowExclusion.plan` does not exclude painted over it. The 200 ms hide-and-fetch-again fallback (snapit missing from ScreenCaptureKit's list) is covered by `docs/development/manual-checks.md` only | `snapit/Area/Timed/TimedCaptureSource.swift` |
 | window list (hover highlight) | the window server's on-screen list | two fixed overlapping windows over the first fake display | `snapit/Area/OnScreenWindowSource.swift` |
 | Screen Recording permission | `CGPreflightScreenCaptureAccess` and `CGRequestScreenCaptureAccess`, in the menu bar app only; the five states (`notDetermined`, `denied`, `granted`, `grantedStale`, `grantedNeedsRelaunch`) are derived from that, from what snapit remembers (which build was granted, whether it asked) and from whether it was granted when this process started. A grant lost by the same build is `denied` (the user turned it off); lost by another build (an update) is `grantedStale`. The build is told apart by its code directory hash | the same derivation over a flag in the run's defaults that starts granted, so a run never meets a prompt, and a settable build id (`screen-recording-build`); a request is a line in `<root>/screen-recording-requests`; `screen-recording-simulate` sets the fake macOS | `Shared/Edges/ScreenRecordingPermission.swift` |
 | resetting snapit's own Screen Recording entry | `/usr/bin/tccutil reset ScreenCapture <bundle id>`, run from inside the menu bar app, failures reported | a line in `<root>/tcc-resets` and the fake macOS no longer granting; fails while `<root>/tcc-reset-fail` exists (`tcc-reset-fail on`); the real `tccutil` and the real TCC database are never touched | `snapit/Onboarding/ScreenRecordingReset.swift` |
@@ -495,7 +526,7 @@ transparent rounded corners (the formula is in its header and in `scripts/run/pn
 **Shadow.** The spec leaves the window shadow open. Window Captures do not include it
 (`WindowCapture.includesShadow` is false, passed to ScreenCaptureKit as `ignoreShadows`), and the Capture is exactly
 the window's frame with transparent rounded corners. Flipping the constant is a one-line change; the steps to check
-it are in `docs/manual-checks.md`.
+it are in `docs/development/manual-checks.md`.
 
 **Alpha.** Pixels are premultiplied BGRA in memory, in the Capture file and through the Export stages (crop copies
 bytes; Annotations are drawn by Core Graphics into a premultiplied context, so they composite over the corners).
@@ -761,7 +792,7 @@ app makes it; the Editor helper shows the update window and never touches a netw
   Never write those names, even in a comment, anywhere else. Flow 56 adds the runtime check:
   `lsof -a -i` finds no internet socket in the menu bar app or the helper, whatever API would open one.
   The real `URLSession`/CFNetwork/TLS path (memory and CPU after a real check, redirects,
-  the headers the HTTP client adds itself) is covered by manual check 9 and 8 in `docs/manual-checks.md` only.
+  the headers the HTTP client adds itself) is covered by manual check 9 and 8 in `docs/development/manual-checks.md` only.
 - **The window** is `snapit-editor/Updates/`: `UpdateModel` (every word and tooltip, once),
   `UpdateWindow` (window and view), `ReleaseNotesBlocks` (the notes' Markdown as headings, bullets and
   paragraphs, inline Markdown applied, an image shown as its alternative text and never fetched; parsed
@@ -772,35 +803,81 @@ app makes it; the Editor helper shows the update window and never touches a netw
   `Accept-Language: en`, and follows a redirect only within `api.github.com`
   (`ReleaseRequest.allowsRedirect`, checked with `update-redirect <url>`).
 - **Real network** (the real endpoint, a private repository answering 404, a proxy, no connection)
-  is in `docs/manual-checks.md`.
+  is in `docs/development/manual-checks.md`.
 
 ## The User Guide
 
-The User Guide is a window in the Editor helper (`snapit-editor/UserGuide/`), drawn natively from a bundled
-Markdown file: no web view, no network, no image. The menu bar app only asks for it
-(`UserGuideMenu` → `show-user-guide`, `Shared/Commands/UserGuideCommands.swift`); the helper reads
-`UserGuide.md` from its own bundle (`Contents/Resources`) when the window opens and drops it when it closes.
-`UserGuideWindow` is one window (a second request brings it forward), `UserGuideModel` is what it shows (the section on
-the page, the search, the one `follow(_:)` every link goes through, every tooltip), `UserGuideView` draws it and
-`GuideDocument` parses the Markdown. `UserGuideLink.open` (Onboarding's Done step) is set in
-`registerUserGuideHelperCommands()` when the helper launches, not when the window opens.
+The User Guide is a window in the Editor helper (`snapit-editor/UserGuide/`), drawn natively from one Markdown file,
+`docs/UserGuide.md`: no web view, no network, no image. The same file is the guide on GitHub, where its image lines show
+screenshots. The Xcode project lists it as a resource of the helper (a file reference in the `docs` group and a build
+file in the helper's Resources phase, since `docs/` is not a synchronized folder), so it lands at
+`snapit Editor.app/Contents/Resources/UserGuide.md`, once, and `scripts/check-bundle.sh` asserts that and that the menu
+bar app has none. No other copy exists in the repo. The menu bar app only asks for the guide
+(`UserGuideMenu` → `show-user-guide`, `Shared/Commands/UserGuideCommands.swift`); the helper reads the bundled file when
+the window opens and drops it when it closes. `UserGuideWindow` is one window (a second request brings it forward),
+`UserGuideModel` is what it shows (the section on the page, the search, the one `follow(_:)` every link goes through, every
+tooltip), `UserGuideView` draws it and `GuideDocument` parses the Markdown. `UserGuideLink.open` (Onboarding's Done step) is
+set in `registerUserGuideHelperCommands()` when the helper launches, not when the window opens.
 
-The source, `UserGuide.md`, is a small subset: `# Group`, `## Title {#id icon=sf.symbol}` for a section (the id is its anchor),
-`###`, paragraphs (one per line), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline Markdown. A link is `[text](#id)`
-to a section or an `https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other
-link is dropped. Write its words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never from memory.
+The source is a small subset of Markdown that reads well on GitHub and in the window: `# Group`, a section written
+`## <a id="id"></a>Title <!-- icon: sf.symbol -->` (the anchor makes the id a link target on GitHub, the comment carries
+the SF Symbol, and GitHub shows neither; the form is exact: an id of `a-z`, `0-9` and `-`, one space before the comment and
+nothing after it, which the docs check enforces and `GuideDocument` reads), `###`, paragraphs (the window draws one per line; keep a blank line between
+paragraphs, notes and lists so GitHub does not join them), `- ` bullets, `1. ` steps, `> ` notes, pipe tables, and inline
+Markdown. A link is `[text](#id)` to a section, which works in the window and on GitHub, or an
+`https://github.com/k-electron/snapit…` link, which opens through `BrowserLinks` only when clicked; any other link is
+dropped. An image is a line of its own, `![alt](images/user-guide/<id>.png)`, a relative path into `docs/images/`: the window
+skips the line entirely, with no block and no alt text. The window also skips HTML comments, whether on one line, inline or
+across several lines, which is how a slot marker (`<!-- shot: <id> -->`, see "Images and the shot list") shows nothing in the
+window and on GitHub. Write the words from `GLOSSARY.md` and from the code (the menu, `SettingsControls`, the tool keys), never
+from memory.
 
 | To add | Do |
 |---|---|
-| a section | a `## Title {#id}` in `UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-user-guide.sh` |
-| a flow to the checklist | a line in `scripts/user-guide-checklist.txt`: the section id, a bar, then the terms it must hold separated by semicolons. `scripts/check-user-guide.sh` (run by `scripts/test.sh` before the build) checks the source, and flow 58 checks the guide the helper loaded |
+| a section | a `## <a id="id"></a>Title <!-- icon: sf.symbol -->` in `docs/UserGuide.md` (and a line in `scripts/user-guide-checklist.txt` naming the terms it must hold), then `scripts/check-docs.sh` |
+| a flow to the checklist | a line in `scripts/user-guide-checklist.txt`: the section id, a bar, then the terms it must hold separated by semicolons. `scripts/check-docs.sh` (run by `scripts/test.sh` before the build) checks the source, and flow 58 checks the guide the helper loaded |
 | a block kind | a case in `GuideBlock`, its parsing in `GuideDocument.init(markdown:)` and its view in `UserGuideView.swift` |
+| a shot (an image) | an entry in `docs/development/shot-list.md`, and a slot marker where it goes in the doc; the steps for taking it are in the shot list |
+
+The docs check reads the source and names the file and line of every failure: a duplicate section id (and only that: the
+first section keeps its text, so no checklist error follows), a section that is not exactly the form above, a `#id` link
+that names no section, an image outside the docs images folder (the path must start `images/`, with no `..` and no scheme)
+or one that shares its line with text, an HTML `img`, `picture` or `source` (the window would show it as text), and a link
+that goes anywhere but a section or snapit's GitHub repository. `scripts/check-docs.sh --sections` prints the `id|icon` of
+each section for flow 58, so the flow and the check read the headings with one parser. Each rule is proven on a temporary bad
+input and green on the repo.
 
 `58-user-guide.sh` drives it: the menu order, one window for any number of requests (and a Dock icon), the checklist read back
-through `user-guide-facts` and `user-guide-text <id>`, navigation (`user-guide-select`, `user-guide-link`, `user-guide-press`),
-search, links (GitHub reaches `<root>/browser-links`, everything else is refused), Onboarding's link, and the helper's lifecycle
-and memory. `user-guide-snapshot` renders only part of a SwiftUI view: for the look use a real screen
-(`docs/manual-checks.md`).
+through `user-guide-facts` and `user-guide-text <id>`, the icon of every section and the count of section links against the
+source, the blocks the selected section draws (`block <kind>|<text>` lines of the facts), navigation (`user-guide-select`,
+`user-guide-link`, `user-guide-press`), search, links (GitHub reaches `<root>/browser-links`, everything else is refused),
+Onboarding's link, and the helper's lifecycle and memory. The flow also writes a guide with image lines, a linked image,
+an inline image and comments in every form to the root and opens it with
+`user-guide-fixture <file in the root>` (`off` drops it): the next window parses that file with the same parser instead of the
+bundled one, and the flow shows that no image block, alt text or comment text is drawn or found by search. `user-guide-snapshot`
+renders only part of a SwiftUI view: for the look use a real screen (`docs/development/manual-checks.md`).
+
+### Images and the shot list
+
+Images live under `docs/images/user-guide/` and `docs/images/readme/`. Git does not track an empty folder, so a folder
+exists once its first shot does, and the check does not need it. `docs/development/shot-list.md` has one entry per image
+(`### <id>`, then a `File:` line with the path under `docs/images/`, the surface, the setup and the docs that use it) and
+the shooting guidance. A shot not yet taken is a slot marker, `<!-- shot: <id> -->`, on a line of its own in the doc.
+
+The docs check, over all Markdown, fails with the file and line on:
+
+- a link that points at a file that does not exist (a Markdown link, or the `href` of an HTML `a`, `area` or `link`);
+- an image that points at a file that does not exist (a Markdown image, an `img` `src`, any candidate of a `source`
+  `srcset`);
+- a file under `docs/images/` (any depth, any extension, Finder's `.DS_Store` aside) that is not in the shot list;
+- a slot marker that names a shot not in the shot list;
+- a shot-list entry whose heading is not a lowercase-kebab id, that has no `File:` line, or whose file is not
+  `user-guide/<id>.png` or `readme/<id>.png` (`.gif` for an animation).
+
+It reports a slot marker whose file is not there yet as pending, as a count and a list before its `ok` line, and never
+fails on it, so the pre-commit hook stays green while shots are outstanding. Code spans, fenced code and HTML comments are
+not looked in for links and images, and a marker in a code span is not a marker. Each rule is proven on a temporary bad
+input (a missing image in each form, an unlisted file, an unknown marker, a malformed entry) and green on the repo.
 
 ## CI environment
 
