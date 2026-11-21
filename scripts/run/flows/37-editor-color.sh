@@ -2,7 +2,7 @@
 # under the cursor's hot spot, at 1x and 2x, never an Annotation), the color wheel (the macOS color
 # panel, replaced in test mode by a fixture; a drag in it is one Undo step), width presets, and the last
 # color, width and text size remembered. Every control works on the first click of a background Editor.
-# Expected colors come from the fixture formula in docs/testing.md, not from the app. Sourced by
+# Expected colors come from the fixture formula in docs/development/testing.md, not from the app. Sourced by
 # scripts/check-run.sh, after flow 36.
 # shellcheck shell=bash
 # shellcheck source=../editor-tools.sh

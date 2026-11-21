@@ -54,7 +54,7 @@ gone() { ! kill -0 "$1" 2>/dev/null; }
 cpu_seconds() { ps -o cputime= -p "$1" | awk -F'[:]' '{ print ($1 * 60) + $2 }'; }
 footprint_mb() { footprint -p "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "Footprint:") { v = $(i+1); u = $(i+2); if (u == "KB") v = v / 1024; if (u == "GB") v = v * 1024; printf "%.1f", v; exit } }'; }
 
-# Resources are judged by CODING_STANDARDS.md's four questions (docs/testing.md, "Resource checks"). A check here
+# Resources are judged by CODING_STANDARDS.md's four questions (docs/development/testing.md, "Resource checks"). A check here
 # measures a process against its own baseline and the size of what the feature holds, with margins that
 # no machine's noise reaches, and it is the same on every machine.
 

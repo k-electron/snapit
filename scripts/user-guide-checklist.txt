@@ -1,7 +1,7 @@
 # What the User Guide must cover: one line per flow of the spec (issue #13, stories 93 and 94).
 #   <section id>|<term>;<term>;...
 # The section with that id must exist and its text must contain every term. Used by
-# scripts/check-user-guide.sh (the guide's source) and flow 58 (the guide the helper loaded).
+# scripts/check-docs.sh (the guide's source) and flow 58 (the guide the helper loaded).
 overview|Capture;Editor;Export;Last Capture
 install|Open Anyway;Privacy & Security;DMG;Applications
 move-to-applications|Move to Applications;Not Now;eject
