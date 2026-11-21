@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Enabled once per clone with: git config core.hooksPath .githooks
+# Runs the repo checks and the Cargo fmt, clippy, test and header stages before a commit.
+# Skip it for one commit with: git commit --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+exec scripts/test.sh engine

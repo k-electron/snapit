@@ -17,6 +17,8 @@ set -uo pipefail
 APP="${1:?usage: check-run.sh path/to/snapit.app}"
 APP="$(cd "$APP" && pwd)"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=xcode-env.sh
+source "$ROOT_DIR/scripts/xcode-env.sh"
 APP_EXE="$APP/Contents/MacOS/snapit"
 HELPER_EXE="$APP/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit"
 

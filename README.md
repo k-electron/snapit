@@ -41,6 +41,10 @@ scripts/test.sh          # everything
 scripts/test.sh engine   # repo checks, Cargo fmt, clippy, tests and the header check only
 ```
 
+A fresh clone runs `git config core.hooksPath .githooks` once to enable the pre-commit hook, which runs `scripts/test.sh engine`.
+
+The scripts that call Xcode's tools source `scripts/xcode-env.sh`: when `DEVELOPER_DIR` is unset and `xcode-select` points at the Command Line Tools, it uses `/Applications/Xcode.app` (or the newest other `/Applications/Xcode*.app`) for that run, with no `sudo` and no change to system settings.
+
 `scripts/test.sh` runs, in order:
 
 1. Repo layout checks, and `scripts/check-network.sh`: the only code in snapit that may open a network connection is `snapit/Updates/GitHubReleaseEndpoint.swift` (Check for Updates), and the engine uses none.

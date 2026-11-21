@@ -12,6 +12,8 @@ set -euo pipefail
 APP="${1:?usage: make-dmg.sh path/to/snapit.app path/to/output.dmg}"
 OUT="${2:?usage: make-dmg.sh path/to/snapit.app path/to/output.dmg}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=xcode-env.sh
+source "$ROOT/scripts/xcode-env.sh"
 BUILD="${SNAPIT_BUILD_DIR:-$ROOT/build}"
 VENV="$BUILD/dmg-venv"
 ART="$BUILD/dmg-art"
