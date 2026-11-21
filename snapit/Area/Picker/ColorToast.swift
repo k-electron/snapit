@@ -15,6 +15,8 @@ enum ColorToast {
     private static var fadeStart: DispatchWorkItem?
     /// The text showing now; nil when there is no toast.
     private(set) static var text: String?
+    /// Test mode only: the latest toast's panel, held weakly, to see that it is deallocated once dismissed.
+    private(set) static weak var panelForTest: NSPanel?
 
     /// Shows `text` near the bottom of the display whose frame (AppKit global points) is `frame`.
     static func show(_ text: String, on frame: CGRect, scale: Double) {
@@ -53,6 +55,7 @@ enum ColorToast {
 
         self.panel = panel
         self.text = text
+        if TestMode.isActive { panelForTest = panel }
         // One-shot delays: the fade starts after `hold` and the toast goes away when it is over.
         let fading = DispatchWorkItem {
             NSAnimationContext.runAnimationGroup { context in
@@ -76,9 +79,13 @@ enum ColorToast {
         text = nil
         guard let panel else { return }
         self.panel = nil
-        panel.contentView = nil
-        panel.orderOut(nil)
-        panel.close()
+        // The panel, its glass view and its layers are released inside the pool, not at some later
+        // turn of the run loop, and what the window server held for them is told to go with the commit.
+        autoreleasepool {
+            panel.contentView = nil
+            panel.orderOut(nil)
+            panel.close()
+        }
         CATransaction.flush()
     }
 }

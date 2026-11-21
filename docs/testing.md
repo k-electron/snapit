@@ -69,6 +69,9 @@ to `$RUN_ROOT/app.sock` (menu bar app) or `$RUN_ROOT/editor.sock` (Editor helper
 | `capture-source` | `fixture` when the Capture source is the test one |
 | `frame-freed-at-open` | `yes` when the latest Capture's frame (its `CapturedScreen`) was already gone when the Editor was asked to open it, that is once its Capture file was written; `no` while something still held it; `none` before any Capture; `unknown` when the frame carried no lifetime probe (so a check cannot pass without one). `capture_into_editor` and `area_result` assert `yes` after every Capture |
 | `overlay-frames-freed` | `yes` when every frozen frame (each display's `CapturedScreen`) of the latest overlay is gone: after an overlay has ended (a pick, Esc, a Capture), read after `overlay-wait`; `no` while one is still held; `none` before any overlay; `unknown` when a frame carried no lifetime probe. Flow 47 asserts `yes` after every pick and Esc |
+| `overlay-panels-freed` | `yes` when the latest overlay's controller, panels, scene views, scenes and container views are all deallocated (read after `overlay-wait`); `no <names>` lists those still alive (`no panel 0`); `none` before any overlay. Flow 47 asserts `yes` after every pick and Esc |
+| `live-windows` | the app's windows now: `windows total=<n> visible=<v>`, one `window <class> total=<n> visible=<v>` line per class, `overlay <what overlay-panels-freed says>` and `toast-panel alive\|gone`. A failed memory check's log prints it |
+| `ca-nudge` | shows a one point window and closes it, with a Core Animation commit before and after; replies `ok`. A failed memory check's log uses it to see whether memory waits for a round trip to the window server |
 | `fixture-delay <ms>` | how long the fixture Capture takes to return: the time spent choosing an Area |
 | `editor-warm-up begin\|cancel\|state\|settle` | what a Capture does when it starts and when it is cancelled; `state` is `idle`, `starting` or `warm`; `settle` waits until the helper has been started and told about every Cancel so far |
 | `overlay-screens-changed` | tells the Area overlay the displays changed (macOS's notification, with the displays counted as different); the overlay ends, and so does a Timed Capture's countdown |
@@ -352,10 +355,20 @@ no machine's noise reaches, and it runs the same on every machine. The checks, a
 - **A Capture's frame goes with its file** (`frame-freed-at-open`): the menu bar app lets go of the frame
   (a `CapturedScreen`) once its Capture file is written, before it waits for the Editor to open; every
   Capture (Screen, Area, Window, Timed) asserts it.
-- **An overlay's frames go when it ends** (`overlay-frames-freed`): after a Color picker pick or Esc the app holds
-  none of the overlay's frozen frames (flow 47). The process's footprint can keep a closed overlay's last
-  5K frame for a while on a CI runner's virtual display, so the release is asserted on the app's own hold,
-  and memory checks of a flow that ends with an overlay take their baseline after its first run.
+- **An overlay's frames and objects go when it ends** (`overlay-frames-freed`, `overlay-panels-freed`): after a
+  Color picker pick or Esc the app holds none of the overlay's frozen frames and none of its controller, panels
+  or scene views (flow 47). These are the release check of a flow that ends on an idle overlay: the footprint
+  keeps a closed overlay's last 5K surface for as long as the window server holds it (a CI runner's virtual
+  display holds it long after the app let go), so flow 47 asserts the app's own hold and its peak, and does not
+  compare its footprint at rest with a baseline.
+- **A failed memory check names the holder** (`memory_diagnosis` in `scripts/run/lib.sh`): the log of a failed
+  `expect_memory_returns` carries the footprint's largest categories, the regions with 8 MB or more dirty
+  (`footprint -vv`), the IOSurface, CoreAnimation, CG image and MALLOC lines of `vmmap --summary` and of
+  `vmmap -v`, the live window, layer, image and surface classes of `heap`, the `leaks` line and, for the menu bar
+  app, `live-windows` and the overlay probes. Every tool is limited in time and never fails the run. It then
+  logs three nudges with the footprint before and after each (`nudge wait 3 s`, `nudge a window shown and
+  closed`, `nudge fixture display reset`): a footprint that falls was waiting for the system, one that stays
+  is held. Flow 47 also prints an `info:` line after its ten picks (not a check) with the footprint at rest.
 - **The helper goes** (`gone "$HELPER_PID"` after the last window closes, in every flow that opens one):
   no helper process is left at rest.
 - **The cache folder holds only what a flow's end leaves** (`expect_cache_holds_only_expected`, run by

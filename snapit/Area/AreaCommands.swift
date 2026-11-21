@@ -23,6 +23,16 @@ nonisolated extension SocketCommand {
     /// panels, scenes and controller have let go and the flow kept none), `no` while one is still held,
     /// `none` before any overlay, `unknown` when a frame carried no lifetime probe. Test mode only.
     static let overlayFramesFreed = SocketCommand("overlay-frames-freed")
+    /// `overlay-panels-freed`: `yes` when the latest overlay's controller, panels and scene views are all
+    /// deallocated; `no <names>` lists those still alive; `none` before any overlay. Test mode only.
+    static let overlayPanelsFreed = SocketCommand("overlay-panels-freed")
+    /// What the app's windows are now: `windows total=<n> visible=<v>`, one `window <class> total=<n>
+    /// visible=<v>` line per class, `overlay <overlay-panels-freed's answer>` and `toast-panel
+    /// alive|gone`. For a failed memory check's log. Test mode only.
+    static let liveWindows = SocketCommand("live-windows")
+    /// Shows a one point panel and closes it, with a Core Animation commit before and after: a round trip to
+    /// the window server, to see whether memory is waiting for one. Replies `ok`. Test mode only.
+    static let caNudge = SocketCommand("ca-nudge")
     /// `overlay-mouse move|down|drag|up <display> <x> <y> [<click count>]`: sends the overlay a
     /// mouse event at a point of display `<display>` (0 is the first), in points from that
     /// display's top-left corner. A real `NSEvent`, delivered to the display's panel, with that
@@ -68,6 +78,40 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.overlayFramesFreed) { _ in AreaCaptureFlow.overlayFramesFreed }
+        register(.overlayPanelsFreed) { _ in AreaCaptureFlow.overlayObjectsAlive }
+        register(.liveWindows) { _ in
+            var classes: [String: (total: Int, visible: Int)] = [:]
+            for window in NSApp.windows {
+                let name = String(describing: type(of: window))
+                var entry = classes[name] ?? (0, 0)
+                entry.total += 1
+                if window.isVisible { entry.visible += 1 }
+                classes[name] = entry
+            }
+            var lines = ["windows total=\(NSApp.windows.count) visible=\(NSApp.windows.filter(\.isVisible).count)"]
+            for (name, entry) in classes.sorted(by: { $0.key < $1.key }) {
+                lines.append("window \(name) total=\(entry.total) visible=\(entry.visible)")
+            }
+            lines.append("overlay \(AreaCaptureFlow.overlayObjectsAlive)")
+            lines.append("toast-panel \(ColorToast.panelForTest == nil ? "gone" : "alive")")
+            return lines.joined(separator: "\n")
+        }
+        register(.caNudge) { _ in
+            CATransaction.flush()
+            let panel = NSPanel(
+                contentRect: CGRect(x: 0, y: 0, width: 1, height: 1), styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered, defer: false)
+            panel.isReleasedWhenClosed = false
+            panel.ignoresMouseEvents = true
+            panel.alphaValue = 0.01
+            panel.level = .screenSaver
+            panel.orderFrontRegardless()
+            CATransaction.flush()
+            panel.orderOut(nil)
+            panel.close()
+            CATransaction.flush()
+            return "ok"
+        }
         register(.fixturePixelLayout) { request in
             guard let layout = request.arguments.first, ["alpha-first", "skip-first"].contains(layout) else {
                 return "error fixture-pixel-layout alpha-first|skip-first"
