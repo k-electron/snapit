@@ -8,8 +8,10 @@ import SwiftUI
 @MainActor
 final class UserGuideWindow: NSObject, NSWindowDelegate {
     static var shared: UserGuideWindow?
+    /// Test mode only: a guide the next window shows instead of the bundled one (`user-guide-fixture`).
+    static var fixture: GuideDocument?
 
-    let model = UserGuideModel()
+    let model = UserGuideModel(document: fixture ?? .bundled())
     private(set) var window: NSWindow?
 
     /// Shows the User Guide, or brings the open window forward.

@@ -84,7 +84,7 @@ A screen that shows, with a short animation, how to grant one permission snapit 
 _Avoid_: Permission screen, permission prompt, setup step
 
 **User Guide**:
-The help that ships inside snapit and walks through every flow the user can take.
+The help that walks through every flow the user can take. One text, read inside snapit and on GitHub; only the GitHub copy shows screenshots.
 _Avoid_: Manual, docs, help pages, README
 
 **Update window**:

@@ -1,7 +1,9 @@
 # Flow: the User Guide. The menu's User Guide item opens one window in the Editor helper, and so
 # does the link on Onboarding's Done step; asking again brings the same window forward. The guide is
 # bundled (read from the helper's bundle, no network) and drawn natively: its section list covers a
-# checklist of the spec's flows (scripts/user-guide-checklist.txt), every anchor resolves, a link to
+# checklist of the spec's flows (scripts/user-guide-checklist.txt), every section has the icon its
+# source gives, every anchor resolves, a guide with image lines and comments (a fixture file read
+# through the same parser) shows neither the images, their alternative text nor the comments, a link to
 # another section navigates in the window, a link to GitHub opens through the fake browser edge, and
 # any other link is dropped. Closing the guide quits the helper (unless another window is open), and
 # the menu bar app, which never hosts the guide, stays at its baseline. Sourced by
@@ -66,6 +68,12 @@ UG_COUNT="$(printf '%s\n' "$UG_SECTIONS" | grep -c .)"
 expect_equal "the helper counts the sections it lists" "$UG_COUNT" "$(ugv sections)"
 expect_equal "no two sections share an anchor" "" "$(ugv duplicate-ids)"
 expect_equal "every link in the guide resolves to a section or to GitHub" "" "$(ugv broken-links)"
+UG_SOURCE="$ROOT_DIR/docs/UserGuide.md"
+expect_equal "every section has the icon its source gives" \
+  "$(sed -n 's/^## <a id="\([a-z0-9-]*\)"><\/a>.* <!-- icon: \([A-Za-z0-9.]*\) -->$/\1|\2/p' "$UG_SOURCE")" \
+  "$(printf '%s\n' "$UG_FACTS" | sed -n 's/^section [^|]*|\([^|]*\)|[^|]*|\(.*\)$/\1|\2/p')"
+expect_equal "the loaded guide links to the same sections, in the same order, as the source's [text](#id) links" \
+  "$(grep -o '](#[a-z0-9-]*)' "$UG_SOURCE" | sed 's/^](#//; s/)$//' | paste -sd, -)" "$(ugv section-links)"
 expect_contains "the guide links to GitHub" "https://github.com/k-electron/snapit" "$(ugv external-links)"
 if printf '%s\n' "$UG_FACTS" | grep '^section ' | awk -F'|' '$3 == "" || $1 == "section " { bad = 1 } END { exit bad }'; then
   pass "every section has a title and a group"
@@ -83,6 +91,17 @@ while IFS='|' read -r id terms; do
   done
   if [[ -z "$missing" ]]; then pass "the guide covers #$id"; else fail "the section #$id does not mention $missing"; fi
 done <"$ROOT_DIR/scripts/user-guide-checklist.txt"
+
+# 5b. What the page draws for a section: its blocks by kind and text, with none of the markup that only GitHub shows.
+send "$EDITOR_SOCK" "user-guide-select install" >/dev/null
+UG_BLOCKS="$(ugfacts | sed -n 's/^block //p')"
+expect_contains "the install section draws its steps" "numbered|1. Open the DMG." "$UG_BLOCKS"
+expect_contains "and its note" "note|snapit is not notarized" "$UG_BLOCKS"
+for id in $UG_SECTIONS; do
+  text="$(send "$EDITOR_SOCK" "user-guide-text $id")"
+  if [[ "$text" == *"<!--"* || "$text" == *"<a id"* || "$text" == *"icon:"* ]]; then fail "the section #$id draws markup that only GitHub hides"; fi
+done
+pass "no section draws an anchor, a comment or an icon as text"
 
 # 6. Navigation: a section from the sidebar, a link to another section, a link that goes nowhere.
 expect_equal "choosing a section in the sidebar shows it" "ok" "$(send "$EDITOR_SOCK" "user-guide-select install")"
@@ -178,6 +197,62 @@ send_slow "$EDITOR_SOCK" user-guide-close >/dev/null
 wait_until 10 ug_onscreen_is "$ONB_PID" 1
 expect_onscreen_windows "closing the guide leaves Onboarding open" "$ONB_PID" "1"
 expect_equal "and the helper running" "$ONB_PID" "$(helper_pid)"
+# 13. A guide with image lines, as the helper parses any guide (the same parser reads the bundled one):
+#     an image line is no block and leaves no alternative text, a comment leaves nothing, in any form.
+cat >"$RUN_ROOT/user-guide-fixture.md" <<'FIXTURE'
+# Fixture group
+
+## <a id="fixture-shots"></a>Fixture with shots <!-- icon: camera.viewfinder -->
+
+Before the picture. <!-- FIXTURE-INLINE-COMMENT -->
+
+![FIXTURE-ALT-TEXT](images/user-guide/fixture.png)
+
+[![FIXTURE-LINKED-ALT-TEXT](images/user-guide/fixture-linked.png)](https://github.com/k-electron/snapit)
+
+<!-- slot: FIXTURE-SLOT-LINE
+FIXTURE-SLOT-MORE -->
+
+After the picture, see [the next section](#fixture-next).
+
+- A bullet ![FIXTURE-INLINE-ALT-TEXT](images/user-guide/fixture-inline.png) with a picture inside
+
+## <a id="fixture-next"></a>Fixture next <!-- icon: arrow.right -->
+
+The next section.
+FIXTURE
+expect_equal "the helper takes a guide file from the test root" "ok" "$(send "$EDITOR_SOCK" "user-guide-fixture $RUN_ROOT/user-guide-fixture.md")"
+expect_equal "and refuses one outside it" "error file must be inside the test root" "$(send "$EDITOR_SOCK" "user-guide-fixture /etc/hosts")"
+expect_equal "the fixture window opens" "ok" "$(send_slow "$EDITOR_SOCK" "show-user-guide")"
+if wait_until 10 ug_visible; then pass "the fixture guide's window opens"; else fail "the fixture guide's window did not open"; fi
+UG_FACTS="$(ugfacts)"
+expect_equal "it lists the two sections of the fixture, with their icons" \
+  "section Fixture group|fixture-shots|Fixture with shots|camera.viewfinder
+section Fixture group|fixture-next|Fixture next|arrow.right" "$(printf '%s\n' "$UG_FACTS" | grep '^section ')"
+expect_equal "it opens on the section with the image lines" "fixture-shots" "$(ugv section)"
+expect_equal "which draws two paragraphs and a bullet and no image or alternative text" \
+  "block paragraph|Before the picture.
+block paragraph|After the picture, see the next section.
+block bullet|A bullet  with a picture inside" "$(printf '%s\n' "$UG_FACTS" | grep '^block ')"
+expect_equal "an image line is no block of any kind" "" "$(printf '%s\n' "$UG_FACTS" | grep '^block ' | grep -iE 'image|FIXTURE' || true)"
+text="$(send "$EDITOR_SOCK" "user-guide-text fixture-shots")"
+if [[ "$text" == *FIXTURE* || "$text" == *images/* || "$text" == *"<!--"* ]]; then fail "the section's text holds an alternative text, a path or a comment: $text"; else pass "the section's text holds no alternative text, path or comment"; fi
+expect_equal "its link to the next section is the only link" "fixture-next" "$(ugv section-links)"
+expect_equal "every link resolves" "" "$(ugv broken-links)"
+send "$EDITOR_SOCK" "user-guide-search FIXTURE-ALT-TEXT" >/dev/null
+expect_equal "a search for an alternative text finds nothing" "" "$(ugv visible)"
+for hidden in FIXTURE-LINKED-ALT-TEXT FIXTURE-INLINE-ALT-TEXT FIXTURE-INLINE-COMMENT FIXTURE-SLOT-LINE FIXTURE-SLOT-MORE; do
+  send "$EDITOR_SOCK" "user-guide-search $hidden" >/dev/null
+  expect_equal "a search for $hidden finds nothing" "" "$(ugv visible)"
+done
+send "$EDITOR_SOCK" "user-guide-search picture" >/dev/null
+expect_equal "a search for words that are shown finds the section" "fixture-shots" "$(ugv visible)"
+expect_no_internet "the Editor helper with the fixture guide open" "$ONB_PID"
+send_slow "$EDITOR_SOCK" user-guide-close >/dev/null
+wait_until 10 ug_onscreen_is "$ONB_PID" 1
+expect_equal "the fixture is dropped" "ok" "$(send "$EDITOR_SOCK" "user-guide-fixture off")"
+expect_equal "and Onboarding keeps the helper" "$ONB_PID" "$(helper_pid)"
+
 send_slow "$EDITOR_SOCK" onboarding-close >/dev/null
 if wait_until 10 ug_no_helper; then pass "closing the last window quits the helper"; else fail "the helper outlived its last window"; fi
 send "$APP_SOCK" "defaults-set onboardingStep finished" >/dev/null

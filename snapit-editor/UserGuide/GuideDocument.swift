@@ -1,7 +1,8 @@
 import Foundation
 
 /// One block of a User Guide section, with inline Markdown (bold, italics, code, links) applied.
-/// An image in the text shows as its alternative text: the guide holds no images and fetches none.
+/// An image in the text is dropped, alternative text and all: the window draws no images and
+/// fetches none (the same text on GitHub shows them).
 enum GuideBlock: Equatable {
     case subheading(AttributedString)
     case paragraph(AttributedString)
@@ -9,6 +10,18 @@ enum GuideBlock: Equatable {
     case numbered(Int, AttributedString)
     case note(AttributedString)
     case table(header: [AttributedString], rows: [[AttributedString]])
+
+    /// The kind of block, as the scripted run names it.
+    var kind: String {
+        switch self {
+        case .subheading: "subheading"
+        case .paragraph: "paragraph"
+        case .bullet: "bullet"
+        case .numbered: "numbered"
+        case .note: "note"
+        case .table: "table"
+        }
+    }
 
     /// The block as plain text, for searching and for the scripted run.
     var plainText: String {
@@ -35,7 +48,8 @@ enum GuideBlock: Equatable {
 }
 
 /// A section of the User Guide: what the sidebar lists and the page shows. Its `id` is its anchor
-/// (`[text](#id)` links to it), written in the guide's source as `## Title {#id icon=symbol.name}`.
+/// (`[text](#id)` links to it), written in the guide's source as
+/// `## <a id="id"></a>Title <!-- icon: symbol.name -->`.
 struct GuideSection: Equatable, Identifiable {
     let id: String
     let title: String
@@ -51,9 +65,11 @@ struct GuideSection: Equatable, Identifiable {
 }
 
 /// The User Guide: groups of sections, parsed from the bundled Markdown (`UserGuide.md`). The
-/// Markdown is a small subset: `# Group`, `## Title {#id icon=symbol}` for a section, `###` for a
-/// subheading, paragraphs, `- ` bullets, `1. ` steps, `> ` notes and pipe tables. Parsed when the
-/// window opens, and gone when it closes.
+/// Markdown is a small subset: `# Group`, `## <a id="id"></a>Title <!-- icon: symbol -->` for a
+/// section, `###` for a subheading, paragraphs, `- ` bullets, `1. ` steps, `> ` notes and pipe
+/// tables. The same text is read on GitHub, so the parser skips what only GitHub shows: HTML
+/// comments (on one line, inline or across lines) and lines that are only images. Parsed when
+/// the window opens, and gone when it closes.
 struct GuideDocument: Equatable {
     let sections: [GuideSection]
 
@@ -129,6 +145,7 @@ struct GuideDocument: Equatable {
         var group = ""
         var current: (id: String, title: String, icon: String, blocks: [GuideBlock])?
         var table: [[String]] = []
+        var insideComment = false
 
         func finishTable() {
             guard !table.isEmpty else { return }
@@ -148,16 +165,17 @@ struct GuideDocument: Equatable {
         }
 
         for rawLine in markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            let (visible, comments) = Self.removingComments(from: String(rawLine), insideComment: &insideComment)
+            let line = visible.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("|") {
                 table.append(Self.cells(of: line))
                 continue
             }
             finishTable()
-            guard !line.isEmpty else { continue }
+            guard !line.isEmpty, !Self.isImageLine(line) else { continue }
             if line.hasPrefix("## ") {
                 finishSection()
-                let heading = Self.heading(String(line.dropFirst(3)))
+                let heading = Self.heading(String(line.dropFirst(3)), comments: comments)
                 current = (heading.id, heading.title, heading.icon, [])
             } else if line.hasPrefix("# ") {
                 finishSection()
@@ -180,16 +198,57 @@ struct GuideDocument: Equatable {
         self.sections = sections
     }
 
-    /// `Title {#id icon=symbol}`.
-    private static func heading(_ text: String) -> (title: String, id: String, icon: String) {
-        guard let open = text.range(of: " {#", options: .backwards), text.hasSuffix("}") else {
-            return (text, text.lowercased().replacingOccurrences(of: " ", with: "-"), "doc.text")
+    /// `<a id="id"></a>Title`, with the icon in a comment on the same line (`icon: symbol.name`). A
+    /// heading without them takes its id from its title and a plain document icon.
+    private static func heading(_ text: String, comments: [String]) -> (title: String, id: String, icon: String) {
+        var title = text
+        var id: String?
+        if let anchor = title.firstMatch(of: anchorTag) {
+            id = String(anchor.output.1)
+            title.removeSubrange(anchor.range)
         }
-        let title = String(text[..<open.lowerBound])
-        let attributes = text[open.upperBound...].dropLast().split(separator: " ").map(String.init)
-        let id = attributes.first ?? title
-        let icon = attributes.dropFirst().compactMap { $0.hasPrefix("icon=") ? String($0.dropFirst(5)) : nil }.first
-        return (title, id, icon ?? "doc.text")
+        title = title.trimmingCharacters(in: .whitespaces)
+        let icon = comments.lazy.compactMap { $0.firstMatch(of: iconComment)?.output.1 }.first.map(String.init)
+        return (title, id ?? title.lowercased().replacingOccurrences(of: " ", with: "-"), icon ?? "doc.text")
+    }
+
+    /// `<a id="some-id"></a>`: the anchor that makes a section's id a link target on GitHub.
+    private static let anchorTag = /<a id="([A-Za-z0-9_-]+)"><\/a>/
+    /// The body of an icon comment: ` icon: symbol.name `.
+    private static let iconComment = /^\s*icon:\s*([A-Za-z0-9.]+)\s*$/
+    /// A line that is only images, each possibly wrapped in a link: GitHub shows them, the window
+    /// draws none.
+    private static let imageLine = /(?:\[\s*)?(?:!\[[^\]]*\]\([^)]*\)\s*)+(?:\]\([^)]*\))?/
+
+    private static func isImageLine(_ line: String) -> Bool { line.wholeMatch(of: imageLine) != nil }
+
+    /// `line` without its HTML comments, and the text of each comment that ends or starts on it. A
+    /// comment may start on one line and end on a later one: `insideComment` carries that between
+    /// lines. A comment that never ends hides the rest of the text, as it does on GitHub.
+    private static func removingComments(from line: String, insideComment: inout Bool) -> (text: String, comments: [String]) {
+        var text = ""
+        var comments: [String] = []
+        var rest = Substring(line)
+        while !rest.isEmpty {
+            if insideComment {
+                if let end = rest.range(of: "-->") {
+                    comments.append(String(rest[..<end.lowerBound]))
+                    rest = rest[end.upperBound...]
+                    insideComment = false
+                } else {
+                    comments.append(String(rest))
+                    rest = ""
+                }
+            } else if let start = rest.range(of: "<!--") {
+                text += rest[..<start.lowerBound]
+                rest = rest[start.upperBound...]
+                insideComment = true
+            } else {
+                text += rest
+                rest = ""
+            }
+        }
+        return (text, comments)
     }
 
     private static func numberedStep(_ line: String) -> (number: Int, text: String)? {
@@ -211,12 +270,13 @@ struct GuideDocument: Equatable {
 }
 
 enum GuideInline {
-    /// Inline Markdown applied, links kept, images turned into their alternative text.
+    /// Inline Markdown applied, links kept, images dropped with their alternative text.
     static func parse(_ markdown: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnly)
-        var text = (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
-        for run in text.runs where run.imageURL != nil { text[run.range].imageURL = nil }
-        return text
+        let text = (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        var withoutImages = AttributedString()
+        for run in text.runs where run.imageURL == nil { withoutImages.append(text[run.range]) }
+        return withoutImages
     }
 }
 

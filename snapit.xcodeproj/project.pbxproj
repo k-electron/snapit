@@ -22,6 +22,7 @@
 
 /* Begin PBXBuildFile section */
 		7A0000000000000000000B02 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0000000000000000000A12 /* KeyboardShortcuts */; };
+		7A0000000000000000000B03 /* UserGuide.md in Resources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000F05 /* UserGuide.md */; };
 		7A0000000000000000000B01 /* snapit Editor.app in Embed Editor helper */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000F02 /* snapit Editor.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -68,6 +69,7 @@
 		7A0000000000000000000F02 /* snapit Editor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "snapit Editor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A0000000000000000000F03 /* snapit-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "snapit-Info.plist"; sourceTree = "<group>"; };
 		7A0000000000000000000F04 /* snapit-editor-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "snapit-editor-Info.plist"; sourceTree = "<group>"; };
+		7A0000000000000000000F05 /* UserGuide.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = UserGuide.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -114,8 +116,17 @@
 				7A0000000000000000000A02 /* snapit-editor */,
 				7A0000000000000000000A03 /* Shared */,
 				7A0000000000000000000902 /* Config */,
+				7A0000000000000000000904 /* docs */,
 				7A0000000000000000000903 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		7A0000000000000000000904 /* docs */ = {
+			isa = PBXGroup;
+			children = (
+				7A0000000000000000000F05 /* UserGuide.md */,
+			);
+			path = docs;
 			sourceTree = "<group>";
 		};
 		7A0000000000000000000902 /* Config */ = {
@@ -236,6 +247,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A0000000000000000000B03 /* UserGuide.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
