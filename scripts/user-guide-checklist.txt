@@ -27,6 +27,6 @@ last-capture|Last Capture;Reopen Last Capture;Quitting
 delete-and-prompts|Delete Capture;first click;Discard this Capture?;Quit snapit?
 settings|General;Capturing;Editor;Shortcuts;Export;About
 launch-at-login|Open at Login
-updates|Check for Updates…;GitHub;Download
+updates|Check for Updates…;GitHub;Update and Relaunch;Release Page;Cancel
 after-an-update|Open Anyway;Screen Recording
 quitting|Quit snapit;Last Capture

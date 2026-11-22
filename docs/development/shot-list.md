@@ -339,7 +339,7 @@ The Annotation and Editor shots share one Sample Capture, an Area Capture of an 
 ### update-window-newer-release
 
 - File: `user-guide/update-window-newer-release.png`
-- Surface: The Update window for a newer release: the new version, its notes, Download, and the Open Anyway and Screen Recording reminder.
+- Surface: The Update window for a newer release: the new version, its notes, Update and Relaunch, the Release Page link and the Screen Recording reminder.
 - Setup: State: Check for Updates finds a newer release (use a made-up release note of a few lines). Sample content: none beyond what the state needs. Appearance: Light. Size: the window at its own size. Taken with: snapit's own Window Capture.
 - Used by: [User Guide, Check for Updates](../UserGuide.md#updates)
 
@@ -353,7 +353,7 @@ The Annotation and Editor shots share one Sample Capture, an Area Capture of an 
 ### permission-guide-after-update
 
 - File: `user-guide/permission-guide-after-update.png`
-- Surface: The Screen Recording Permission guide after an update: "snapit needs Screen Recording turned back on".
+- Surface: The Screen Recording Permission guide after an update: "snapit was updated to X.Y.Z and needs Screen Recording turned back on".
 - Setup: State: A newer build whose Screen Recording entry is lost; the guide is on its own. Sample content: none beyond what the state needs. Appearance: Light. Size: the guide window at its own size. Taken with: snapit's own Window Capture.
 - Used by: [User Guide, After an update](../UserGuide.md#after-an-update)
 
