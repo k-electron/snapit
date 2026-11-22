@@ -49,9 +49,9 @@ final class UpdateModel {
 
     /// Starts a check: the window says it is checking, the menu bar app makes the one request and
     /// the answer replaces the line. A check already running is left alone: one click, one request.
-    /// An Update that is running is left alone too.
+    /// An Update that is running, or about to (Quit's question is up), is left alone too.
     func check() {
-        guard checkTask == nil, !isInstalling else { return }
+        guard checkTask == nil, installTask == nil else { return }
         state = .checking
         checkTask = Task {
             let reply = try? await CommandSocketClient.send(

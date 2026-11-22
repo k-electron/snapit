@@ -95,6 +95,13 @@ if [[ -s "$UC_BUILT/snapit-$UC_VERSION.dmg" && -s "$UC_BUILT/snapit-$UC_VERSION.
 cp "$UC_BUILT/snapit-$UC_VERSION.dmg" "$UC_BUILT/snapit-$UC_VERSION.dmg.sha256" "$UC_ASSETS/"
 rm -rf "$UC_BUILT"
 
+# The fixtures as the flows before left them, or not: no pretended place, no failing download, nothing held.
+send "$APP_SOCK" install-reset >/dev/null
+send "$APP_SOCK" "update-script download ok" >/dev/null
+send "$APP_SOCK" "update-script hold off" >/dev/null
+send "$APP_SOCK" "update-script hold-download off" >/dev/null
+send "$APP_SOCK" "update-script hold-swap off" >/dev/null
+
 # The running snapit pretends to be the copy in Applications: the Update swaps that copy.
 ditto "$APP" "$UC_DEST"
 send "$APP_SOCK" "install-pretend-bundle $UC_DEST" >/dev/null
@@ -117,6 +124,8 @@ expect_equal "with nothing to cancel yet" "error nothing to cancel" "$(send "$ED
 expect_equal "and no Cancel button" "close release-page update " "$(uc_buttons)"
 expect_equal "and no progress" "" "$(uc_val progress)"
 REQ="$(uc_requests)"
+sleep 2
+UC_OLD_BASELINE_MB="$(footprint_mb "$APP_PID")"
 
 # 2. While the release downloads: the window says so with its progress, and offers Cancel; the
 #    title bar's close button works. The progress follows the share of the disk image that has arrived.
@@ -141,6 +150,8 @@ expect_equal "the Update asked for the hash and the disk image, once each" "$((R
 expect_equal "the installed copy is untouched while it downloads" "$UC_BUILD_VERSION" "$(uc_version_of "$UC_DEST")"
 expect_equal "a second press of Update and Relaunch does nothing" "error nothing to update" "$(send "$EDITOR_SOCK" "update-press update")"
 expect_equal "an Update is running in the menu bar app" "downloading" "$(uc_status | awk '{ print $1 }')"
+expect_no_internet "the menu bar app while a (fixture) download is parked" "$APP_PID"
+expect_no_internet "the Editor helper while it shows the download" "$(helper_pid)"
 
 # 3. Cancel: the Update ends, the window offers the release again, and nothing is left.
 expect_equal "Cancel answers" "ok" "$(send_slow "$EDITOR_SOCK" "update-press cancel")"
@@ -163,6 +174,7 @@ uc_expect_nothing_changed "after closing the window"
 expect_equal "closing sent no further request" "$((REQ + 2))" "$(uc_requests)"
 if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "snapit keeps running after the window was closed"; else fail "snapit stopped after the window was closed"; fi
 send "$APP_SOCK" "update-script hold-download off" >/dev/null
+expect_memory_returns "the menu bar app is back at its baseline after two cancelled downloads" "$APP_PID" "$UC_OLD_BASELINE_MB"
 
 # 5. Editors at risk. A (older, edited, never Exported), then B (the Last Capture, edited): the
 #    question names A. Cancel ends the Update before a single request.
@@ -231,6 +243,7 @@ send "$APP_SOCK" "defaults-set afterSelectingArea nonsense" >/dev/null
 UC_FRESH="$(uc_timed fresh-captures)"
 area_start "press-shortcut capture-area" >/dev/null
 area_drag 0 200 100 400 300
+expect_contains "the Action bar offers a 10 s Timed Capture" "item timed-capture|Capture in 10 s|" "$(send "$APP_SOCK" overlay-actionbar)"
 press_tile timed-capture 10 10
 UC_TIMED_AT="$SECONDS"
 if wait_until 5 uc_timed_is state counting; then pass "a Timed Capture is counting down"; else fail "no countdown started (the Capture is '$(send "$APP_SOCK" overlay-facts | head -1)')"; fi
