@@ -170,7 +170,9 @@ expect_equal "a file's request sets a generic User-Agent, Accept and a fixed Acc
   "$(printf '%s\n' "$UR_LOG" | grep '/download/' | awk '{ $1 = ""; $2 = ""; $3 = ""; sub(/^ +/, ""); print }' | sort -u)"
 if printf '%s\n' "$UR_LOG" | grep -qiE 'authorization|cookie|token|@'; then fail "a request carries credentials"; else pass "no request carries credentials"; fi
 expect_no_internet "the new menu bar app" "$APP_PID"
-expect_not_spinning "the new menu bar app" "$APP_PID" 3
+# The new snapit's own baseline, once its launch work and the leftovers' removal are over.
+sleep 3
+UR_BASELINE_MB="$(footprint_mb "$APP_PID")"
 
 # 6. The new copy runs at that version: Check for Updates against the same release says it is the one it has.
 send "$APP_SOCK" "update-script release $(ur_enc "$UR_TAG") $(ur_enc "$UR_PAGE") $(ur_enc "Same.")" >/dev/null
@@ -190,6 +192,8 @@ expect_equal "with its Annotations, Undo and Redo steps and revision as they wer
 UR_NEW_HELPER="$(pid_of "$UR_DEST/Contents/Helpers/")"
 send_slow "$EDITOR_SOCK" "editor-key $EDITOR_N escape" >/dev/null
 wait_until 10 gone "$UR_NEW_HELPER"
+expect_memory_returns "the new menu bar app is back at its baseline after the Update window and the Reopen" "$APP_PID" "$UR_BASELINE_MB"
+expect_not_spinning "the new menu bar app" "$APP_PID" 3
 
 # 8. Quitting still removes the Last Capture: the carry-over was the Update's alone.
 send "$APP_SOCK" quit >/dev/null

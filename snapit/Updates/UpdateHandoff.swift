@@ -52,7 +52,13 @@ nonisolated struct UpdateHandoff: Equatable, Sendable {
         Task.detached(priority: .utility) {
             let deadline = Date().addingTimeInterval(20)
             while kill(process, 0) == 0, Date() < deadline { try? await Task.sleep(for: .milliseconds(200)) }
-            try? FileManager.default.removeItem(at: folder)
+            do {
+                try FileManager.default.removeItem(at: folder)
+            } catch {
+                if FileManager.default.fileExists(atPath: folder.path) {
+                    NSLog("snapit: could not remove the Update's leftovers at \(folder.path): \(error)")
+                }
+            }
         }
     }
 }

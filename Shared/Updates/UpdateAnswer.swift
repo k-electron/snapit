@@ -32,7 +32,8 @@ nonisolated enum UpdateAnswer: Equatable, Sendable {
         case noAnswer = "no-answer"
     }
 
-    /// A newer release: its version, its notes (Markdown) and the page the Download button opens.
+    /// A newer release: its version, its notes (Markdown) and the release page the Release Page link
+    /// opens (`downloadURL` is that page's address).
     case newer(installed: String, version: String, downloadURL: String, notes: String)
     case upToDate(installed: String)
     case unreachable(Reason)

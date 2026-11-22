@@ -27,6 +27,22 @@ enum UpdateInstall {
         case diskImage(String)
         case quarantineRemains
 
+        /// One word for the cause, which the reply of `install-update` leads with; the Update window
+        /// words each one for the user.
+        var code: String {
+            switch self {
+            case .notAnnounced: "not-announced"
+            case .alreadyRunning: "already-running"
+            case .staging: "staging"
+            case .network: "network"
+            case .status: "status"
+            case .notAHash: "not-a-hash"
+            case .hashMismatch: "hash-mismatch"
+            case .diskImage: "disk-image"
+            case .quarantineRemains: "quarantine"
+            }
+        }
+
         var description: String {
             switch self {
             case .notAnnounced: "no newer release was announced"
@@ -45,9 +61,9 @@ enum UpdateInstall {
     private static var isRunning = false
 
     /// The reply of `install-update <version>`: `ok` once the new copy has been started (the old
-    /// one quits a moment later), or `error <why>` with the installed copy as it was.
+    /// one quits a moment later), or `error <cause> <description>` with the installed copy as it was.
     static func run(announcing version: String, environment: any InstallEnvironment = InstallEdge.current) async -> String {
-        guard !isRunning else { return "error \(Failure.alreadyRunning)" }
+        guard !isRunning else { return failureReply(Failure.alreadyRunning) }
         isRunning = true
         defer { isRunning = false }
         let bundle = URL(fileURLWithPath: environment.bundlePath, isDirectory: true)
@@ -55,12 +71,24 @@ enum UpdateInstall {
         do {
             staging = try await install(announcing: version, over: bundle, environment: environment)
         } catch {
-            return "error \(error)"
+            NSLog("snapit: Update stopped before the swap: \(error)")
+            return failureReply(error)
         }
         let reply = await SnapitRelaunch.run(appAt: bundle, updateStagingFolder: staging)
         // A relaunch that did not start leaves this copy running; the old copy has no use in staging.
-        if reply != "ok" { try? FileManager.default.removeItem(at: staging) }
+        if reply != "ok" {
+            NSLog("snapit: Update swapped the new copy in but could not relaunch: \(reply)")
+            try? FileManager.default.removeItem(at: staging)
+        }
         return reply
+    }
+
+    /// `error <cause> <description>`: the cause is one word (`Failure.code`, `swap` for a swap that
+    /// failed, `unknown`), the description is for the log.
+    private static func failureReply(_ error: Error) -> String {
+        if let failure = error as? Failure { return "error \(failure.code) \(failure)" }
+        if let swap = error as? BundleSwap.Failure { return "error swap \(swap)" }
+        return "error unknown \(error)"
     }
 
     /// Steps 1 to 3. Returns the staging folder, which then holds the old copy.

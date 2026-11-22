@@ -14,8 +14,8 @@ nonisolated extension SocketCommand {
     /// `install-update <version>`: the helper asks the menu bar app to run the Update to the release
     /// its window announced (`<version>` is the `X.Y.Z` the window shows; the menu bar app installs
     /// only the release its own check announced, and refuses any other). The reply comes when the
-    /// new copy has been started, or when the Update stopped: `ok`, or `error <why>` with the
-    /// installed copy as it was. A successful Update quits the helper before the reply goes out, so
+    /// new copy has been started, or when the Update stopped: `ok`, or `error <cause> <description>`
+    /// (the cause is one word) with the installed copy as it was. A successful Update quits the helper before the reply goes out, so
     /// the helper may never hear it.
     static let installUpdate = SocketCommand("install-update")
 }
