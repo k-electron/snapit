@@ -285,7 +285,9 @@ wait_until 15 guide_is guide-state denied
 expect_equal "the guide opens for the update" "yes" "$(gf guide-update)"
 expect_equal "snapit cleared its own entry once" "$((RESETS_BEFORE + 1))" "$(sr_fact resets)"
 expect_equal "and asked afresh once" "$((REQUESTS_BEFORE + 1))" "$(sr_fact requests)"
-expect_equal "the update guide says what is needed" "snapit needs Screen Recording turned back on" "$(gf guide-headline)"
+ONB_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")"
+expect_equal "the update guide says which version snapit was updated to, and what is needed" "snapit was updated to $ONB_VERSION and needs Screen Recording turned back on" "$(gf guide-headline)"
+expect_contains "the update guide's message names the version too" "snapit was updated to $ONB_VERSION." "$(gf guide-message)"
 expect_contains "the update guide explains the update" "Each update needs Screen Recording again" "$(gf guide-message)"
 if [[ "$(gf guide-message)" == *toggle* || "$(gf guide-message)" == *"switch on"* || "$(gf guide-message)" == *"already"* ]]; then fail "the update guide tells people to work the old switch: $(gf guide-message)"; else pass "the update guide never tells people to toggle the existing switch"; fi
 expect_equal "the update guide starts with macOS's fresh prompt" "prompt" "$(gf guide-variant)"
@@ -346,6 +348,16 @@ wait_until 10 onb_no_helper
 send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 restart_app "with Screen Recording granted at launch"
 expect_equal "the permission is back to the fake macOS's default" "granted" "$(sr_fact state)"
+
+# 15b. Onboarding's Screen Recording step is the same guide: after an update it says the same words.
+send "$APP_SOCK" "screen-recording-simulate grantedStale" >/dev/null
+onb_open_at screenRecording
+wait_until 10 onb_is guide-state denied
+expect_equal "Onboarding's step is worded for the update" "yes" "$(onb guide-update)"
+expect_equal "Onboarding's step says which version snapit was updated to" "snapit was updated to $ONB_VERSION and needs Screen Recording turned back on" "$(onb guide-headline)"
+expect_contains "and its message names the version too" "snapit was updated to $ONB_VERSION." "$(onb guide-message)"
+onb_close_all
+send "$APP_SOCK" "screen-recording-simulate granted" >/dev/null
 
 # 16. The animation plays only while visible, stops after a few loops and costs nothing at rest.
 send "$APP_SOCK" "screen-recording-simulate notDetermined" >/dev/null
