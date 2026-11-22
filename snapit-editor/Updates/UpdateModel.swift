@@ -11,6 +11,8 @@ final class UpdateModel {
         case answered(UpdateAnswer)
         /// An Update is running to the newer release this answer announced; `progress` says how far.
         case installing(UpdateAnswer)
+        /// The Update stopped, for this cause; the answer is the newer release it was updating to.
+        case failed(UpdateAnswer, UpdateFailure)
 
         var name: String {
             switch self {
@@ -19,6 +21,7 @@ final class UpdateModel {
             case .answered(.upToDate): "up-to-date"
             case .answered(.unreachable): "unreachable"
             case .installing: "installing"
+            case .failed: "failed"
             }
         }
     }
@@ -53,7 +56,15 @@ final class UpdateModel {
         checkTask = Task {
             let reply = try? await CommandSocketClient.send(
                 .checkForUpdates, to: AppIdentity.appSocketPath, timeoutSeconds: 30)
-            state = .answered(reply.flatMap(UpdateAnswer.init(wire:)) ?? .unreachable(.noAnswer))
+            let answer = reply.flatMap(UpdateAnswer.init(wire:)) ?? .unreachable(.noAnswer)
+            // Asked before the answer shows, so the window never offers Update and Relaunch where
+            // it cannot update.
+            if case .newer = answer {
+                let place = try? await CommandSocketClient.send(
+                    .updateCanInstall, to: AppIdentity.appSocketPath, timeoutSeconds: 10)
+                canInstallHere = place != "no"
+            }
+            state = .answered(answer)
             checkTask = nil
         }
     }
@@ -62,14 +73,30 @@ final class UpdateModel {
 
     var isChecking: Bool { state == .checking }
 
+    /// False when this copy runs from a disk image or from a folder it cannot write to: it cannot
+    /// update itself there.
+    private(set) var canInstallHere = true
+
+    /// The newer release the window announces, in the states that announce one.
+    private var announced: (installed: String, version: String, url: String, notes: String)? {
+        switch state {
+        case .answered(.newer(let installed, let version, let url, let notes)),
+            .failed(.newer(let installed, let version, let url, let notes), _):
+            return (installed, version, url, notes)
+        default: return nil
+        }
+    }
+
     var isInstalling: Bool {
         if case .installing = state { return true }
         return false
     }
 
-    /// What the scripted run reads as the window's state: `downloading` while the release comes in,
-    /// `installing` from the moment it is being checked.
+    /// What the scripted run reads as the window's state: `cannot-install` for a newer release this
+    /// copy cannot install where it runs; `downloading` while the release comes in, `installing` from
+    /// the moment it is being checked.
     var stateName: String {
+        if case .answered(.newer) = state, !canInstallHere { return "cannot-install" }
         guard isInstalling else { return state.name }
         if case .downloading = progress { return "downloading" }
         return state.name
@@ -95,10 +122,12 @@ final class UpdateModel {
     var headline: String {
         switch state {
         case .checking: "Checking for updates…"
-        case .answered(.newer(_, let version, _, _)): "snapit \(version) is available."
+        case .answered(.newer(_, let version, _, _)), .failed(.newer(_, let version, _, _), _):
+            "snapit \(version) is available."
         case .installing(.newer(_, let version, _, _)):
             if case .downloading = progress { "Downloading snapit \(version)…" } else { "Installing snapit \(version)…" }
         case .installing: "Installing…"
+        case .failed: "The Update couldn't finish."
         case .answered(.upToDate(let installed)): "snapit \(installed) is up to date."
         case .answered(.unreachable(let reason)):
             switch reason {
@@ -121,26 +150,29 @@ final class UpdateModel {
             format.countStyle = .file
             return "\(format.string(fromByteCount: received)) of \(format.string(fromByteCount: total))"
         }
-        guard case .answered(.newer(let installed, _, _, _)) = state else { return nil }
-        return "You have snapit \(installed)."
+        guard let announced else { return nil }
+        return "You have snapit \(announced.installed)."
     }
 
-    var notes: String? {
-        guard case .answered(.newer(_, _, _, let notes)) = state else { return nil }
-        return notes
+    /// The line under the headline: why the Update stopped, or why it is not offered here.
+    var notice: String? {
+        if case .failed(_, let failure) = state { return failure.line }
+        if case .answered(.newer) = state, !canInstallHere { return UpdateFailure.moveLine }
+        return nil
     }
+
+    var notes: String? { announced?.notes }
 
     /// Only a newer release carries it: after an Update, macOS has not been given Screen Recording
     /// for the new snapit yet.
     var reminder: String? {
-        guard case .answered(.newer) = state else { return nil }
+        guard case .answered(.newer) = state, canInstallHere else { return nil }
         return "After updating, turn Screen Recording back on for snapit: the new snapit asks for it."
     }
 
     /// The release page of the newer release the window announces.
     var releasePageURL: URL? {
-        guard case .answered(.newer(_, _, let url, _)) = state else { return nil }
-        return URL(string: url)
+        announced.flatMap { URL(string: $0.url) }
     }
 
     let updateButton = HelperButton(
@@ -154,7 +186,9 @@ final class UpdateModel {
 
     var buttons: [HelperButton] {
         switch state {
-        case .answered(.newer): [closeButton, releasePageButton, updateButton]
+        case .answered(.newer): canInstallHere ? [closeButton, releasePageButton, updateButton] : [closeButton, releasePageButton]
+        // The Update can be tried again.
+        case .failed: [closeButton, releasePageButton, updateButton]
         case .installing: [cancelButton]
         default: [closeButton]
         }
@@ -170,9 +204,12 @@ final class UpdateModel {
     /// never comes back; one that comes back says the Update stopped, and the window offers the
     /// newer release again.
     func update() {
-        guard case .answered(let answer) = state, case .newer(_, let version, _, _) = answer, installTask == nil else {
-            return
+        let answer: UpdateAnswer
+        switch state {
+        case .answered(let newer), .failed(let newer, _): answer = newer
+        default: return
         }
+        guard case .newer(_, let version, _, _) = answer, canInstallHere, installTask == nil else { return }
         installTask = Task {
             // A window closed while the question was up leaves nothing to show an Update in.
             guard await QuitPreparation.confirm(), !windowClosed else {
@@ -185,7 +222,12 @@ final class UpdateModel {
             let reply = try? await CommandSocketClient.send(
                 .installUpdate, arguments: [version], to: AppIdentity.appSocketPath, timeoutSeconds: 1200)
             polling.cancel()
-            if reply != "ok" { state = .answered(answer) }
+            // A cancelled Update leaves the release on offer as it was; any other stop says why.
+            if reply?.hasPrefix("error cancelled") == true {
+                state = .answered(answer)
+            } else if reply != "ok" {
+                state = .failed(answer, Self.failure(in: reply))
+            }
             installTask = nil
         }
     }
@@ -229,6 +271,15 @@ final class UpdateModel {
 
     /// The window is gone.
     func windowDidClose() { windowClosed = true }
+
+    /// The cause a reply of `install-update` names: `error <cause> <description>`. No reply at all
+    /// is the menu bar app not answering.
+    private static func failure(in reply: String?) -> UpdateFailure {
+        guard let reply else { return .noAnswer }
+        let words = reply.split(separator: " ", maxSplits: 2)
+        guard words.count >= 2, words[0] == "error" else { return .other }
+        return UpdateFailure(cause: String(words[1]))
+    }
 
     /// Opens the release page in the browser and closes the window.
     func openReleasePage() {

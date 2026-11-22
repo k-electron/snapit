@@ -2,10 +2,11 @@ import AppKit
 
 nonisolated extension SocketCommand {
     /// Facts about the update window, one `key=value` line each: `window`, `title`, `activation`,
-    /// `state` (`checking`, `newer`, `downloading`, `installing`, `up-to-date`, `unreachable`),
-    /// `headline`, `detail`, `reminder`, `url`, `notes` (percent-encoded), `notes-bytes`,
-    /// `notes-blocks`, `progress` (`<bytes received>/<bytes in all>` while it downloads, `?` for a
-    /// size not known; empty otherwise), `progress-percent` (empty when not known), `cancel`
+    /// `state` (`checking`, `newer`, `cannot-install`, `downloading`, `installing`, `failed`,
+    /// `up-to-date`, `unreachable`), `headline`, `detail`, `notice` (why the Update stopped, or "Move
+    /// snapit to Applications to update it here"), `reminder`, `url`, `notes` (percent-encoded),
+    /// `notes-bytes`, `notes-blocks`, `progress` (`<bytes received>/<bytes in all>` while it downloads,
+    /// `?` for a size not known; empty otherwise), `progress-percent` (empty when not known), `cancel`
     /// (`enabled`, `disabled` from the swap on, `none` without a Cancel button) and `close-button`
     /// (the title bar's, `enabled` or `disabled`); then one `notes-block <kind>|<text>` line per
     /// block of the rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test
@@ -82,6 +83,7 @@ enum UpdateFacts {
             "state=\(model.stateName)",
             "headline=\(model.headline)",
             "detail=\(model.detail ?? "")",
+            "notice=\(model.notice ?? "")",
             "reminder=\(model.reminder ?? "")",
             "url=\(model.releasePageURL?.absoluteString ?? "")",
             "notes=\(encoded(model.notes ?? ""))",

@@ -25,4 +25,8 @@ nonisolated extension SocketCommand {
     /// changed. The reply comes once the Update has stopped and its files are gone: `ok`, or
     /// `error <reason>` when none runs or the swap has begun (too late to stop it).
     static let cancelUpdate = SocketCommand("cancel-update")
+    /// The helper asks the menu bar app whether this copy can update itself where it runs: `yes`, or
+    /// `no` on a disk image or in a folder snapit cannot write to (the window then says "Move snapit
+    /// to Applications to update it here" in place of Update and Relaunch).
+    static let updateCanInstall = SocketCommand("update-can-install")
 }

@@ -19,6 +19,8 @@ final class FixtureReleaseEndpoint: ReleaseEndpoint {
     }
 
     var script = Script.offline
+    /// When set, a download of a file writes part of it and then fails with this.
+    var downloadFailure: ReleaseEndpointError?
     private(set) var requestCount = 0
     private let heldRequests = FixtureGate()
     private let heldDownloads = FixtureGate()
@@ -53,6 +55,11 @@ final class FixtureReleaseEndpoint: ReleaseEndpoint {
         case .response:
             guard let file = assetFile(for: request), let contents = try? Data(contentsOf: file) else { return 404 }
             let size = Int64(contents.count)
+            if let failure = downloadFailure {
+                // A connection that drops half-way leaves what arrived.
+                try? contents.prefix(max(contents.count / 2, 1)).write(to: destination)
+                throw failure
+            }
             if let share = downloadHold {
                 do {
                     try contents.prefix(contents.count * share / 100).write(to: destination)

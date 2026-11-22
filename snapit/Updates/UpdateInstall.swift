@@ -7,22 +7,26 @@ import Foundation
 /// 1. Download the release's `snapit-X.Y.Z.dmg` and `snapit-X.Y.Z.dmg.sha256` into a staging folder
 ///    on the volume the installed copy is on. The helper reads the progress (`update-status`).
 /// 2. Check the disk image against the published SHA-256, attach it read-only and hidden, copy
-///    `snapit.app` out of it, detach it, and clear any quarantine on the copy.
+///    `snapit.app` out of it, detach it, and clear any quarantine on the copy. The copy must have
+///    snapit's bundle identifier, the announced version and a signature that passes a strict check,
+///    nested code included (`BundleCheck`).
 /// 3. Swap the staged copy in at the installed copy's path, while snapit and the helper still run.
 ///    Nothing before this step touches the installed copy, so a failure up to here leaves it as it
 ///    was, and the staging folder is removed. The swap begins by cancelling what snapit has in
 ///    progress (a Timed Capture counting down).
+/// 4. Relaunch the swapped-in copy through `SnapitRelaunch`, which hands it the Last Capture and
+///    the staging folder (holding the old copy); the new copy deletes that folder.
 ///
 /// The Update can be cancelled (`cancel-update`) until the swap begins: it then stops with nothing
 /// changed and nothing left in the staging folder, which is removed. From the swap on, a cancel is refused.
-/// 4. Relaunch the swapped-in copy through `SnapitRelaunch`, which hands it the Last Capture and
-///    the staging folder (holding the old copy); the new copy deletes that folder.
 @MainActor
 enum UpdateInstall {
     nonisolated enum Failure: Error, CustomStringConvertible {
         /// The Update window announced a version this copy does not know of, or none.
         case notAnnounced
         case alreadyRunning
+        /// This copy runs from a disk image or from a folder it cannot write to.
+        case notHere
         case staging(String)
         case network(ReleaseEndpointError)
         case status(Int)
@@ -32,6 +36,7 @@ enum UpdateInstall {
         case quarantineRemains
         /// The user cancelled, or closed the Update window, before the swap began.
         case cancelled
+        case bundle(BundleCheck.Failure)
 
         /// One word for the cause, which the reply of `install-update` leads with; the Update window
         /// words each one for the user.
@@ -39,14 +44,20 @@ enum UpdateInstall {
             switch self {
             case .notAnnounced: "not-announced"
             case .alreadyRunning: "already-running"
+            case .notHere: UpdateFailure.notHere.rawValue
             case .staging: "staging"
-            case .network: "network"
+            case .network(.offline): UpdateFailure.offline.rawValue
+            case .network(.timeout): UpdateFailure.timeout.rawValue
+            case .network(.cannotSave): "cannot-save"
             case .status: "status"
             case .notAHash: "not-a-hash"
-            case .hashMismatch: "hash-mismatch"
-            case .diskImage: "disk-image"
+            case .hashMismatch: UpdateFailure.hashMismatch.rawValue
+            case .diskImage: UpdateFailure.diskImage.rawValue
             case .quarantineRemains: "quarantine"
             case .cancelled: "cancelled"
+            case .bundle(.identifier): UpdateFailure.wrongIdentifier.rawValue
+            case .bundle(.version): UpdateFailure.wrongVersion.rawValue
+            case .bundle(.signature): UpdateFailure.badSignature.rawValue
             }
         }
 
@@ -54,6 +65,7 @@ enum UpdateInstall {
             switch self {
             case .notAnnounced: "no newer release was announced"
             case .alreadyRunning: "an Update is already running"
+            case .notHere: "snapit cannot update itself where it runs"
             case .staging(let reason): "snapit could not make room to update: \(reason)"
             case .network(let error): "GitHub could not be reached (\(error))"
             case .status(let code): "GitHub answered \(code)"
@@ -62,6 +74,7 @@ enum UpdateInstall {
             case .diskImage(let reason): reason
             case .quarantineRemains: "snapit could not clear quarantine from the new copy"
             case .cancelled: "the Update was cancelled"
+            case .bundle(let failure): "\(failure)"
             }
         }
     }
@@ -74,6 +87,7 @@ enum UpdateInstall {
     /// one quits a moment later), or `error <cause> <description>` with the installed copy as it was.
     static func run(announcing version: String, environment: any InstallEnvironment = InstallEdge.current) async -> String {
         guard running == nil else { return failureReply(Failure.alreadyRunning) }
+        guard canInstall(in: environment) else { return failureReply(Failure.notHere) }
         let task = Task { @MainActor in await perform(announcing: version, environment: environment) }
         running = task
         progress = .downloading(received: 0, total: nil)
@@ -107,8 +121,19 @@ enum UpdateInstall {
         if reply != "ok" {
             NSLog("snapit: Update swapped the new copy in but could not relaunch: \(reply)")
             try? FileManager.default.removeItem(at: staging)
+            return "error relaunch \(reply)"
         }
         return reply
+    }
+
+    /// Whether this copy can replace itself where it runs. Not from a mounted disk image or a
+    /// translocated path, and not from a folder it cannot write to: the swap and its staging both
+    /// need that folder, and snapit never asks for an administrator's password to get at it.
+    static func canInstall(in environment: any InstallEnvironment = InstallEdge.current) -> Bool {
+        let location = InstallCheck.location(environment: environment)
+        guard !location.onDiskImage, !location.translocated else { return false }
+        let folder = URL(fileURLWithPath: environment.bundlePath).deletingLastPathComponent()
+        return FileManager.default.isWritableFile(atPath: folder.path)
     }
 
     /// `error <cause> <description>`: the cause is one word (`Failure.code`, `swap` for a swap that
@@ -138,7 +163,10 @@ enum UpdateInstall {
             let staged = staging.appendingPathComponent("snapit.app", isDirectory: true)
             try await download(imageRequest, hashRequest, to: image)
             try Task.checkCancellation()
-            try await Task.detached { try extractApp(from: image, to: staged, in: staging) }.value
+            let identifier = AppIdentity.mainBundleIdentifier
+            try await Task.detached {
+                try extractApp(from: image, to: staged, in: staging, identifier: identifier, version: version)
+            }.value
             // The detached work does not see a cancel, so it is looked at again here, and this is the
             // last place a cancel counts: nothing awaits between this check and `swapping`.
             try Task.checkCancellation()
@@ -188,9 +216,12 @@ enum UpdateInstall {
         AreaCaptureFlow.cancelTimedCapture()
     }
 
-    /// Copies `snapit.app` out of the disk image into `staged`, clears quarantine on the copy and
-    /// deletes the image. Blocks, so it runs off the main actor.
-    private nonisolated static func extractApp(from image: URL, to staged: URL, in staging: URL) throws {
+    /// Copies `snapit.app` out of the disk image into `staged`, clears quarantine on the copy,
+    /// deletes the image and checks the copy is the announced snapit. Blocks, so it runs off the
+    /// main actor.
+    private nonisolated static func extractApp(
+        from image: URL, to staged: URL, in staging: URL, identifier: String, version: String
+    ) throws {
         do {
             try DiskImage.copyApp(from: image, to: staged, mountingAt: staging.appendingPathComponent("volume", isDirectory: true))
         } catch let failure as DiskImage.Failure {
@@ -199,5 +230,10 @@ enum UpdateInstall {
         Quarantine.strip(under: staged)
         guard Quarantine.flaggedCount(under: staged) == 0 else { throw Failure.quarantineRemains }
         try? FileManager.default.removeItem(at: image)
+        do {
+            try BundleCheck.verify(staged, identifier: identifier, version: version)
+        } catch let failure as BundleCheck.Failure {
+            throw Failure.bundle(failure)
+        }
     }
 }

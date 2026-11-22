@@ -12,7 +12,9 @@ nonisolated extension SocketCommand {
     /// `update-script hold-swap on|off`: while on, an Update waits just after the swap has begun
     /// (the work in progress cancelled) and before the bundle is swapped. A release's files (`snapit-X.Y.Z.dmg` and its `.sha256`) are
     /// served from `<root>/update-assets/` while the script is a release or raw answer; offline and
-    /// timeout fail them too. Test mode only.
+    /// timeout fail them too. `update-script download offline|timeout|ok`: the next downloads of a
+    /// disk image stop half-way with that failure (part of the file is written first), or complete
+    /// again; the hash file is unaffected. Test mode only.
     static let updateScript = SocketCommand("update-script")
     /// How many requests the check has sent (to the fixture endpoint). Test mode only.
     static let updateRequests = SocketCommand("update-requests")
@@ -37,6 +39,7 @@ extension SocketCommandRegistry {
         register(.installUpdate) { request in
             await UpdateInstall.run(announcing: request.arguments.first ?? "")
         }
+        register(.updateCanInstall) { _ in UpdateInstall.canInstall() ? "yes" : "no" }
         guard TestMode.isActive else { return }
         register(.updateScript) { request in Self.script(request.arguments) }
         register(.updateRequests) { _ in String(FixtureReleaseEndpoint.shared.requestCount) }
@@ -74,6 +77,8 @@ extension SocketCommandRegistry {
             endpoint.script = .response(status: status, body: Data((arguments.dropFirst(2).first ?? "").utf8))
         case "offline": endpoint.script = .offline
         case "timeout": endpoint.script = .timeout
+        case "download" where arguments.count == 2 && ["offline", "timeout", "ok"].contains(arguments[1]):
+            endpoint.downloadFailure = arguments[1] == "offline" ? .offline : arguments[1] == "timeout" ? .timeout : nil
         case "hold" where arguments.count == 2 && (arguments[1] == "on" || arguments[1] == "off"):
             endpoint.hold(arguments[1] == "on")
         case "hold-download" where arguments.count == 2:
@@ -87,7 +92,7 @@ extension SocketCommandRegistry {
         case "hold-swap" where arguments.count == 2 && (arguments[1] == "on" || arguments[1] == "off"):
             FixtureInstallEnvironment.shared.holdSwap(arguments[1] == "on")
         default:
-            return "error update-script release <tag> <html_url> <notes> [draft|prerelease] | raw <status> [<body>] | offline | timeout | hold on|off | hold-download <percent>|off | hold-swap on|off"
+            return "error update-script release <tag> <html_url> <notes> [draft|prerelease] | raw <status> [<body>] | offline | timeout | download offline|timeout|ok | hold on|off | hold-download <percent>|off | hold-swap on|off"
         }
         return "ok"
     }

@@ -86,6 +86,11 @@ struct UpdateView: View {
                 Text(detail)
                     .foregroundStyle(.secondary)
             }
+            if let notice = model.notice {
+                Text(notice)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if model.notes != nil {
                 NotesView(blocks: model.blocks)
             }
