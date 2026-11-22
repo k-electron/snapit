@@ -5,16 +5,20 @@ import Foundation
 /// is doing; this does the work, in this order:
 ///
 /// 1. Download the release's `snapit-X.Y.Z.dmg` and `snapit-X.Y.Z.dmg.sha256` into a staging folder
-///    on the volume the installed copy is on.
+///    on the volume the installed copy is on. The helper reads the progress (`update-status`).
 /// 2. Check the disk image against the published SHA-256, attach it read-only and hidden, copy
 ///    `snapit.app` out of it, detach it, and clear any quarantine on the copy. The copy must have
 ///    snapit's bundle identifier, the announced version and a signature that passes a strict check,
 ///    nested code included (`BundleCheck`).
 /// 3. Swap the staged copy in at the installed copy's path, while snapit and the helper still run.
 ///    Nothing before this step touches the installed copy, so a failure up to here leaves it as it
-///    was, and the staging folder is removed.
+///    was, and the staging folder is removed. The swap begins by cancelling what snapit has in
+///    progress (a Timed Capture counting down).
 /// 4. Relaunch the swapped-in copy through `SnapitRelaunch`, which hands it the Last Capture and
 ///    the staging folder (holding the old copy); the new copy deletes that folder.
+///
+/// The Update can be cancelled (`cancel-update`) until the swap begins: it then stops with nothing
+/// changed and nothing left in the staging folder, which is removed. From the swap on, a cancel is refused.
 @MainActor
 enum UpdateInstall {
     nonisolated enum Failure: Error, CustomStringConvertible {
@@ -30,6 +34,8 @@ enum UpdateInstall {
         case hashMismatch
         case diskImage(String)
         case quarantineRemains
+        /// The user cancelled, or closed the Update window, before the swap began.
+        case cancelled
         case bundle(BundleCheck.Failure)
 
         /// One word for the cause, which the reply of `install-update` leads with; the Update window
@@ -48,6 +54,7 @@ enum UpdateInstall {
             case .hashMismatch: UpdateFailure.hashMismatch.rawValue
             case .diskImage: UpdateFailure.diskImage.rawValue
             case .quarantineRemains: "quarantine"
+            case .cancelled: "cancelled"
             case .bundle(.identifier): UpdateFailure.wrongIdentifier.rawValue
             case .bundle(.version): UpdateFailure.wrongVersion.rawValue
             case .bundle(.signature): UpdateFailure.badSignature.rawValue
@@ -66,20 +73,41 @@ enum UpdateInstall {
             case .hashMismatch: "the download does not match the release's hash"
             case .diskImage(let reason): reason
             case .quarantineRemains: "snapit could not clear quarantine from the new copy"
+            case .cancelled: "the Update was cancelled"
             case .bundle(let failure): "\(failure)"
             }
         }
     }
 
-    private static var isRunning = false
+    private static var running: Task<String, Never>?
+    /// How far the running Update has got; the helper reads it (`update-status`).
+    private(set) static var progress = UpdateProgress.idle
 
     /// The reply of `install-update <version>`: `ok` once the new copy has been started (the old
     /// one quits a moment later), or `error <cause> <description>` with the installed copy as it was.
     static func run(announcing version: String, environment: any InstallEnvironment = InstallEdge.current) async -> String {
-        guard !isRunning else { return failureReply(Failure.alreadyRunning) }
+        guard running == nil else { return failureReply(Failure.alreadyRunning) }
         guard canInstall(in: environment) else { return failureReply(Failure.notHere) }
-        isRunning = true
-        defer { isRunning = false }
+        let task = Task { @MainActor in await perform(announcing: version, environment: environment) }
+        running = task
+        progress = .downloading(received: 0, total: nil)
+        let reply = await task.value
+        running = nil
+        progress = .idle
+        return reply
+    }
+
+    /// Ends the running Update with nothing changed, once its staging folder is gone: `ok`; or
+    /// `error <reason>` when none runs, or the swap has begun and nothing can stop it any more.
+    static func cancel() async -> String {
+        guard let running else { return "error no Update is running" }
+        guard progress.canCancel else { return "error the Update is swapping in the new copy" }
+        running.cancel()
+        _ = await running.value
+        return "ok"
+    }
+
+    private static func perform(announcing version: String, environment: any InstallEnvironment) async -> String {
         let bundle = URL(fileURLWithPath: environment.bundlePath, isDirectory: true)
         let staging: URL
         do {
@@ -112,6 +140,7 @@ enum UpdateInstall {
     /// failed, `unknown`), the description is for the log.
     private static func failureReply(_ error: Error) -> String {
         if let failure = error as? Failure { return "error \(failure.code) \(failure)" }
+        if error is CancellationError { return "error \(Failure.cancelled.code) \(Failure.cancelled)" }
         if let swap = error as? BundleSwap.Failure { return "error swap \(swap)" }
         return "error unknown \(error)"
     }
@@ -133,10 +162,17 @@ enum UpdateInstall {
             let image = staging.appendingPathComponent(release.diskImageName)
             let staged = staging.appendingPathComponent("snapit.app", isDirectory: true)
             try await download(imageRequest, hashRequest, to: image)
+            try Task.checkCancellation()
             let identifier = AppIdentity.mainBundleIdentifier
             try await Task.detached {
                 try extractApp(from: image, to: staged, in: staging, identifier: identifier, version: version)
             }.value
+            // The detached work does not see a cancel, so it is looked at again here, and this is the
+            // last place a cancel counts: nothing awaits between this check and `swapping`.
+            try Task.checkCancellation()
+            progress = .swapping
+            cancelWorkInProgress()
+            await environment.waitBeforeSwap()
             try BundleSwap.swap(staged: staged, intoPlaceOf: bundle)
             return staging
         } catch {
@@ -156,13 +192,28 @@ enum UpdateInstall {
             guard response.status == 200 else { throw Failure.status(response.status) }
             guard let hash = DiskImage.publishedHash(in: response.body) else { throw Failure.notAHash }
             published = hash
-            let status = try await endpoint.download(imageRequest, to: image)
+            let status = try await endpoint.download(imageRequest, to: image) { received, total in
+                Task { @MainActor in noteDownload(received: received, total: total) }
+            }
             guard status == 200 else { throw Failure.status(status) }
         } catch let error as ReleaseEndpointError {
             throw Failure.network(error)
         }
+        progress = .checking
         let actual = try await Task.detached { try DiskImage.sha256(of: image) }.value
         guard actual == published else { throw Failure.hashMismatch }
+    }
+
+    /// Bytes of the disk image that have arrived. A late report of a smaller number is ignored.
+    private static func noteDownload(received: Int64, total: Int64?) {
+        guard case .downloading(let had, _) = progress, received >= had else { return }
+        progress = .downloading(received: received, total: total)
+    }
+
+    /// What snapit has under way stops when the swap begins, so nothing starts in an app that is
+    /// about to quit: a Timed Capture that is counting down ends without taking a Capture.
+    private static func cancelWorkInProgress() {
+        AreaCaptureFlow.cancelTimedCapture()
     }
 
     /// Copies `snapit.app` out of the disk image into `staged`, clears quarantine on the copy,

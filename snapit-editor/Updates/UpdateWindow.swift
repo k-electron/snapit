@@ -5,7 +5,8 @@ import SwiftUI
 /// Update and Relaunch button (and a Release Page link), or one line (up to date, GitHub not reached). One window for the whole
 /// helper: asking again while it is open brings it forward. It is a helper window like Settings:
 /// it goes through `HelperLifecycle`, and the helper quits when it closes (unless another window
-/// is open).
+/// is open). While an Update downloads, the bar shows how far it has got, Cancel ends it, and
+/// closing the window does the same; from the swap on, Cancel and the close button are disabled.
 @MainActor
 final class UpdateWindow: NSObject, NSWindowDelegate {
     static var shared: UpdateWindow?
@@ -30,6 +31,7 @@ final class UpdateWindow: NSObject, NSWindowDelegate {
             return
         }
         model.onClose = { [weak self] in self?.window?.close() }
+        model.onChange = { [weak self] in self?.refreshCloseButton() }
         let controller = NSHostingController(rootView: UpdateView(model: model))
         controller.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: controller)
@@ -41,13 +43,28 @@ final class UpdateWindow: NSObject, NSWindowDelegate {
         window.delegate = self
         window.center()
         self.window = window
+        refreshCloseButton()
 
         HelperLifecycle.windowWillShow()
         window.makeKeyAndOrderFront(nil)
         HelperLifecycle.windowDidShow()
     }
 
+    /// The title bar's close button and ⌘W ask here. A running Update is cancelled first and the window
+    /// closes once it has stopped; from the swap on the window stays.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        model.requestClose()
+    }
+
+    /// The close button follows what the Update allows. Test mode reads it back (`update-facts`).
+    private func refreshCloseButton() {
+        window?.standardWindowButton(.closeButton)?.isEnabled = model.canClose
+    }
+
+    var closeButtonEnabled: Bool? { window?.standardWindowButton(.closeButton)?.isEnabled }
+
     func windowWillClose(_ notification: Notification) {
+        model.windowDidClose()
         window = nil
         if UpdateWindow.shared === self { UpdateWindow.shared = nil }
     }
@@ -86,8 +103,12 @@ struct UpdateView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if model.isInstalling {
-                ProgressView()
-                    .controlSize(.small)
+                if let fraction = model.progressFraction {
+                    ProgressView(value: fraction)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                }
             }
             HStack(spacing: 10) {
                 ForEach(model.buttons, id: \.id) { spec in
@@ -103,6 +124,12 @@ struct UpdateView: View {
                         .buttonStyle(.glass)
                         .controlSize(.small)
                         .help(spec.tooltip)
+                    } else if spec.id == model.cancelButton.id {
+                        Button(action: { model.cancel() }) { label(spec.title) }
+                            .windowButton(prominent: false)
+                            .help(spec.tooltip)
+                            .keyboardShortcut(.cancelAction)
+                            .disabled(!model.canCancel)
                     } else {
                         Button(action: { model.close() }) { label(spec.title) }
                             .windowButton(prominent: false)

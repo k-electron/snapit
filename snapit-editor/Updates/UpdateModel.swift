@@ -9,7 +9,7 @@ final class UpdateModel {
     enum State: Equatable {
         case checking
         case answered(UpdateAnswer)
-        /// An Update is running to the newer release this answer announced.
+        /// An Update is running to the newer release this answer announced; `progress` says how far.
         case installing(UpdateAnswer)
         /// The Update stopped, for this cause; the answer is the newer release it was updating to.
         case failed(UpdateAnswer, UpdateFailure)
@@ -27,20 +27,31 @@ final class UpdateModel {
     }
 
     private(set) var state = State.checking {
-        didSet { blocks = ReleaseNotesBlocks.parse(notes ?? "") }
+        didSet {
+            blocks = ReleaseNotesBlocks.parse(notes ?? "")
+            onChange()
+        }
+    }
+
+    /// How far the Update has got, while one runs (the menu bar app's own account of it).
+    private(set) var progress = UpdateProgress.downloading(received: 0, total: nil) {
+        didSet { onChange() }
     }
 
     /// The release notes, parsed once when the answer arrives.
     private(set) var blocks: [NotesBlock] = []
 
-    /// Called when the user chooses Release Page or Close.
+    /// Called when the user chooses Release Page or Close, and when a cancelled Update has stopped.
     var onClose: () -> Void = {}
+
+    /// Called when what the window may do changes (the window's close button follows `canClose`).
+    var onChange: () -> Void = {}
 
     /// Starts a check: the window says it is checking, the menu bar app makes the one request and
     /// the answer replaces the line. A check already running is left alone: one click, one request.
-    /// An Update that is running is left alone too.
+    /// An Update that is running, or about to (Quit's question is up), is left alone too.
     func check() {
-        guard checkTask == nil, !isInstalling else { return }
+        guard checkTask == nil, installTask == nil else { return }
         state = .checking
         checkTask = Task {
             let reply = try? await CommandSocketClient.send(
@@ -66,13 +77,6 @@ final class UpdateModel {
     /// update itself there.
     private(set) var canInstallHere = true
 
-    /// What the scripted run reads as the window's state: `cannot-install` for a newer release this
-    /// copy cannot install where it runs.
-    var stateName: String {
-        if case .answered(.newer) = state, !canInstallHere { return "cannot-install" }
-        return state.name
-    }
-
     /// The newer release the window announces, in the states that announce one.
     private var announced: (installed: String, version: String, url: String, notes: String)? {
         switch state {
@@ -88,6 +92,28 @@ final class UpdateModel {
         return false
     }
 
+    /// What the scripted run reads as the window's state: `cannot-install` for a newer release this
+    /// copy cannot install where it runs; `downloading` while the release comes in, `installing` from
+    /// the moment it is being checked.
+    var stateName: String {
+        if case .answered(.newer) = state, !canInstallHere { return "cannot-install" }
+        guard isInstalling else { return state.name }
+        if case .downloading = progress { return "downloading" }
+        return state.name
+    }
+
+    /// Cancel, and the window's close, still end the Update: it has not begun to swap in the new copy.
+    var canCancel: Bool { isInstalling && progress.canCancel }
+
+    /// The window may close now: it asks nothing of a running Update until the swap begins.
+    var canClose: Bool { !isInstalling || progress.canCancel }
+
+    /// How much of the disk image has arrived, 0 to 1; nil when it is not known (the bar then only moves).
+    var progressFraction: Double? {
+        guard isInstalling, let percent = progress.percent else { return nil }
+        return Double(percent) / 100
+    }
+
     // MARK: Words
 
     let title = "Check for Updates"
@@ -98,7 +124,8 @@ final class UpdateModel {
         case .checking: "Checking for updates…"
         case .answered(.newer(_, let version, _, _)), .failed(.newer(_, let version, _, _), _):
             "snapit \(version) is available."
-        case .installing(.newer(_, let version, _, _)): "Installing snapit \(version)…"
+        case .installing(.newer(_, let version, _, _)):
+            if case .downloading = progress { "Downloading snapit \(version)…" } else { "Installing snapit \(version)…" }
         case .installing: "Installing…"
         case .failed: "The Update couldn't finish."
         case .answered(.upToDate(let installed)): "snapit \(installed) is up to date."
@@ -115,8 +142,14 @@ final class UpdateModel {
         }
     }
 
-    /// Under the headline of a newer release.
+    /// Under the headline: what is installed, for a newer release; how much has arrived, while it downloads.
     var detail: String? {
+        if case .downloading(let received, let total) = progress, isInstalling {
+            guard let total, total > 0 else { return nil }
+            let format = ByteCountFormatter()
+            format.countStyle = .file
+            return "\(format.string(fromByteCount: received)) of \(format.string(fromByteCount: total))"
+        }
         guard let announced else { return nil }
         return "You have snapit \(announced.installed)."
     }
@@ -148,20 +181,28 @@ final class UpdateModel {
     let releasePageButton = HelperButton(
         id: "release-page", title: "Release Page", tooltip: "Open this release's page on GitHub in your browser")
     let closeButton = HelperButton(id: "close", title: "Close", tooltip: "Close this window")
+    let cancelButton = HelperButton(
+        id: "cancel", title: "Cancel", tooltip: "Stop the Update and leave snapit as it is")
 
     var buttons: [HelperButton] {
         switch state {
         case .answered(.newer): canInstallHere ? [closeButton, releasePageButton, updateButton] : [closeButton, releasePageButton]
         // The Update can be tried again.
         case .failed: [closeButton, releasePageButton, updateButton]
+        case .installing: [cancelButton]
         default: [closeButton]
         }
     }
 
-    /// Starts the Update: the menu bar app downloads the release, checks it, swaps it in and
-    /// relaunches snapit. The window shows it is installing meanwhile. A successful Update quits
-    /// this helper, so the request never comes back; one that comes back says the Update stopped,
-    /// and the window offers the newer release again.
+    // MARK: Update
+
+    /// Starts the Update. Editors that are not the Last Capture's and hold edits that were never
+    /// Exported are asked about first, with Quit's question: Cancel ends the Update before anything
+    /// is downloaded. Then the menu bar app downloads the release, checks it, swaps it in and
+    /// relaunches snapit; the window shows how far it has got, and Cancel (or closing the window)
+    /// ends the Update until the swap begins. A successful Update quits this helper, so the request
+    /// never comes back; one that comes back says the Update stopped, and the window offers the
+    /// newer release again.
     func update() {
         let answer: UpdateAnswer
         switch state {
@@ -169,16 +210,67 @@ final class UpdateModel {
         default: return
         }
         guard case .newer(_, let version, _, _) = answer, canInstallHere, installTask == nil else { return }
-        state = .installing(answer)
         installTask = Task {
+            // A window closed while the question was up leaves nothing to show an Update in.
+            guard await QuitPreparation.confirm(), !windowClosed else {
+                installTask = nil
+                return
+            }
+            progress = .downloading(received: 0, total: nil)
+            state = .installing(answer)
+            let polling = Task { await pollProgress() }
             let reply = try? await CommandSocketClient.send(
                 .installUpdate, arguments: [version], to: AppIdentity.appSocketPath, timeoutSeconds: 1200)
-            if reply != "ok" { state = .failed(answer, Self.failure(in: reply)) }
+            polling.cancel()
+            // A cancelled Update leaves the release on offer as it was; any other stop says why.
+            if reply?.hasPrefix("error cancelled") == true {
+                state = .answered(answer)
+            } else if reply != "ok" {
+                state = .failed(answer, Self.failure(in: reply))
+            }
             installTask = nil
         }
     }
 
     private var installTask: Task<Void, Never>?
+    private var cancelTask: Task<Void, Never>?
+    private var windowClosed = false
+
+    /// The menu bar app owns the Update, so the window asks it how far it has got.
+    private func pollProgress() async {
+        while !Task.isCancelled {
+            let reply = try? await CommandSocketClient.send(
+                .updateStatus, to: AppIdentity.appSocketPath, timeoutSeconds: 5)
+            if let latest = reply.flatMap(UpdateProgress.init(wire:)), latest != .idle, isInstalling, !Task.isCancelled {
+                progress = latest
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    /// Ends the running Update with nothing changed; with `thenClose`, closes the window once the menu
+    /// bar app says the Update has stopped and its files are gone (the helper may quit when its last
+    /// window closes, so it must not go before the menu bar app has heard).
+    func cancel(thenClose: Bool = false) {
+        guard canCancel, cancelTask == nil else { return }
+        cancelTask = Task {
+            let reply = try? await CommandSocketClient.send(
+                .cancelUpdate, to: AppIdentity.appSocketPath, timeoutSeconds: 30)
+            cancelTask = nil
+            if thenClose, reply == "ok" || reply?.hasPrefix("error no Update") == true { onClose() }
+        }
+    }
+
+    /// What the window's close button, ⌘W and the Close button ask: whether the window closes now.
+    /// A running Update is cancelled first, and the window closes when it has stopped.
+    func requestClose() -> Bool {
+        guard isInstalling else { return true }
+        cancel(thenClose: true)
+        return false
+    }
+
+    /// The window is gone.
+    func windowDidClose() { windowClosed = true }
 
     /// The cause a reply of `install-update` names: `error <cause> <description>`. No reply at all
     /// is the menu bar app not answering.
@@ -196,5 +288,7 @@ final class UpdateModel {
         onClose()
     }
 
-    func close() { onClose() }
+    func close() {
+        if requestClose() { onClose() }
+    }
 }

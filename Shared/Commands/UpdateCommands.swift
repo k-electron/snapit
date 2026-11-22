@@ -18,6 +18,13 @@ nonisolated extension SocketCommand {
     /// (the cause is one word) with the installed copy as it was. A successful Update quits the helper before the reply goes out, so
     /// the helper may never hear it.
     static let installUpdate = SocketCommand("install-update")
+    /// `update-status`: the helper asks the menu bar app how far the running Update has got, while
+    /// its `install-update` request waits: an `UpdateProgress`'s wire form (`idle` when none runs).
+    static let updateStatus = SocketCommand("update-status")
+    /// `cancel-update`: the helper asks the menu bar app to end the running Update with nothing
+    /// changed. The reply comes once the Update has stopped and its files are gone: `ok`, or
+    /// `error <reason>` when none runs or the swap has begun (too late to stop it).
+    static let cancelUpdate = SocketCommand("cancel-update")
     /// The helper asks the menu bar app whether this copy can update itself where it runs: `yes`, or
     /// `no` on a disk image or in a folder snapit cannot write to (the window then says "Move snapit
     /// to Applications to update it here" in place of Update and Relaunch).
