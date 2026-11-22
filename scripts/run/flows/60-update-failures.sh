@@ -203,8 +203,16 @@ chmod 755 "$UF_DEST"
 uf_expect_failed "swap" "snapit couldn't replace itself. Your snapit was not changed."
 if codesign --verify --deep --strict "$UF_DEST" >/dev/null 2>&1; then pass "swap: the installed copy's signature still verifies"; else fail "swap: the installed copy's signature does not verify"; fi
 
+# The Release Page link of a failure opens the release's page and closes the window.
+rm -f "$RUN_ROOT/browser-links"
+expect_equal "Release Page runs after a failure" "ok" "$(send_slow "$EDITOR_SOCK" "update-press release-page")"
+expect_equal "the browser is asked to open the release page of the tag" "$UF_PAGE" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
+rm -f "$RUN_ROOT/browser-links"
+
 # A bundle that is read-only before the Update starts is caught at the press, before any request:
 # the window says where to move snapit, and the next check does not offer Update and Relaunch.
+uf_check
+expect_equal "the window announces the release again" "newer" "$(uf_val state)"
 chmod 555 "$UF_DEST"
 UF_REQUESTS="$(uf_requests)"
 send "$EDITOR_SOCK" "update-press update" >/dev/null
@@ -219,12 +227,6 @@ uf_expect_untouched "read-only bundle"
 uf_check
 expect_equal "once the bundle can be replaced, the window announces the release" "newer" "$(uf_val state)"
 expect_equal "and offers Update and Relaunch again" "close release-page update " "$(uf_buttons)"
-
-# The Release Page link of a failure opens the release's page and closes the window.
-rm -f "$RUN_ROOT/browser-links"
-expect_equal "Release Page runs after a failure" "ok" "$(send_slow "$EDITOR_SOCK" "update-press release-page")"
-expect_equal "the browser is asked to open the release page of the tag" "$UF_PAGE" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
-rm -f "$RUN_ROOT/browser-links"
 
 # 8. snapit on a disk image cannot update itself there: the window says where to move it, offers the
 #    Release Page link and no Update and Relaunch, and nothing is requested or asked for.

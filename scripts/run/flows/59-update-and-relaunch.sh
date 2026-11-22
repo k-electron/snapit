@@ -159,6 +159,7 @@ expect_equal "the installed copy carries no quarantine" "0" "$(quarantine_count 
 # The old copy and the staging folder go once the old snapit has quit; the disk image is detached.
 if wait_until 30 ur_gone_after_update; then pass "the old copy and the staging folder are gone"; else fail "left behind: $(ls -A "$UR_APPS" | tr '\n' ' ')$([[ -e "$UR_STAGING" ]] && echo "update-staging")"; fi
 expect_equal "Applications holds the one snapit" "snapit.app" "$(ls -A "$UR_APPS")"
+sleep 2 # the new copy sweeps right after it deletes its staging folder
 if [[ -d "$UR_OLD_COPY/previous.app" && -e "$UR_BYSTANDER/keep" ]]; then pass "the relaunched copy left the old copy's folder and the bystander alone"; else fail "the relaunched copy removed a folder that is not its Update's"; fi
 expect_equal "the disk image is detached" "0" "$(ur_attached)"
 expect_equal "no image of the Update is mounted" "0" "$(mount | grep -c "update-staging")"
