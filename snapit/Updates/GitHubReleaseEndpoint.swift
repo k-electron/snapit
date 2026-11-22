@@ -92,7 +92,7 @@ private nonisolated final class RedirectGuard: NSObject, URLSessionTaskDelegate,
 /// over (it deletes its own copy when that callback returns) and ends the transfer's one
 /// continuation with the HTTP status, or with the error that stopped it.
 private nonisolated final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    private let request: ReleaseRequest
+    private let redirects: RedirectGuard
     private let destination: URL
     private let progress: @Sendable (Int64, Int64?) -> Void
     private let lock = NSLock()
@@ -101,7 +101,7 @@ private nonisolated final class DownloadDelegate: NSObject, URLSessionDownloadDe
     private var saveFailed = false
 
     init(_ request: ReleaseRequest, destination: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
-        self.request = request
+        self.redirects = RedirectGuard(request)
         self.destination = destination
         self.progress = progress
     }
@@ -114,7 +114,9 @@ private nonisolated final class DownloadDelegate: NSObject, URLSessionDownloadDe
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        completionHandler(newRequest.url.map(request.allowsRedirect(to:)) == true ? newRequest : nil)
+        redirects.urlSession(
+            session, task: task, willPerformHTTPRedirection: response, newRequest: newRequest,
+            completionHandler: completionHandler)
     }
 
     func urlSession(

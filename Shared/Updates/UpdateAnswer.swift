@@ -32,16 +32,16 @@ nonisolated enum UpdateAnswer: Equatable, Sendable {
         case noAnswer = "no-answer"
     }
 
-    /// A newer release: its version, its notes (Markdown) and the release page the Release Page link
-    /// opens (`downloadURL` is that page's address).
-    case newer(installed: String, version: String, downloadURL: String, notes: String)
+    /// A newer release: its version, its notes (Markdown) and the address of the release page the Release Page link
+    /// opens.
+    case newer(installed: String, version: String, releasePage: String, notes: String)
     case upToDate(installed: String)
     case unreachable(Reason)
 
     var wire: String {
         switch self {
-        case .newer(let installed, let version, let downloadURL, let notes):
-            "state=newer\ninstalled=\(installed)\nversion=\(version)\nurl=\(downloadURL)\n\n\(notes)"
+        case .newer(let installed, let version, let releasePage, let notes):
+            "state=newer\ninstalled=\(installed)\nversion=\(version)\nurl=\(releasePage)\n\n\(notes)"
         case .upToDate(let installed):
             "state=up-to-date\ninstalled=\(installed)"
         case .unreachable(let reason):
@@ -61,7 +61,7 @@ nonisolated enum UpdateAnswer: Equatable, Sendable {
         case "newer":
             guard let installed = fields["installed"], let version = fields["version"], let url = fields["url"]
             else { return nil }
-            self = .newer(installed: installed, version: version, downloadURL: url, notes: notes)
+            self = .newer(installed: installed, version: version, releasePage: url, notes: notes)
         case "up-to-date":
             guard let installed = fields["installed"] else { return nil }
             self = .upToDate(installed: installed)

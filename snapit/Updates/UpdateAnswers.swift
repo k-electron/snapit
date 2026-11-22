@@ -49,7 +49,7 @@ nonisolated enum UpdateAnswers {
         return (
             .newer(
                 installed: current.description, version: version.description,
-                downloadURL: releasePage(tag: tag), notes: notes(release.body)),
+                releasePage: releasePage(tag: tag), notes: notes(release.body)),
             AnnouncedRelease(tag: trimmedTag, version: version.description)
         )
     }

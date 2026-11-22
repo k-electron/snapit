@@ -8,7 +8,7 @@ import Foundation
 /// - The Last Capture: the old copy leaves the Capture's files when it quits, and the new copy
 ///   takes that Capture over, so Reopen Last Capture brings it back with its Annotations.
 /// - The leftovers: the staging folder of the Update holds the old copy of snapit. The new copy
-///   deletes it (never to the Trash) once the old one has quit.
+///   deletes it (never to the Trash) once the old one has quit, if it is that Update's folder.
 nonisolated struct UpdateHandoff: Equatable, Sendable {
     let oldProcessID: Int32
     let stagingFolder: URL
@@ -45,20 +45,19 @@ nonisolated struct UpdateHandoff: Equatable, Sendable {
     }
 
     /// Deletes the Update's staging folder, and the old copy of snapit in it, once the old copy has
-    /// quit. Never to the Trash. Runs off the main actor and returns at once.
+    /// quit, and with it the staging folders of Updates that never finished. Never to the Trash. The
+    /// folder named on the command line goes only if it is the one the old copy made for its Update
+    /// (`UpdateStaging`). Runs off the main actor and returns at once.
     func removeLeftovers() {
         let process = oldProcessID
         let folder = stagingFolder
         Task.detached(priority: .utility) {
             let deadline = Date().addingTimeInterval(20)
             while kill(process, 0) == 0, Date() < deadline { try? await Task.sleep(for: .milliseconds(200)) }
-            do {
-                try FileManager.default.removeItem(at: folder)
-            } catch {
-                if FileManager.default.fileExists(atPath: folder.path) {
-                    NSLog("snapit: could not remove the Update's leftovers at \(folder.path): \(error)")
-                }
-            }
+            // An old copy that is still running needs its folder; a later Update sweeps it.
+            guard kill(process, 0) != 0 else { return }
+            UpdateStaging.remove(folder, madeBy: process)
+            UpdateStaging.sweepAbandoned(in: folder.deletingLastPathComponent(), keeping: nil)
         }
     }
 }

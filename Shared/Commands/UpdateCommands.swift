@@ -29,4 +29,11 @@ nonisolated extension SocketCommand {
     /// `no` on a disk image or in a folder snapit cannot write to (the window then says "Move snapit
     /// to Applications to update it here" in place of Update and Relaunch).
     static let updateCanInstall = SocketCommand("update-can-install")
+    /// `confirm-update-swap`: the menu bar app asks the Editor helper, once the release is downloaded
+    /// and checked and before it swaps the new copy in, whether the swap may go on. The helper asks
+    /// Quit's question again for an Editor with unexported edits that the user did not already agree
+    /// to lose when they started the Update (edits made since, or an Editor a newer Capture has made
+    /// no longer the Last Capture's). Replies `ok`, or `cancel` when the user chose to keep snapit
+    /// as it is.
+    static let confirmUpdateSwap = SocketCommand("confirm-update-swap")
 }
