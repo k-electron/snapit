@@ -99,7 +99,7 @@ Take your first Capture:
 
 ## Privacy
 
-snapit makes one network request: Check for Updates, and only when you click it. It talks to GitHub to ask whether a newer release exists. It collects nothing and sends nothing else.
+snapit goes online only after you click Check for Updates. It talks to GitHub to ask whether a newer release exists and, if you then choose Update and Relaunch, to download it. It collects nothing and sends nothing else.
 
 ## More
 
