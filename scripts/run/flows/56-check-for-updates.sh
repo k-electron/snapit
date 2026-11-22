@@ -5,8 +5,9 @@
 # that nothing is requested until a click, the version comparison (a table through a command),
 # every kind of reply (a newer, the same and an older version, garbage, a tag that is not
 # X.Y.Z, a pre-release, offline, a timeout, a rate limit), what the window says (the version,
-# the release notes drawn from Markdown, the Open Anyway and Screen Recording reminder), what
-# Download opens (through the browser edge, never a real browser), that a click while a check
+# the release notes drawn from Markdown, the Screen Recording reminder, the Update and Relaunch
+# button and the Release Page link), what
+# Release Page opens (through the browser edge, never a real browser), that a click while a check
 # runs sends no second request, and that the menu bar app is back at its baseline.
 # Sourced by scripts/check-run.sh.
 # shellcheck shell=bash
@@ -137,14 +138,15 @@ expect_equal "the window says which version is installed" "You have snapit 2.5.7
 expect_equal "the window has the release notes, as GitHub sent them" "$(uenc "$UPDATE_NOTES")" "$(uval notes)"
 expect_in_order "the notes are drawn as a heading, bullets with their inline Markdown applied, and a paragraph" \
   "$(ublocks)" "heading|What's new" "bullet|Faster Area Capture" "bullet|Fixed crash on Settings" "paragraph|Thanks for using snapit!"
-expect_equal "the window offers Close and Download" "close download " "$(ubuttons)"
-expect_contains "Download has a tooltip" "button download|Download|Open this release's page on GitHub in your browser" "$(ufacts)"
-expect_equal "Download points at the release page of that tag, built from the tag" \
+expect_equal "the window offers Close, Release Page and Update and Relaunch" "close release-page update " "$(ubuttons)"
+expect_contains "Release Page has a tooltip" "button release-page|Release Page|Open this release's page on GitHub in your browser" "$(ufacts)"
+expect_contains "Update and Relaunch has a tooltip" "button update|Update and Relaunch|Install this version of snapit and relaunch it" "$(ufacts)"
+expect_equal "Release Page points at the release page of that tag, built from the tag" \
   "https://github.com/k-electron/snapit/releases/tag/v2.5.8" "$(uval url)"
 REMINDER="$(uval reminder)"
-expect_contains "the window reminds users that Open Anyway is needed again" "Open Anyway" "$REMINDER"
-expect_contains "and that Screen Recording is needed again" "Screen Recording" "$REMINDER"
+expect_contains "the window reminds users that Screen Recording is needed again" "Screen Recording" "$REMINDER"
 expect_contains "after updating" "After updating" "$REMINDER"
+if [[ "$REMINDER" == *"Open Anyway"* ]]; then fail "the reminder names Open Anyway: $REMINDER"; else pass "the reminder names Screen Recording only"; fi
 if wait_until 10 has_onscreen_window "$UPDATE_PID"; then pass "the window with notes is on screen"; else fail "no window with notes on screen"; fi
 expect_equal "the window can be rendered to a PNG" "ok" "$(send_slow "$EDITOR_SOCK" "update-snapshot $RUN_ROOT/update-window.png")"
 if [[ -s "$RUN_ROOT/update-window.png" ]]; then pass "the rendered PNG has pixels"; else fail "the rendered PNG is empty"; fi
@@ -162,6 +164,8 @@ expect_equal "and says so in one line" "snapit 2.5.7 is up to date." "$(uval hea
 expect_equal "the window offers Close only" "close " "$(ubuttons)"
 expect_equal "an up-to-date answer carries no notes" "" "$(uval notes)"
 expect_equal "an up-to-date answer carries no reminder" "" "$(uval reminder)"
+expect_equal "an up-to-date answer offers no Update and Relaunch" "error nothing to update" "$(send "$EDITOR_SOCK" "update-press update")"
+expect_equal "and no Release Page" "error no release page" "$(send "$EDITOR_SOCK" "update-press release-page")"
 uscript_release v2.5.6 "$UPDATE_URL" "Older."
 ucheck
 expect_equal "an older release is up to date too" "snapit 2.5.7 is up to date." "$(uval headline)"
@@ -237,7 +241,7 @@ ucheck
 expect_equal "a newer major version than the bundle's is newer" "You have snapit $BUNDLE_VERSION." "$(uval detail)"
 send "$APP_SOCK" "update-installed-version 2.5.7" >/dev/null
 
-# The Download button opens the release page of the tag, built from the tag. The link in GitHub's
+# The Release Page link opens the release page of the tag, built from the tag. The link in GitHub's
 # reply is never used, whatever it looks like: a path that climbs out of the repository, an
 # encoded one, a user name, a port, another host, another scheme.
 FALLBACK_URL="https://github.com/k-electron/snapit/releases/tag/v2.6.0"
@@ -283,6 +287,17 @@ expect_equal "a redirect within api.github.com is followed" "follow" "$(redirect
 for target in http://api.github.com/x https://github.com/k-electron/snapit https://evil.example/x \
   https://api.github.com.evil.example/x https://api.github.com:8443/x https://user@api.github.com/x file:///etc/passwd; do
   expect_equal "a redirect to $target is refused" "refuse" "$(redirect "$target")"
+done
+# The download of a release's files follows one redirect more: from its address on github.com to GitHub's download host.
+aredirect() { send "$APP_SOCK" "update-redirect asset $(uenc "$1")"; }
+for target in https://release-assets.githubusercontent.com/github-production-release-asset/1/2 \
+  https://objects.githubusercontent.com/github-production-release-asset/1/2 https://github.com/k-electron/snapit/releases/download/v9.9.9/x; do
+  expect_equal "a release file's redirect to $target is followed" "follow" "$(aredirect "$target")"
+done
+for target in http://objects.githubusercontent.com/x https://evil.example/x https://evilgithubusercontent.com/x \
+  https://githubusercontent.com.evil.example/x https://objects.githubusercontent.com:8443/x https://user@objects.githubusercontent.com/x \
+  https://api.github.com/x file:///etc/passwd; do
+  expect_equal "a release file's redirect to $target is refused" "refuse" "$(aredirect "$target")"
 done
 
 # 5. Nothing but the requests the clicks made, each exactly what the real endpoint would send.
@@ -359,14 +374,14 @@ expect_equal "pressing the button again brings the same window forward" "ok" "$(
 if wait_until 5 requests_are "$((BEFORE_ABOUT + 2))"; then pass "and sends a second request: a new check"; else fail "no second request after pressing again (requests: $(update_requests))"; fi
 expect_onscreen_windows "still two windows" "$UPDATE_PID" "2"
 
-# 8. Download opens the release page through the browser edge, and the update window closes.
+# 8. Release Page opens the release page through the browser edge, and the update window closes.
 rm -f "$RUN_ROOT/browser-links"
-expect_equal "Download runs" "ok" "$(send_slow "$EDITOR_SOCK" "update-press download")"
+expect_equal "Release Page runs" "ok" "$(send_slow "$EDITOR_SOCK" "update-press release-page")"
 expect_equal "the browser is asked to open the release page of the tag" "https://github.com/k-electron/snapit/releases/tag/v3.0.0" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
 wait_until 10 onscreen_is "$UPDATE_PID" 1
 expect_onscreen_windows "the update window closed; Settings is still open" "$UPDATE_PID" "1"
 expect_contains "the update window has gone" "window=none" "$(ufacts)"
-expect_equal "Download with no newer version does nothing" "error no update window" "$(send "$EDITOR_SOCK" "update-press download")"
+expect_equal "Release Page with no update window does nothing" "error no update window" "$(send "$EDITOR_SOCK" "update-press release-page")"
 send_slow "$EDITOR_SOCK" settings-close >/dev/null
 if wait_until 10 gone "$UPDATE_PID"; then pass "closing the last window quits the helper"; else fail "the helper is still running"; fi
 
@@ -374,10 +389,10 @@ if wait_until 10 gone "$UPDATE_PID"; then pass "closing the last window quits th
 send "$APP_SOCK" "update-script release $(uenc v2.6.0) $(uenc "https://evil.example/") $(uenc "Fallback.")" >/dev/null
 ucheck
 rm -f "$RUN_ROOT/browser-links"
-send_slow "$EDITOR_SOCK" "update-press download" >/dev/null
+send_slow "$EDITOR_SOCK" "update-press release-page" >/dev/null
 expect_equal "a link GitHub should not send opens the release page of the tag" "$FALLBACK_URL" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
 wait_until 10 u_no_helper
-expect_equal "no helper process is left after Download" "" "$(helper_pid)"
+expect_equal "no helper process is left after Release Page" "" "$(helper_pid)"
 
 # 9. Close and Esc.
 ucheck

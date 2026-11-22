@@ -17,6 +17,15 @@ unregister_fixture_apps() {
   done < <(find "$RUN_ROOT/Applications" "$RUN_ROOT/Volumes" -maxdepth 5 -name '*.app' 2>/dev/null)
 }
 
+# detach_update_images: a disk image an Update attached under the run's root (at <root>/update-staging/volume)
+# and left attached, for a run that stopped half way. A finished Update has detached it.
+detach_update_images() {
+  local mount_point
+  while IFS= read -r mount_point; do
+    [[ -n "$mount_point" ]] && diskutil eject "$mount_point" >/dev/null 2>&1
+  done < <(mount | sed -n "s|^.* on \(.*$(basename "$RUN_ROOT")/update-staging/volume\) (.*|\1|p")
+}
+
 # quarantine_count <path>: how many items under <path> carry com.apple.quarantine.
 quarantine_count() { xattr -rl "$1" 2>/dev/null | grep -c 'com.apple.quarantine:' | tr -d ' '; }
 

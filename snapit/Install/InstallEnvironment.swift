@@ -14,6 +14,10 @@ protocol InstallEnvironment: AnyObject {
     var bundlePath: String { get }
     /// Ejects the disk image mounted at `mountPoint` once this process has quit.
     func scheduleEject(mountPoint: String)
+    /// A new empty folder for an Update to stage its files in, on the volume `bundle` is on: the
+    /// download, the mounted disk image and the staged copy, which the swap then trades for
+    /// `bundle`. The Update removes it, or the relaunched copy does.
+    func makeUpdateStagingFolder(forBundleAt bundle: URL) throws -> URL
 }
 
 enum InstallEdge {
@@ -40,10 +44,11 @@ enum SocketOwnership {
 /// Relaunch and quit are the same for the real system and the fixture: the fixture relaunches
 /// a real copy, which keeps the test root.
 enum InstallRelaunch {
-    /// Starts a new instance of the app at `url`.
-    static func start(appAt url: URL) async throws {
+    /// Starts a new instance of the app at `url`, with `arguments` on its command line.
+    static func start(appAt url: URL, arguments: [String] = []) async throws {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
+        configuration.arguments = arguments
         // A scripted run must not take focus from what the user is doing.
         configuration.activates = !TestMode.isActive
         if let root = TestMode.root { configuration.environment = [TestMode.rootVariable: root.path] }
@@ -67,6 +72,13 @@ final class SystemInstallEnvironment: InstallEnvironment {
     var volumesFolder: String { "/Volumes" }
     var volumes: any VolumeInspecting { SystemVolumes() }
     var bundlePath: String { Bundle.main.bundlePath }
+
+    /// The system's item replacement directory for `bundle`: a folder the system makes for
+    /// replacing an item, on the item's own volume.
+    func makeUpdateStagingFolder(forBundleAt bundle: URL) throws -> URL {
+        try FileManager.default.url(
+            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: bundle, create: true)
+    }
 
     /// The volume stays busy while this process or its helper runs from it, so a detached shell
     /// ejects it after both have quit. Only a mounted disk image is ejected: `hdiutil info` must

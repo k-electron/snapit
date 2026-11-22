@@ -84,6 +84,26 @@ enum CaptureHandoff {
         LastCapture.shared.set(nil)
     }
 
+    /// True once an Update's relaunch has taken the Last Capture over: this copy's quit leaves the
+    /// Capture's files for the new copy (`adopt`). Set only by that relaunch.
+    static var isHandedToUpdate = false
+
+    /// What quitting does with the Capture files: removes them, except while an Update hands the
+    /// Last Capture to the copy it relaunches.
+    static func removeAllAtQuit() {
+        if !isHandedToUpdate { removeAll() }
+    }
+
+    /// An Update's relaunch gave this copy the Last Capture `number` (nil: none): it stays the Last
+    /// Capture, with its pixels and its Annotations, and every other Capture file goes. A number
+    /// with no pixels file is no Last Capture.
+    static func adopt(lastCapture number: Int?) {
+        guard let number, CaptureFiles.existingNumbers().contains(number) else { return removeAll() }
+        for other in CaptureFiles.existingNumbers() where other != number { CaptureFiles.remove(number: other) }
+        latestNumber = number
+        LastCapture.shared.set(number)
+    }
+
     @concurrent
     private static func write(number: Int, screen: CapturedScreen) async throws {
         try CaptureFiles.write(number: number, image: screen.image, scale: screen.scale)
