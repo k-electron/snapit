@@ -2,13 +2,15 @@
 # it was, shows one line naming its cause in the Update window beside the Release Page link, and
 # leaves no downloaded, mounted or staged file behind:
 #   - GitHub unreachable, or too slow, before the download and half-way through it;
-#   - a download that does not match the hash the release publishes;
+#   - a hash file that holds no hash, and a download that does not match the hash the release
+#     publishes;
 #   - a staged bundle with another bundle identifier, another version than the announced tag, or a
 #     signature that fails the strict check (the Editor helper inside it is the broken part);
-#   - a swap that fails (the installed copy is read-only).
-# And where snapit cannot update itself (it runs from a disk image, or from a folder it cannot
-# write to) the window says "Move snapit to Applications to update it here" in place of Update and
-# Relaunch, beside the Release Page link, and snapit never asks for an administrator's password.
+#   - a swap that fails (the installed copy turns read-only after the Update has reached the swap).
+# And where snapit cannot update itself (it runs from a disk image, from a folder it cannot write
+# to, or as a bundle that cannot itself be replaced) the window says "Move snapit to Applications to
+# update it here" in place of Update and Relaunch, beside the Release Page link, and snapit never
+# asks for an administrator's password.
 #
 # Everything real happens inside the run's root, as in flow 59: the disk images are built with
 # `hdiutil create` from copies of the built snapit, signed ad hoc, and put where the fixture
@@ -54,39 +56,29 @@ uf_script_release() {
   send "$APP_SOCK" "update-script release $(uf_enc "$UF_TAG") $(uf_enc "$UF_PAGE") $(uf_enc "The newer snapit.")" >/dev/null
 }
 
-# uf_variant <name> <bundle identifier or empty> <version> <tamper: yes|no>: a disk image in
-# $UF_BUILT/<name>/ holding a copy of this build with that identifier and version, signed ad hoc
-# (the helper first, then the app: no --deep); `tamper` changes the helper's program after signing.
+# uf_variant <name> <bundle identifier or empty> <version> <tamper: yes|no>: the release's files in
+# $UF_BUILT/<name>/, the disk image holding a copy of this build with that identifier and version
+# (`build_update_image`); `tamper` changes the helper's program after signing.
 uf_variant() {
-  local dir="$UF_BUILT/$1" app plist
-  app="$dir/src/snapit.app"
-  mkdir -p "$dir/src"
-  ditto --norsrc --noextattr "$APP" "$app"
-  for plist in "$app/Contents/Info.plist" "$app/Contents/Helpers/snapit Editor.app/Contents/Info.plist"; do
-    plutil -replace CFBundleShortVersionString -string "$3" "$plist"
-  done
-  if [[ -n "$2" ]]; then plutil -replace CFBundleIdentifier -string "$2" "$app/Contents/Info.plist"; fi
-  codesign --force --sign - --timestamp=none --options runtime "$app/Contents/Helpers/snapit Editor.app" >/dev/null 2>&1
-  codesign --force --sign - --timestamp=none --options runtime "$app" >/dev/null 2>&1
-  if [[ "$4" == yes ]]; then printf 'x' >>"$app/Contents/Helpers/snapit Editor.app/Contents/MacOS/snapit Editor"; fi
-  if codesign --verify --deep --strict "$app" >/dev/null 2>&1; then
-    if [[ "$4" == yes ]]; then abort "the tampered copy '$1' still verifies"; fi
-  elif [[ "$4" != yes ]]; then
-    abort "the copy '$1' does not verify"
-  fi
-  hdiutil create -srcfolder "$dir/src" -volname snapit -format UDZO -quiet "$dir/$UF_IMAGE" >/dev/null 2>&1
-  (cd "$dir" && shasum -a 256 "$UF_IMAGE" >"$UF_IMAGE.sha256")
-  "$LSREGISTER" -u "$app/Contents/Helpers/snapit Editor.app" 2>/dev/null
-  "$LSREGISTER" -u "$app" 2>/dev/null
-  rm -rf "$dir/src"
-  [[ -s "$dir/$UF_IMAGE" && -s "$dir/$UF_IMAGE.sha256" ]] || abort "no disk image was built for '$1'"
+  local tamper=""
+  if [[ "$4" == yes ]]; then tamper=tamper; fi
+  build_update_image "$UF_BUILT/$1" "$UF_IMAGE" "$3" "$2" "$tamper"
 }
 # uf_serve <name>: the release's files are that variant's.
 uf_serve() { cp "$UF_BUILT/$1/$UF_IMAGE" "$UF_BUILT/$1/$UF_IMAGE.sha256" "$UF_ASSETS/"; }
 
-# uf_attempt: presses Update and Relaunch and waits for the Update to stop.
+uf_status() { send "$APP_SOCK" update-status; }
+uf_status_is() { [[ "$(uf_status)" == "$1" ]]; }
+uf_requests_above() { [[ "$(uf_requests)" -gt "$1" ]]; }
+
+# uf_attempt: presses Update and Relaunch and waits for the Update to stop. Every attempt but one
+# that is refused before any request starts with the window already `failed`, so the wait for
+# `failed` begins once the Update has sent its first request (the window is `installing` by then).
 uf_attempt() {
+  local before
+  before="$(uf_requests)"
   send "$EDITOR_SOCK" "update-press update" >/dev/null
+  wait_until 30 uf_requests_above "$before"
   wait_until 120 uf_val_is state failed
 }
 
@@ -173,7 +165,13 @@ expect_equal "timeout mid-download: the same two requests" "$UF_FILES.sha256
 $UF_FILES" "$(uf_log_after "$LOG_BEFORE")"
 send "$APP_SOCK" "update-script download ok" >/dev/null
 
-# 5. A download that does not match its hash: the disk image is the good one, the hash is another.
+# 5. A hash file that holds no hash: nothing is downloaded. Then a download that does not match its
+#    hash: the disk image is the good one, the hash is another.
+printf 'not a hash\n' >"$UF_ASSETS/$UF_IMAGE.sha256"
+LOG_BEFORE="$(uf_log_lines)"
+uf_attempt
+uf_expect_failed "hash file without a hash" "The release's hash file could not be read, so nothing was installed."
+expect_equal "hash file without a hash: only the hash file was requested" "$UF_FILES.sha256" "$(uf_log_after "$LOG_BEFORE")"
 printf '%064d  %s\n' 0 "$UF_IMAGE" >"$UF_ASSETS/$UF_IMAGE.sha256"
 LOG_BEFORE="$(uf_log_lines)"
 uf_attempt
@@ -192,11 +190,15 @@ uf_serve broken-signature
 uf_attempt
 uf_expect_failed "broken signature in the Editor helper" "The download's signature is not valid, so it was not installed."
 
-# 7. A swap that fails: the installed copy is read-only, so nothing can be traded for it. The
-#    copy is untouched and the staged one goes.
+# 7. A swap that fails: the Update goes as far as the swap, where the run parks it, and the installed
+#    copy turns read-only, so nothing can be traded for it. The copy is untouched and the staged one goes.
 uf_serve good
+send "$APP_SOCK" "update-script hold-swap on" >/dev/null
+send "$EDITOR_SOCK" "update-press update" >/dev/null
+if wait_until 60 uf_status_is swapping; then pass "swap: the Update reaches the swap"; else fail "swap: the Update did not reach the swap (status '$(uf_status)', window '$(uf_val state)')"; fi
 chmod 555 "$UF_DEST"
-uf_attempt
+send "$APP_SOCK" "update-script hold-swap off" >/dev/null
+wait_until 60 uf_val_is state failed
 chmod 755 "$UF_DEST"
 uf_expect_failed "swap" "snapit couldn't replace itself. Your snapit was not changed."
 if codesign --verify --deep --strict "$UF_DEST" >/dev/null 2>&1; then pass "swap: the installed copy's signature still verifies"; else fail "swap: the installed copy's signature does not verify"; fi
@@ -206,6 +208,25 @@ rm -f "$RUN_ROOT/browser-links"
 expect_equal "Release Page runs after a failure" "ok" "$(send_slow "$EDITOR_SOCK" "update-press release-page")"
 expect_equal "the browser is asked to open the release page of the tag" "$UF_PAGE" "$(cat "$RUN_ROOT/browser-links" 2>/dev/null)"
 rm -f "$RUN_ROOT/browser-links"
+
+# A bundle that is read-only before the Update starts is caught at the press, before any request:
+# the window says where to move snapit, and the next check does not offer Update and Relaunch.
+uf_check
+expect_equal "the window announces the release again" "newer" "$(uf_val state)"
+chmod 555 "$UF_DEST"
+UF_REQUESTS="$(uf_requests)"
+send "$EDITOR_SOCK" "update-press update" >/dev/null
+wait_until 20 uf_val_is notice "$UF_MOVE_LINE"
+expect_equal "read-only bundle: the Update stopped with the line that says where to move snapit" "$UF_MOVE_LINE" "$(uf_val notice)"
+expect_equal "read-only bundle: nothing was requested" "$UF_REQUESTS" "$(uf_requests)"
+uf_check
+expect_equal "read-only bundle: the next check cannot install here" "cannot-install" "$(uf_val state)"
+expect_equal "read-only bundle: Close and Release Page are what is offered" "close release-page " "$(uf_buttons)"
+chmod 755 "$UF_DEST"
+uf_expect_untouched "read-only bundle"
+uf_check
+expect_equal "once the bundle can be replaced, the window announces the release" "newer" "$(uf_val state)"
+expect_equal "and offers Update and Relaunch again" "close release-page update " "$(uf_buttons)"
 
 # 8. snapit on a disk image cannot update itself there: the window says where to move it, offers the
 #    Release Page link and no Update and Relaunch, and nothing is requested or asked for.

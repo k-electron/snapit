@@ -58,26 +58,16 @@ ur_has_annotation() { [[ "$(ur_annotations "$1")" == "1" ]]; }
 ur_document() { send "$EDITOR_SOCK" "editor-document $EDITOR_N" | grep -E '^(annotation|undo-steps|redo-steps|revision)'; }
 ur_gone_helper() { [[ -z "$(pid_of "$UR_DEST/Contents/Helpers/")" ]]; }
 ur_no_captures() { [[ -z "$(ls -A "$UR_CAPS" 2>/dev/null)" ]]; }
+ur_absent() { [[ ! -e "$1" ]]; }
 
 REQUESTS_AT_START="$(ur_requests)"
 LOG_AT_START="$(ur_log_lines)"
 
 # 1. The fixtures: a disk image holding a copy of this build at the announced version, signed ad
 #    hoc (the helper first, then the app: no --deep), with its hash in the form the release uses.
-mkdir -p "$UR_APPS" "$UR_BUILT/src"
-ditto --norsrc --noextattr "$APP" "$UR_BUILT/src/snapit.app"
-for plist in "$UR_BUILT/src/snapit.app/Contents/Info.plist" "$UR_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app/Contents/Info.plist"; do
-  plutil -replace CFBundleShortVersionString -string "$UR_VERSION" "$plist"
-done
-codesign --force --sign - --timestamp=none --options runtime "$UR_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app" >/dev/null 2>&1
-codesign --force --sign - --timestamp=none --options runtime "$UR_BUILT/src/snapit.app" >/dev/null 2>&1
-if codesign --verify --deep --strict "$UR_BUILT/src/snapit.app" >/dev/null 2>&1; then pass "the copy for the disk image is signed and verifies"; else abort "the copy for the disk image does not verify"; fi
-hdiutil create -srcfolder "$UR_BUILT/src" -volname snapit -format UDZO -quiet "$UR_BUILT/snapit-$UR_VERSION.dmg" >/dev/null 2>&1
-(cd "$UR_BUILT" && shasum -a 256 "snapit-$UR_VERSION.dmg" >"snapit-$UR_VERSION.dmg.sha256")
-"$LSREGISTER" -u "$UR_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app" 2>/dev/null
-"$LSREGISTER" -u "$UR_BUILT/src/snapit.app" 2>/dev/null
-rm -rf "$UR_BUILT/src"
-if [[ -s "$UR_BUILT/snapit-$UR_VERSION.dmg" && -s "$UR_BUILT/snapit-$UR_VERSION.dmg.sha256" ]]; then pass "the disk image and its hash are built"; else abort "no disk image was built"; fi
+mkdir -p "$UR_APPS" "$UR_BUILT"
+build_update_image "$UR_BUILT" "snapit-$UR_VERSION.dmg" "$UR_VERSION"
+pass "the disk image, holding a copy that is signed and verifies, and its hash are built"
 
 # The running snapit pretends to be the copy in Applications: the Update swaps that copy.
 ditto "$APP" "$UR_DEST"
@@ -107,15 +97,29 @@ expect_equal "Check for Updates sent one request" "$((REQUESTS_AT_START + 1))" "
 
 # 3. With none of the release's files there, Update and Relaunch stops at the first request. The
 #    installed copy is as it was, nothing is left, and the window says the Update stopped and
-#    offers it again (flow 60 covers each way an Update stops).
+#    offers it again (flow 60 covers each way an Update stops). Beside the staging folder sit the
+#    leftovers of Updates that never finished: a staging folder of a process that is gone (marker
+#    holding a pid no process has), one that also holds the old copy of snapit (kept: it may be the
+#    only one), and a folder that is no Update's at all (kept). An Update sweeps the first.
+UR_STALE="$RUN_ROOT/update-stale"
+UR_OLD_COPY="$RUN_ROOT/update-old-copy"
+UR_BYSTANDER="$RUN_ROOT/update-bystander"
+mkdir -p "$UR_STALE" "$UR_OLD_COPY/previous.app" "$UR_BYSTANDER"
+printf 999999 >"$UR_STALE/.snapit-update"
+printf 999999 >"$UR_OLD_COPY/.snapit-update"
+touch "$UR_STALE/leftover" "$UR_BYSTANDER/keep"
 expect_equal "Update and Relaunch answers at once" "ok" "$(send "$EDITOR_SOCK" "update-press update")"
 wait_until 20 ur_val_is state failed
 expect_equal "the window says the Update stopped" "failed" "$(ur_val state)"
+expect_equal "in one line naming the cause: GitHub had no such file" "GitHub didn't have the release's files. Your snapit was not changed." "$(ur_val notice)"
 expect_equal "and offers Update and Relaunch again" "close release-page update " "$(ur_buttons)"
 expect_equal "the Update asked for the hash and went no further" "$((REQUESTS_AT_START + 2))" "$(ur_requests)"
 expect_equal "the installed copy is as it was" "$UR_BUILD_VERSION" "$(ur_version_of "$UR_DEST")"
 expect_equal "nothing is left in Applications" "snapit.app" "$(ls -A "$UR_APPS")"
 [[ ! -e "$UR_STAGING" ]] && pass "no staging folder is left" || fail "a staging folder is left"
+if wait_until 10 ur_absent "$UR_STALE"; then pass "the staging folder of an Update that never finished is swept"; else fail "the stale staging folder is still there"; fi
+if [[ -d "$UR_OLD_COPY/previous.app" ]]; then pass "a staging folder that holds an old copy of snapit is kept"; else fail "a folder holding an old copy was removed"; fi
+if [[ -e "$UR_BYSTANDER/keep" ]]; then pass "a folder that is no Update's is kept"; else fail "a folder that is no Update's was removed"; fi
 expect_equal "the Editor is still open" "$UR_N" "$(open_editors | tail -1)"
 if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "snapit keeps running"; else fail "snapit stopped"; fi
 
@@ -155,6 +159,8 @@ expect_equal "the installed copy carries no quarantine" "0" "$(quarantine_count 
 # The old copy and the staging folder go once the old snapit has quit; the disk image is detached.
 if wait_until 30 ur_gone_after_update; then pass "the old copy and the staging folder are gone"; else fail "left behind: $(ls -A "$UR_APPS" | tr '\n' ' ')$([[ -e "$UR_STAGING" ]] && echo "update-staging")"; fi
 expect_equal "Applications holds the one snapit" "snapit.app" "$(ls -A "$UR_APPS")"
+sleep 2 # the new copy sweeps right after it deletes its staging folder
+if [[ -d "$UR_OLD_COPY/previous.app" && -e "$UR_BYSTANDER/keep" ]]; then pass "the relaunched copy left the old copy's folder and the bystander alone"; else fail "the relaunched copy removed a folder that is not its Update's"; fi
 expect_equal "the disk image is detached" "0" "$(ur_attached)"
 expect_equal "no image of the Update is mounted" "0" "$(mount | grep -c "update-staging")"
 if find "$RUN_ROOT" -name '*.dmg' 2>/dev/null | grep -q "update-staging"; then fail "a disk image is left in the staging folder"; else pass "no downloaded file is left"; fi
@@ -206,5 +212,5 @@ if wait_until 10 ur_no_captures; then pass "a normal quit removes the Last Captu
 "$LSREGISTER" -u "$UR_STAGING/snapit.app" 2>/dev/null
 unregister_fixture_apps
 chmod -R u+w "$UR_APPS" 2>/dev/null
-rm -rf "$UR_APPS" "$UR_ASSETS" "$UR_STAGING"
+rm -rf "$UR_APPS" "$UR_ASSETS" "$UR_STAGING" "$UR_STALE" "$UR_OLD_COPY" "$UR_BYSTANDER"
 relaunch_app "the menu bar app is running from the build again"

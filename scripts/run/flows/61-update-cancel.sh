@@ -2,7 +2,9 @@
 # window shows a progress bar and Cancel; Cancel, or closing the window, ends the Update with the
 # installed copy unchanged and nothing left behind. An Editor that is not the Last Capture and holds
 # unexported edits brings Quit's question first (Cancel stops before any request, Discard goes on);
-# with only the Last Capture's Editor nothing is asked. When the swap begins, a Timed Capture that
+# with only the Last Capture's Editor nothing is asked. The question comes again just before the swap
+# for an Editor the first answer did not cover (a Capture taken during the download makes the Last
+# Capture's Editor one at risk); Cancel then ends the Update with nothing changed. When the swap begins, a Timed Capture that
 # is counting down is cancelled and takes no Capture, and Cancel and the window's close button are
 # disabled until the relaunch.
 #
@@ -79,19 +81,9 @@ TIMER_BEFORE="$(send "$APP_SOCK" "defaults-get timedCaptureSeconds")"
 
 # 1. The fixtures, as in flow 59: a disk image holding a copy of this build at the announced
 #    version, signed ad hoc (the helper first, then the app), with its hash in the release's form.
-mkdir -p "$UC_APPS" "$UC_BUILT/src" "$UC_ASSETS"
-ditto --norsrc --noextattr "$APP" "$UC_BUILT/src/snapit.app"
-for plist in "$UC_BUILT/src/snapit.app/Contents/Info.plist" "$UC_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app/Contents/Info.plist"; do
-  plutil -replace CFBundleShortVersionString -string "$UC_VERSION" "$plist"
-done
-codesign --force --sign - --timestamp=none --options runtime "$UC_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app" >/dev/null 2>&1
-codesign --force --sign - --timestamp=none --options runtime "$UC_BUILT/src/snapit.app" >/dev/null 2>&1
-hdiutil create -srcfolder "$UC_BUILT/src" -volname snapit -format UDZO -quiet "$UC_BUILT/snapit-$UC_VERSION.dmg" >/dev/null 2>&1
-(cd "$UC_BUILT" && shasum -a 256 "snapit-$UC_VERSION.dmg" >"snapit-$UC_VERSION.dmg.sha256")
-"$LSREGISTER" -u "$UC_BUILT/src/snapit.app/Contents/Helpers/snapit Editor.app" 2>/dev/null
-"$LSREGISTER" -u "$UC_BUILT/src/snapit.app" 2>/dev/null
-rm -rf "$UC_BUILT/src"
-if [[ -s "$UC_BUILT/snapit-$UC_VERSION.dmg" && -s "$UC_BUILT/snapit-$UC_VERSION.dmg.sha256" ]]; then pass "the disk image and its hash are built"; else abort "no disk image was built"; fi
+mkdir -p "$UC_APPS" "$UC_BUILT" "$UC_ASSETS"
+build_update_image "$UC_BUILT" "snapit-$UC_VERSION.dmg" "$UC_VERSION"
+pass "the disk image and its hash are built"
 cp "$UC_BUILT/snapit-$UC_VERSION.dmg" "$UC_BUILT/snapit-$UC_VERSION.dmg.sha256" "$UC_ASSETS/"
 rm -rf "$UC_BUILT"
 
@@ -219,8 +211,33 @@ if wait_until 20 uc_val_is state newer; then pass "the window offers the release
 uc_expect_nothing_changed "after Cancel with only the Last Capture open"
 if uc_open "$UC_B"; then pass "the Last Capture's Editor is still open"; else fail "the Last Capture's Editor closed"; fi
 
+# 6b. A Capture taken after the click. Only the Last Capture's Editor (B, edited) is open, so nothing
+#    is asked at the click. While the download is parked, a newer Capture (D) makes B an Editor that
+#    is not the Last Capture, with an edit never Exported: the release is downloaded and checked, then
+#    Quit's question comes before the swap and names B. Cancel ends the Update with nothing changed.
+REQ="$(uc_requests)"
+send "$APP_SOCK" "update-script hold-download 30" >/dev/null
+expect_equal "Update and Relaunch answers" "ok" "$(send "$EDITOR_SOCK" "update-press update")"
+if wait_until 30 uc_val_is progress-percent 30; then pass "the Update starts at once, nothing at risk"; else fail "the Update did not start (state '$(uc_val state)', prompt '$(uc_prompt)')"; fi
+if ! capture_into_editor "menu-click capture.screen"; then abort "no Capture during the Update"; fi
+UC_D="$EDITOR_N"
+expect_equal "no question yet: the Update is still downloading" "none" "$(uc_prompt)"
+send "$APP_SOCK" "update-script hold-download off" >/dev/null
+if wait_until 90 uc_prompt_shown; then pass "Quit's question is asked before the swap"; else fail "no question before the swap (state '$(uc_val state)', status '$(uc_status)')"; fi
+expect_contains "it names the Editor that stopped being the Last Capture" "shown quit editor=$UC_B" "$(uc_prompt)"
+expect_equal "the Update has not swapped: Cancel is still offered" "enabled" "$(uc_val cancel)"
+expect_equal "the installed copy is untouched" "$UC_BUILD_VERSION" "$(uc_version_of "$UC_DEST")"
+send "$EDITOR_SOCK" "editor-prompt-answer cancel" >/dev/null
+if wait_until 20 uc_val_is state newer; then pass "Cancel ends the Update: the window offers the release again"; else fail "the window is still '$(uc_val state)' after Cancel"; fi
+uc_expect_nothing_changed "after answering Cancel before the swap"
+if uc_open "$UC_B" && uc_open "$UC_D"; then pass "both Editors are still open"; else fail "an Editor closed: $(open_editors | tr '\n' ' ')"; fi
+send_slow "$EDITOR_SOCK" "editor-press $UC_D delete-capture" >/dev/null
+wait_until 5 uc_closed "$UC_D"
+EDITOR_N="$UC_B"
+
 # 7. The one real Update. B is no longer the Last Capture once C is taken, so the question names B,
-#    and Discard goes on. The download parks at 30 per cent; a Timed Capture starts counting down
+#    and Discard goes on; B is unchanged by the time the release is ready, so it is not asked again
+#    before the swap. The download parks at 30 per cent; a Timed Capture starts counting down
 #    (10 s, which the check of the copy is well inside); the download is released and the Update parks
 #    again just after the swap has begun.
 if ! capture_into_editor "menu-click capture.screen"; then abort "no third Capture for the Update"; fi
@@ -251,6 +268,7 @@ UC_OLD_APP_PID="$APP_PID"
 UC_OLD_HELPER="$(helper_pid)"
 send "$APP_SOCK" "update-script hold-download off" >/dev/null
 if wait_until 60 uc_val_is cancel disabled; then pass "the swap has begun: Cancel is disabled"; else fail "the swap did not begin (state '$(uc_val state)', progress '$(uc_val progress)', status '$(uc_status)')"; fi
+expect_equal "the swap began without asking again: B is as Discard left it" "none" "$(uc_prompt)"
 expect_equal "the window says it is installing" "installing" "$(uc_val state)"
 expect_equal "and which version" "Installing snapit $UC_VERSION…" "$(uc_val headline)"
 expect_equal "the title bar's close button is disabled" "disabled" "$(uc_val close-button)"

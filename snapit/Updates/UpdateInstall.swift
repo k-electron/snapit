@@ -10,12 +10,20 @@ import Foundation
 ///    `snapit.app` out of it, detach it, and clear any quarantine on the copy. The copy must have
 ///    snapit's bundle identifier, the announced version and a signature that passes a strict check,
 ///    nested code included (`BundleCheck`).
-/// 3. Swap the staged copy in at the installed copy's path, while snapit and the helper still run.
+/// 3. Ask the helper once more about Editors at risk (`confirm-update-swap`): the question at the
+///    click came before the download, and edits made or a Capture taken since are covered here. A
+///    Cancel ends the Update with nothing changed.
+/// 4. Swap the staged copy in at the installed copy's path, while snapit and the helper still run.
 ///    Nothing before this step touches the installed copy, so a failure up to here leaves it as it
 ///    was, and the staging folder is removed. The swap begins by cancelling what snapit has in
-///    progress (a Timed Capture counting down).
-/// 4. Relaunch the swapped-in copy through `SnapitRelaunch`, which hands it the Last Capture and
-///    the staging folder (holding the old copy); the new copy deletes that folder.
+///    progress (a Timed Capture counting down). A move-aside swap that cannot put the old copy back
+///    is the one stop that keeps the staging folder: it holds that copy.
+/// 5. Relaunch the swapped-in copy through `SnapitRelaunch`, which hands it the Last Capture and
+///    the staging folder (holding the old copy); the new copy deletes that folder. A relaunch that
+///    fails keeps the folder, which the running copy lives in.
+///
+/// The staging folder carries a marker (`UpdateStaging`), so that only a folder an Update made is
+/// ever deleted, here or by the relaunched copy, which also sweeps those of Updates that never finished.
 ///
 /// The Update can be cancelled (`cancel-update`) until the swap begins: it then stops with nothing
 /// changed and nothing left in the staging folder, which is removed. From the swap on, a cancel is refused.
@@ -48,9 +56,9 @@ enum UpdateInstall {
             case .staging: "staging"
             case .network(.offline): UpdateFailure.offline.rawValue
             case .network(.timeout): UpdateFailure.timeout.rawValue
-            case .network(.cannotSave): "cannot-save"
-            case .status: "status"
-            case .notAHash: "not-a-hash"
+            case .network(.cannotSave): UpdateFailure.cannotSave.rawValue
+            case .status: UpdateFailure.status.rawValue
+            case .notAHash: UpdateFailure.notAHash.rawValue
             case .hashMismatch: UpdateFailure.hashMismatch.rawValue
             case .diskImage: UpdateFailure.diskImage.rawValue
             case .quarantineRemains: "quarantine"
@@ -117,23 +125,27 @@ enum UpdateInstall {
             return failureReply(error)
         }
         let reply = await SnapitRelaunch.run(appAt: bundle, updateStagingFolder: staging)
-        // A relaunch that did not start leaves this copy running; the old copy has no use in staging.
+        // A relaunch that did not start leaves this copy running, from the folder the swap moved it
+        // to: the staging folder is its home now and stays. The Editor helper has already quit, so
+        // the Update window cannot show this; the log does. A later Update removes the folder once
+        // this copy has quit (`UpdateStaging.sweepAbandoned`).
         if reply != "ok" {
-            NSLog("snapit: Update swapped the new copy in but could not relaunch: \(reply)")
-            try? FileManager.default.removeItem(at: staging)
-            return "error relaunch \(reply)"
+            NSLog("snapit: Update swapped the new copy in but could not relaunch (\(reply)). This copy still runs from \(staging.path), which is kept.")
+            return "error \(UpdateFailure.relaunch.rawValue) \(reply.replacingOccurrences(of: "error ", with: ""))"
         }
         return reply
     }
 
     /// Whether this copy can replace itself where it runs. Not from a mounted disk image or a
-    /// translocated path, and not from a folder it cannot write to: the swap and its staging both
-    /// need that folder, and snapit never asks for an administrator's password to get at it.
+    /// translocated path, and not from a folder it cannot write to, or a bundle that cannot itself be
+    /// replaced: the swap and its staging need both, and snapit never asks for an administrator's
+    /// password to get at them.
     static func canInstall(in environment: any InstallEnvironment = InstallEdge.current) -> Bool {
         let location = InstallCheck.location(environment: environment)
         guard !location.onDiskImage, !location.translocated else { return false }
         let folder = URL(fileURLWithPath: environment.bundlePath).deletingLastPathComponent()
         return FileManager.default.isWritableFile(atPath: folder.path)
+            && FileManager.default.isWritableFile(atPath: environment.bundlePath)
     }
 
     /// `error <cause> <description>`: the cause is one word (`Failure.code`, `swap` for a swap that
@@ -141,7 +153,10 @@ enum UpdateInstall {
     private static func failureReply(_ error: Error) -> String {
         if let failure = error as? Failure { return "error \(failure.code) \(failure)" }
         if error is CancellationError { return "error \(Failure.cancelled.code) \(Failure.cancelled)" }
-        if let swap = error as? BundleSwap.Failure { return "error swap \(swap)" }
+        if let swap = error as? BundleSwap.Failure {
+            if case .notRestored = swap { return "error \(UpdateFailure.swapIncomplete.rawValue) \(swap)" }
+            return "error \(UpdateFailure.swap.rawValue) \(swap)"
+        }
         return "error unknown \(error)"
     }
 
@@ -159,6 +174,15 @@ enum UpdateInstall {
             throw Failure.staging(error.localizedDescription)
         }
         do {
+            try UpdateStaging.mark(staging)
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            throw Failure.staging(error.localizedDescription)
+        }
+        // Folders of Updates that never finished (snapit quit or crashed in one) are of no use.
+        let parent = staging.deletingLastPathComponent()
+        Task.detached(priority: .utility) { UpdateStaging.sweepAbandoned(in: parent, keeping: staging) }
+        do {
             let image = staging.appendingPathComponent(release.diskImageName)
             let staged = staging.appendingPathComponent("snapit.app", isDirectory: true)
             try await download(imageRequest, hashRequest, to: image)
@@ -167,18 +191,37 @@ enum UpdateInstall {
             try await Task.detached {
                 try extractApp(from: image, to: staged, in: staging, identifier: identifier, version: version)
             }.value
-            // The detached work does not see a cancel, so it is looked at again here, and this is the
-            // last place a cancel counts: nothing awaits between this check and `swapping`.
+            // Edits made, or a Capture taken, since Quit's question at the click are asked about
+            // again, before the swap makes them lost.
+            try await confirmEditorsAtRisk()
+            // The detached work and the question do not see a cancel, so it is looked at again here,
+            // and this is the last place a cancel counts: nothing awaits between this check and
+            // `swapping`.
             try Task.checkCancellation()
             progress = .swapping
             cancelWorkInProgress()
             await environment.waitBeforeSwap()
             try BundleSwap.swap(staged: staged, intoPlaceOf: bundle)
             return staging
+        } catch BundleSwap.Failure.notRestored(let reason, let oldCopy) {
+            // The staging folder holds the old copy, which may be the only snapit there is.
+            NSLog("snapit: Update could not swap (\(reason)) or put its old copy back; it is kept at \(oldCopy.path)")
+            throw BundleSwap.Failure.notRestored(reason: reason, oldCopy: oldCopy)
         } catch {
             try? FileManager.default.removeItem(at: staging)
             throw error
         }
+    }
+
+    /// Asks the Editor helper whether an Editor holds edits the Update would lose that the user has
+    /// not already agreed to lose (the helper keeps what Quit's question was answered for at the
+    /// click). `cancel` ends the Update with nothing changed. With no helper there is no Editor to lose.
+    private static func confirmEditorsAtRisk() async throws {
+        guard await CommandSocketClient.isListening(at: AppIdentity.editorSocketPath) else { return }
+        // The question waits for the user, however long that takes.
+        let reply = try? await CommandSocketClient.send(
+            .confirmUpdateSwap, to: AppIdentity.editorSocketPath, timeoutSeconds: 86_400)
+        guard reply == "ok" else { throw Failure.cancelled }
     }
 
     /// The release's hash file and disk image, and whether the image is the one the hash names.

@@ -198,7 +198,8 @@ final class UpdateModel {
 
     /// Starts the Update. Editors that are not the Last Capture's and hold edits that were never
     /// Exported are asked about first, with Quit's question: Cancel ends the Update before anything
-    /// is downloaded. Then the menu bar app downloads the release, checks it, swaps it in and
+    /// is downloaded. The menu bar app asks again (`confirm-update-swap`) just before the swap, about
+    /// what is at risk by then that this question did not cover. Then the menu bar app downloads the release, checks it, swaps it in and
     /// relaunches snapit; the window shows how far it has got, and Cancel (or closing the window)
     /// ends the Update until the swap begins. A successful Update quits this helper, so the request
     /// never comes back; one that comes back says the Update stopped, and the window offers the
@@ -216,6 +217,7 @@ final class UpdateModel {
                 installTask = nil
                 return
             }
+            agreedToLose = EditorSessions.shared.agreedToLose()
             progress = .downloading(received: 0, total: nil)
             state = .installing(answer)
             let polling = Task { await pollProgress() }
@@ -233,6 +235,10 @@ final class UpdateModel {
     }
 
     private var installTask: Task<Void, Never>?
+
+    /// What Quit's question was answered for when the Update started (`confirm-update-swap` asks
+    /// again about anything else that is at risk by the time the release is ready to swap in).
+    private(set) var agreedToLose: [Int: DocumentState] = [:]
     private var cancelTask: Task<Void, Never>?
     private var windowClosed = false
 

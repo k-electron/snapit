@@ -30,6 +30,10 @@ extension SocketCommandRegistry {
             CATransaction.flush()
             return "ok"
         }
+        register(.confirmUpdateSwap) { _ in
+            let agreed = UpdateWindow.shared?.model.agreedToLose ?? [:]
+            return await EditorSessions.shared.confirmQuit(except: agreed) ? "ok" : "cancel"
+        }
         guard TestMode.isActive else { return }
         register(.updateFacts) { _ in UpdateFacts.describe() }
         register(.updatePress) { request in

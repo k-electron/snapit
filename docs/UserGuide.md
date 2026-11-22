@@ -26,7 +26,7 @@ snapit comes as one disk image (a DMG) with one app inside.
 
 <!-- shot: install-open-anyway -->
 
-> snapit is not notarized, so macOS blocks it the first time. A newer version you install by hand from the DMG needs **Open Anyway** again, and [Update and Relaunch](#updates) does not. See [After an update](#after-an-update).
+> snapit is not notarized, so macOS blocks it the first time. A newer version you install by hand from the DMG needs **Open Anyway** again, while [Update and Relaunch](#updates) opens the new snapit straight away. See [After an update](#after-an-update).
 
 You approve snapit once, and you grant the one permission it needs once, to snapit itself: the Editor inside the app is part of snapit.
 
@@ -411,16 +411,16 @@ snapit goes online only after you click **Check for Updates…**, in the menu or
 
 **Update and Relaunch** replaces snapit with the newer release in one click:
 
-1. If an Editor other than the Last Capture's holds edits you never Exported, snapit asks first, as Quit snapit does. **Cancel** stops the Update before anything is downloaded.
+1. If an Editor other than the Last Capture's holds edits you never Exported, snapit asks first, as Quit snapit does. **Cancel** stops the Update before anything is downloaded. snapit asks again just before the swap if an Editor then holds edits you never Exported that the first question did not cover, such as edits made during the download.
 2. The window shows a progress bar while snapit downloads the release from GitHub. **Cancel**, or closing the window, stops the Update and leaves nothing behind.
 3. snapit checks the download against the checksum the release publishes, opens it out of sight, and checks that the app inside is snapit at the version the window announced, with a valid signature.
 4. snapit swaps the new copy in place of the running one and relaunches it. A Timed Capture that is counting down is cancelled first, and from here **Cancel** and the window's close button are disabled. snapit deletes the old copy and every downloaded file, never to the Trash.
 
 Your [Last Capture](#last-capture) comes back with its Annotations: choose **Reopen Last Capture** in the menu. Then see [After an update](#after-an-update).
 
-If an Update can't finish, the window says why in one line: GitHub couldn't be reached or took too long, the download was damaged, it isn't snapit or isn't the announced version, its signature isn't valid, it couldn't be opened, or snapit couldn't replace itself. Your snapit is as it was, **Update and Relaunch** stays for another try, and **Release Page** is beside it.
+If an Update can't finish, the window says why in one line: GitHub couldn't be reached, took too long or didn't have the release's files, the checksum file couldn't be read, the download couldn't be saved or was damaged, it isn't snapit or isn't the announced version, its signature isn't valid, it couldn't be opened, or snapit couldn't replace itself. Your snapit is as it was, **Update and Relaunch** stays for another try, and **Release Page** is beside it.
 
-When snapit runs from the DMG or from a folder it can't write to, the window says "Move snapit to Applications to update it here" in place of **Update and Relaunch**, beside **Release Page**. snapit never asks for your password.
+When snapit runs from the DMG or from a folder it can't write to, the window says "Move snapit to Applications to update it here" in place of **Update and Relaunch**, beside **Release Page**. snapit works with the access it already has.
 
 To update by hand, open **Release Page** (every release is on [GitHub](https://github.com/k-electron/snapit/releases)), download the new DMG, quit snapit, drag the new snapit onto Applications and replace the old one. Then see [After an update](#after-an-update).
 
@@ -434,7 +434,7 @@ A new version is a new build, so macOS treats it as a new app. After **Update an
 
 If snapit could not clear its old entry, the guide says so and tells you to select snapit in the Screen Recording list, press − to remove it, choose **Relaunch snapit** and allow Screen Recording when macOS asks.
 
-A newer version you install by hand from the DMG needs **Open Anyway** again: open the new snapit, then System Settings › Privacy & Security › **Open Anyway**. Then the same Permission guide, "snapit was updated to X.Y.Z", asks for Screen Recording. **Update and Relaunch** needs no Open Anyway, because snapit downloads the release itself.
+A newer version you install by hand from the DMG needs **Open Anyway** again: open the new snapit, then System Settings › Privacy & Security › **Open Anyway**. Then the same Permission guide, "snapit was updated to X.Y.Z", asks for Screen Recording. With **Update and Relaunch**, snapit downloads the release itself, so the new snapit opens straight away.
 
 ## <a id="quitting"></a>Quitting <!-- icon: xmark.circle -->
 
