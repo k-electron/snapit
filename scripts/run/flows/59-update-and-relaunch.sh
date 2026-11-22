@@ -117,7 +117,7 @@ expect_equal "nothing is left in Applications" "snapit.app" "$(ls -A "$UR_APPS")
 expect_equal "the Editor is still open" "$UR_N" "$(open_editors | tail -1)"
 if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "snapit keeps running"; else fail "snapit stopped"; fi
 
-# 4. With the files there, held at its first request: the window says it is installing.
+# 4. With the files there, held at its first request: the window says it is downloading, with Cancel.
 mkdir -p "$UR_ASSETS"
 cp "$UR_BUILT/snapit-$UR_VERSION.dmg" "$UR_BUILT/snapit-$UR_VERSION.dmg.sha256" "$UR_ASSETS/"
 rm -rf "$UR_BUILT"
@@ -125,10 +125,10 @@ UR_REQUESTS_BEFORE="$(ur_requests)"
 send "$APP_SOCK" "update-script hold on" >/dev/null
 expect_equal "Update and Relaunch answers at once again" "ok" "$(send "$EDITOR_SOCK" "update-press update")"
 if wait_until 10 ur_requests_are "$((UR_REQUESTS_BEFORE + 1))"; then pass "the Update asks for the release's hash"; else fail "the Update sent no request (requests: $(ur_requests))"; fi
-wait_until 10 ur_val_is state installing
-expect_equal "the window says it is installing" "installing" "$(ur_val state)"
-expect_equal "and which version" "Installing snapit $UR_VERSION…" "$(ur_val headline)"
-expect_equal "Update and Relaunch is not offered while it installs" "close " "$(ur_buttons)"
+wait_until 10 ur_val_is state downloading
+expect_equal "the window says it is downloading" "downloading" "$(ur_val state)"
+expect_equal "and which version" "Downloading snapit $UR_VERSION…" "$(ur_val headline)"
+expect_equal "Update and Relaunch is not offered while it downloads, Cancel is" "cancel " "$(ur_buttons)"
 expect_equal "a second press does nothing" "error nothing to update" "$(send "$EDITOR_SOCK" "update-press update")"
 expect_equal "the installed copy is untouched until the swap" "$UR_BUILD_VERSION" "$(ur_version_of "$UR_DEST")"
 

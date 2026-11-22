@@ -18,6 +18,9 @@ protocol InstallEnvironment: AnyObject {
     /// download, the mounted disk image and the staged copy, which the swap then trades for
     /// `bundle`. The Update removes it, or the relaunched copy does.
     func makeUpdateStagingFolder(forBundleAt bundle: URL) throws -> URL
+    /// Returns when an Update may go on to swap. Immediately for the real system; the fixture can
+    /// park it, so a scripted run sees the Update window once the swap has begun.
+    func waitBeforeSwap() async
 }
 
 enum InstallEdge {
@@ -79,6 +82,8 @@ final class SystemInstallEnvironment: InstallEnvironment {
         try FileManager.default.url(
             for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: bundle, create: true)
     }
+
+    func waitBeforeSwap() async {}
 
     /// The volume stays busy while this process or its helper runs from it, so a detached shell
     /// ejects it after both have quit. Only a mounted disk image is ejected: `hdiutil info` must

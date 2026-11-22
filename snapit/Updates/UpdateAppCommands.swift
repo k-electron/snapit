@@ -6,7 +6,11 @@ nonisolated extension SocketCommand {
     /// percent-encoded, so notes may hold spaces and lines). The link is only there to be ignored. `update-script raw <status> [<body>]`:
     /// that status and that body, whatever it is. `update-script offline`, `update-script timeout`:
     /// the failures. `update-script hold on|off`: while on, a request waits to be answered, so a run
-    /// can see a check in progress. A release's files (`snapit-X.Y.Z.dmg` and its `.sha256`) are
+    /// can see a check in progress. `update-script hold-download <percent>|off`: a download of a
+    /// release's file stops once that share of it has arrived (the Update window shows the progress;
+    /// the same command with another share moves it) until `off`, or until the Update is cancelled.
+    /// `update-script hold-swap on|off`: while on, an Update waits just after the swap has begun
+    /// (the work in progress cancelled) and before the bundle is swapped. A release's files (`snapit-X.Y.Z.dmg` and its `.sha256`) are
     /// served from `<root>/update-assets/` while the script is a release or raw answer; offline and
     /// timeout fail them too. Test mode only.
     static let updateScript = SocketCommand("update-script")
@@ -24,9 +28,12 @@ nonisolated extension SocketCommand {
 }
 
 extension SocketCommandRegistry {
-    /// What the Editor helper's update window asks of the menu bar app: the check itself.
+    /// What the Editor helper's update window asks of the menu bar app: the check, the Update, how
+    /// far it has got and ending it.
     func registerUpdateAppCommands() {
         register(.checkForUpdates) { _ in await UpdateCheck.run().wire }
+        register(.updateStatus) { _ in UpdateInstall.progress.wire }
+        register(.cancelUpdate) { _ in await UpdateInstall.cancel() }
         register(.installUpdate) { request in
             await UpdateInstall.run(announcing: request.arguments.first ?? "")
         }
@@ -69,8 +76,18 @@ extension SocketCommandRegistry {
         case "timeout": endpoint.script = .timeout
         case "hold" where arguments.count == 2 && (arguments[1] == "on" || arguments[1] == "off"):
             endpoint.hold(arguments[1] == "on")
+        case "hold-download" where arguments.count == 2:
+            if arguments[1] == "off" {
+                endpoint.holdDownload(nil)
+            } else if let share = Int(arguments[1]), (0...100).contains(share) {
+                endpoint.holdDownload(share)
+            } else {
+                return "error update-script hold-download <percent>|off"
+            }
+        case "hold-swap" where arguments.count == 2 && (arguments[1] == "on" || arguments[1] == "off"):
+            FixtureInstallEnvironment.shared.holdSwap(arguments[1] == "on")
         default:
-            return "error update-script release <tag> <html_url> <notes> [draft|prerelease] | raw <status> [<body>] | offline | timeout | hold on|off"
+            return "error update-script release <tag> <html_url> <notes> [draft|prerelease] | raw <status> [<body>] | offline | timeout | hold on|off | hold-download <percent>|off | hold-swap on|off"
         }
         return "ok"
     }

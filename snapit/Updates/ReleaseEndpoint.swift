@@ -82,8 +82,12 @@ nonisolated enum ReleaseEndpointError: Error, Sendable {
 protocol ReleaseEndpoint {
     func fetch(_ request: ReleaseRequest) async throws -> ReleaseResponse
     /// Downloads the response body into the file at `destination` (which must not exist yet) and
-    /// returns the HTTP status. Only a 200 leaves a file there.
-    func download(_ request: ReleaseRequest, to destination: URL) async throws -> Int
+    /// returns the HTTP status. Only a 200 leaves a file there. `progress` hears how many bytes have
+    /// arrived and the size the response announced (nil when it announced none), from any thread.
+    /// Cancelling the calling task stops the transfer at once and throws `CancellationError`.
+    func download(
+        _ request: ReleaseRequest, to destination: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws -> Int
 }
 
 @MainActor

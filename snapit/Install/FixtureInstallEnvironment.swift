@@ -49,6 +49,21 @@ final class FixtureInstallEnvironment: InstallEnvironment {
         return folder
     }
 
+    private let swapGate = FixtureGate()
+    private var swapHeld = false
+
+    /// `update-script hold-swap on|off`: while on, an Update waits just before its swap.
+    func holdSwap(_ on: Bool) {
+        swapHeld = on
+        if !on { swapGate.release() }
+    }
+
+    func waitBeforeSwap() async {
+        while swapHeld {
+            do { try await swapGate.wait() } catch { return }
+        }
+    }
+
     func scheduleEject(mountPoint: String) {
         guard let marker = ejectedMarker else { return }
         let line = Data((mountPoint + "\n").utf8)
