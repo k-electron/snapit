@@ -11,4 +11,11 @@ nonisolated extension SocketCommand {
     /// The helper asks the menu bar app to check: the one request snapit sends, to GitHub's latest
     /// release. Replies with an `UpdateAnswer`'s wire form once GitHub has answered or failed.
     static let checkForUpdates = SocketCommand("check-for-updates")
+    /// `install-update <version>`: the helper asks the menu bar app to run the Update to the release
+    /// its window announced (`<version>` is the `X.Y.Z` the window shows; the menu bar app installs
+    /// only the release its own check announced, and refuses any other). The reply comes when the
+    /// new copy has been started, or when the Update stopped: `ok`, or `error <why>` with the
+    /// installed copy as it was. A successful Update quits the helper before the reply goes out, so
+    /// the helper may never hear it.
+    static let installUpdate = SocketCommand("install-update")
 }

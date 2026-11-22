@@ -6,14 +6,17 @@ nonisolated extension SocketCommand {
     /// percent-encoded, so notes may hold spaces and lines). The link is only there to be ignored. `update-script raw <status> [<body>]`:
     /// that status and that body, whatever it is. `update-script offline`, `update-script timeout`:
     /// the failures. `update-script hold on|off`: while on, a request waits to be answered, so a run
-    /// can see a check in progress. Test mode only.
+    /// can see a check in progress. A release's files (`snapit-X.Y.Z.dmg` and its `.sha256`) are
+    /// served from `<root>/update-assets/` while the script is a release or raw answer; offline and
+    /// timeout fail them too. Test mode only.
     static let updateScript = SocketCommand("update-script")
     /// How many requests the check has sent (to the fixture endpoint). Test mode only.
     static let updateRequests = SocketCommand("update-requests")
     /// `update-installed-version <x.y.z>|reset`: pretend another bundle version. Test mode only.
     static let updateInstalledVersion = SocketCommand("update-installed-version")
-    /// `update-redirect <url>`: whether the real endpoint would follow a redirect of its request to
-    /// that address: `follow` or `refuse`. Test mode only.
+    /// `update-redirect [asset] <url>`: whether the real endpoint would follow a redirect of its
+    /// request (of a release file's download, with `asset`) to that address: `follow` or `refuse`.
+    /// Test mode only.
     static let updateRedirect = SocketCommand("update-redirect")
     /// `update-compare <a> <b>`: how version `a` compares with `b` through `ReleaseVersion`:
     /// `newer`, `same`, `older`, or `invalid a`, `invalid b`. Test mode only.
@@ -24,6 +27,9 @@ extension SocketCommandRegistry {
     /// What the Editor helper's update window asks of the menu bar app: the check itself.
     func registerUpdateAppCommands() {
         register(.checkForUpdates) { _ in await UpdateCheck.run().wire }
+        register(.installUpdate) { request in
+            await UpdateInstall.run(announcing: request.arguments.first ?? "")
+        }
         guard TestMode.isActive else { return }
         register(.updateScript) { request in Self.script(request.arguments) }
         register(.updateRequests) { _ in String(FixtureReleaseEndpoint.shared.requestCount) }
@@ -33,8 +39,12 @@ extension SocketCommandRegistry {
             return "ok"
         }
         register(.updateRedirect) { request in
-            guard let text = request.arguments.first, let url = URL(string: text) else { return "error update-redirect <url>" }
-            return ReleaseRequest.latest.allowsRedirect(to: url) ? "follow" : "refuse"
+            let isAsset = request.arguments.first == "asset"
+            guard let text = request.arguments.dropFirst(isAsset ? 1 : 0).first, let url = URL(string: text) else {
+                return "error update-redirect [asset] <url>"
+            }
+            let source = isAsset ? ReleaseRequest.asset(tag: "v1.0.0", name: "snapit-1.0.0.dmg") : ReleaseRequest.latest
+            return source?.allowsRedirect(to: url) == true ? "follow" : "refuse"
         }
         register(.updateCompare) { request in
             guard request.arguments.count == 2 else { return "error update-compare <a> <b>" }

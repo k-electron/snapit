@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The update window: "Checking for updates…", then the new version with its release notes and a
-/// Download button, or one line (up to date, GitHub not reached). One window for the whole
+/// The update window: "Checking for updates…", then the new version with its release notes and the
+/// Update and Relaunch button (and a Release Page link), or one line (up to date, GitHub not reached). One window for the whole
 /// helper: asking again while it is open brings it forward. It is a helper window like Settings:
 /// it goes through `HelperLifecycle`, and the helper quits when it closes (unless another window
 /// is open).
@@ -80,13 +80,24 @@ struct UpdateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if model.isInstalling {
+                ProgressView()
+                    .controlSize(.small)
+            }
             HStack(spacing: 10) {
                 ForEach(model.buttons, id: \.id) { spec in
-                    if spec.id == model.downloadButton.id {
-                        Button(action: { model.download() }) { label(spec.title) }
+                    if spec.id == model.updateButton.id {
+                        Button(action: { model.update() }) { label(spec.title) }
                             .windowButton(prominent: true)
                             .help(spec.tooltip)
                             .keyboardShortcut(.defaultAction)
+                    } else if spec.id == model.releasePageButton.id {
+                        Button(action: { model.openReleasePage() }) {
+                            Text(spec.title).frame(minWidth: 70)
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .help(spec.tooltip)
                     } else {
                         Button(action: { model.close() }) { label(spec.title) }
                             .windowButton(prominent: false)

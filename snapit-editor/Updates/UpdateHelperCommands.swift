@@ -2,11 +2,12 @@ import AppKit
 
 nonisolated extension SocketCommand {
     /// Facts about the update window, one `key=value` line each: `window`, `title`, `activation`,
-    /// `state` (`checking`, `newer`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`,
+    /// `state` (`checking`, `newer`, `installing`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`,
     /// `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`; then one `notes-block <kind>|<text>` line per block of the
     /// rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test mode only.
     static let updateFacts = SocketCommand("update-facts")
-    /// `update-press download|close`: presses a button of the update window. Test mode only.
+    /// `update-press update|release-page|close`: presses a button of the update window. `update`
+    /// replies at once, while the Update goes on. Test mode only.
     static let updatePress = SocketCommand("update-press")
     /// `update-snapshot <png path>`: renders the window's view to a PNG inside the run's root. Test
     /// mode only.
@@ -26,11 +27,14 @@ extension SocketCommandRegistry {
         register(.updatePress) { request in
             guard let model = UpdateWindow.shared?.model else { return "error no update window" }
             switch request.arguments.first {
-            case "download":
-                guard model.downloadURL != nil else { return "error nothing to download" }
-                model.download()
+            case "update":
+                guard model.buttons.contains(where: { $0.id == model.updateButton.id }) else { return "error nothing to update" }
+                model.update()
+            case "release-page":
+                guard model.releasePageURL != nil else { return "error no release page" }
+                model.openReleasePage()
             case "close": model.close()
-            default: return "error update-press download|close"
+            default: return "error update-press update|release-page|close"
             }
             return "ok"
         }
@@ -66,7 +70,7 @@ enum UpdateFacts {
             "headline=\(model.headline)",
             "detail=\(model.detail ?? "")",
             "reminder=\(model.reminder ?? "")",
-            "url=\(model.downloadURL?.absoluteString ?? "")",
+            "url=\(model.releasePageURL?.absoluteString ?? "")",
             "notes=\(encoded(model.notes ?? ""))",
         ]
         lines.append("notes-bytes=\((model.notes ?? "").utf8.count)")

@@ -7,6 +7,9 @@ import Foundation
 @MainActor
 enum UpdateCheck {
     private static var running: Task<UpdateAnswer, Never>?
+    /// The release the latest check announced as newer; nil when it found none. An Update installs
+    /// this one.
+    private(set) static var announced: AnnouncedRelease?
 
     static func run() async -> UpdateAnswer {
         if let running { return await running.value }
@@ -20,7 +23,9 @@ enum UpdateCheck {
             } catch {
                 result = .failure(.offline)
             }
-            return UpdateAnswers.answer(for: result, installed: installed)
+            let decision = UpdateAnswers.decide(for: result, installed: installed)
+            announced = decision.announced
+            return decision.answer
         }
         running = task
         let answer = await task.value

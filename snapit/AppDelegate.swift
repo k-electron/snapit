@@ -16,8 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             commandServer = server
-            // Capture files left by a crashed run are of no use to anyone.
-            CaptureHandoff.removeAll()
+            // Capture files left by a crashed run are of no use to anyone. The copy an Update
+            // relaunched is the exception: it takes the old copy's Last Capture over.
+            if let handoff = UpdateHandoff(arguments: CommandLine.arguments) {
+                CaptureHandoff.adopt(lastCapture: handoff.lastCapture)
+                handoff.removeLeftovers()
+            } else {
+                CaptureHandoff.removeAll()
+            }
             ExportFiles.removeAll()
             // Only the copy that owns the menu bar listens for Shortcuts.
             ShortcutBindings.registerAll()
@@ -100,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CommandSocketClient.sendBeforeExit(.quit, to: AppIdentity.editorSocketPath)
         }
         AppPasteboard.releaseIfPrivate()
-        CaptureHandoff.removeAll()
+        CaptureHandoff.removeAllAtQuit()
         ExportFiles.removeAll()
         commandServer?.stop()
     }

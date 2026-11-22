@@ -13,4 +13,9 @@ nonisolated extension SocketCommand {
     /// `delete-capture <N>`: the helper tells the menu bar app the user deleted Capture N, so it
     /// removes the Capture file. Replies `ok`.
     static let deleteCapture = SocketCommand("delete-capture")
+    /// `save-last-capture`: the menu bar app tells the Editor helper to write the Last Capture's
+    /// state file now, instead of when its short delay is up. An Update sends it just before it
+    /// quits the helper, so an Annotation drawn a moment ago is in the file the new copy reopens.
+    /// Replies `ok`.
+    static let saveLastCapture = SocketCommand("save-last-capture")
 }

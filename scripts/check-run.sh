@@ -45,6 +45,7 @@ cleanup() {
   pkill -f "$APP/Contents/" 2>/dev/null
   # Copies a flow relaunched from the run's fixture Applications folder.
   pkill -f "$(basename "$RUN_ROOT")/Applications/" 2>/dev/null
+  detach_update_images
   unregister_fixture_apps
   chflags -R nouchg "$RUN_ROOT" 2>/dev/null
   chmod -R u+w "$RUN_ROOT" 2>/dev/null

@@ -9,6 +9,8 @@ final class UpdateModel {
     enum State: Equatable {
         case checking
         case answered(UpdateAnswer)
+        /// An Update is running to the newer release this answer announced.
+        case installing(UpdateAnswer)
 
         var name: String {
             switch self {
@@ -16,6 +18,7 @@ final class UpdateModel {
             case .answered(.newer): "newer"
             case .answered(.upToDate): "up-to-date"
             case .answered(.unreachable): "unreachable"
+            case .installing: "installing"
             }
         }
     }
@@ -27,13 +30,14 @@ final class UpdateModel {
     /// The release notes, parsed once when the answer arrives.
     private(set) var blocks: [NotesBlock] = []
 
-    /// Called when the user chooses Download or Close.
+    /// Called when the user chooses Release Page or Close.
     var onClose: () -> Void = {}
 
     /// Starts a check: the window says it is checking, the menu bar app makes the one request and
     /// the answer replaces the line. A check already running is left alone: one click, one request.
+    /// An Update that is running is left alone too.
     func check() {
-        guard checkTask == nil else { return }
+        guard checkTask == nil, !isInstalling else { return }
         state = .checking
         checkTask = Task {
             let reply = try? await CommandSocketClient.send(
@@ -47,6 +51,11 @@ final class UpdateModel {
 
     var isChecking: Bool { state == .checking }
 
+    var isInstalling: Bool {
+        if case .installing = state { return true }
+        return false
+    }
+
     // MARK: Words
 
     let title = "Check for Updates"
@@ -56,6 +65,8 @@ final class UpdateModel {
         switch state {
         case .checking: "Checking for updates…"
         case .answered(.newer(_, let version, _, _)): "snapit \(version) is available."
+        case .installing(.newer(_, let version, _, _)): "Installing snapit \(version)…"
+        case .installing: "Installing…"
         case .answered(.upToDate(let installed)): "snapit \(installed) is up to date."
         case .answered(.unreachable(let reason)):
             switch reason {
@@ -81,32 +92,55 @@ final class UpdateModel {
         return notes
     }
 
-    /// Only a newer release carries it: after updating, macOS blocks the new snapit again and its
-    /// Screen Recording switch is off.
+    /// Only a newer release carries it: after an Update, macOS has not been given Screen Recording
+    /// for the new snapit yet.
     var reminder: String? {
         guard case .answered(.newer) = state else { return nil }
-        return "After updating, you need Open Anyway and Screen Recording again: open the new snapit, click Open Anyway in System Settings › Privacy & Security, then turn Screen Recording back on for snapit."
+        return "After updating, turn Screen Recording back on for snapit: the new snapit asks for it."
     }
 
-    var downloadURL: URL? {
+    /// The release page of the newer release the window announces.
+    var releasePageURL: URL? {
         guard case .answered(.newer(_, _, let url, _)) = state else { return nil }
         return URL(string: url)
     }
 
-    let downloadButton = HelperButton(
-        id: "download", title: "Download", tooltip: "Open this release's page on GitHub in your browser")
+    let updateButton = HelperButton(
+        id: "update", title: "Update and Relaunch",
+        tooltip: "Install this version of snapit and relaunch it")
+    let releasePageButton = HelperButton(
+        id: "release-page", title: "Release Page", tooltip: "Open this release's page on GitHub in your browser")
     let closeButton = HelperButton(id: "close", title: "Close", tooltip: "Close this window")
 
     var buttons: [HelperButton] {
         switch state {
-        case .answered(.newer): [closeButton, downloadButton]
+        case .answered(.newer): [closeButton, releasePageButton, updateButton]
         default: [closeButton]
         }
     }
 
+    /// Starts the Update: the menu bar app downloads the release, checks it, swaps it in and
+    /// relaunches snapit. The window shows it is installing meanwhile. A successful Update quits
+    /// this helper, so the request never comes back; one that comes back says the Update stopped,
+    /// and the window offers the newer release again.
+    func update() {
+        guard case .answered(let answer) = state, case .newer(_, let version, _, _) = answer, installTask == nil else {
+            return
+        }
+        state = .installing(answer)
+        installTask = Task {
+            let reply = try? await CommandSocketClient.send(
+                .installUpdate, arguments: [version], to: AppIdentity.appSocketPath, timeoutSeconds: 1200)
+            if reply != "ok" { state = .answered(answer) }
+            installTask = nil
+        }
+    }
+
+    private var installTask: Task<Void, Never>?
+
     /// Opens the release page in the browser and closes the window.
-    func download() {
-        guard let url = downloadURL else { return }
+    func openReleasePage() {
+        guard let url = releasePageURL else { return }
         BrowserLinks.open(url)
         onClose()
     }
