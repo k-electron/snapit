@@ -172,8 +172,15 @@ final class PermissionGuideModel: GuideContent {
         case nil: "Screen Recording"
         case .granted: "Screen Recording is on"
         case .grantedNeedsRelaunch: "Relaunch snapit to start using Screen Recording"
-        default: isUpdate ? "snapit needs Screen Recording turned back on" : "Turn on Screen Recording for snapit"
+        default: isUpdate ? "\(updatedTo) and needs Screen Recording turned back on" : "Turn on Screen Recording for snapit"
         }
+    }
+
+    /// "snapit was updated to X.Y.Z": the version of the bundle that is running, so it holds for an
+    /// Update and for a newer version installed by hand. Nothing about it is stored.
+    private var updatedTo: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "a newer version"
+        return "snapit was updated to \(version)"
     }
 
     var message: String {
@@ -183,12 +190,12 @@ final class PermissionGuideModel: GuideContent {
             return "Screen Recording is on for snapit, and macOS lets snapit use it from its next launch on. Choose Relaunch snapit."
         }
         if let failure = resetFailure {
-            return "snapit could not clear its old Screen Recording entry (\(failure)). Open System Settings, select snapit in the Screen Recording list, press − to remove it, then choose Relaunch snapit and allow Screen Recording when macOS asks."
+            return (isUpdate ? "\(updatedTo). " : "") + "snapit could not clear its old Screen Recording entry (\(failure)). Open System Settings, select snapit in the Screen Recording list, press − to remove it, then choose Relaunch snapit and allow Screen Recording when macOS asks."
         }
         if turnedOff {
             return "Screen Recording is off for snapit. Turn snapit on in System Settings, then choose Quit & Reopen."
         }
-        let update = isUpdate ? "Each update needs Screen Recording again. snapit cleared its old entry and asked macOS afresh. " : ""
+        let update = isUpdate ? "\(updatedTo). Each update needs Screen Recording again. snapit cleared its old entry and asked macOS afresh. " : ""
         switch variant {
         case .prompt:
             return update
