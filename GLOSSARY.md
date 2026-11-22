@@ -87,8 +87,12 @@ _Avoid_: Permission screen, permission prompt, setup step
 The help that walks through every flow the user can take. One text, read inside snapit and on GitHub; only the GitHub copy shows screenshots.
 _Avoid_: Manual, docs, help pages, README
 
+**Update**:
+Replacing snapit with a newer release from inside snapit, then relaunching it. Started only by Update and Relaunch in the **Update window**.
+_Avoid_: Upgrade, self-update, auto-update
+
 **Update window**:
-The window Check for Updates opens when a newer version exists. It shows the release notes and a Download button that opens the release page, and reminds the user that Open Anyway and Screen Recording are needed again after updating.
+The window Check for Updates opens when a newer version exists. It shows the release notes, an Update and Relaunch button that starts an **Update**, and a link to the release page.
 _Avoid_: Update dialog, update prompt
 
 **Shortcut**:
