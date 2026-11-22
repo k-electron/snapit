@@ -2,7 +2,7 @@ import AppKit
 
 nonisolated extension SocketCommand {
     /// Facts about the update window, one `key=value` line each: `window`, `title`, `activation`,
-    /// `state` (`checking`, `newer`, `installing`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`,
+    /// `state` (`checking`, `newer`, `cannot-install`, `installing`, `failed`, `up-to-date`, `unreachable`), `headline`, `detail`, `notice` (why the Update stopped, or "Move snapit to Applications to update it here"), `reminder`,
     /// `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`; then one `notes-block <kind>|<text>` line per block of the
     /// rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test mode only.
     static let updateFacts = SocketCommand("update-facts")
@@ -66,9 +66,10 @@ enum UpdateFacts {
             "window=\(window.isVisible ? "visible" : "hidden")",
             "title=\(window.title)",
             "activation=\(NSApp.activationPolicy() == .regular ? "regular" : "accessory")",
-            "state=\(model.state.name)",
+            "state=\(model.stateName)",
             "headline=\(model.headline)",
             "detail=\(model.detail ?? "")",
+            "notice=\(model.notice ?? "")",
             "reminder=\(model.reminder ?? "")",
             "url=\(model.releasePageURL?.absoluteString ?? "")",
             "notes=\(encoded(model.notes ?? ""))",

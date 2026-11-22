@@ -7,7 +7,9 @@ import Foundation
 /// 1. Download the release's `snapit-X.Y.Z.dmg` and `snapit-X.Y.Z.dmg.sha256` into a staging folder
 ///    on the volume the installed copy is on.
 /// 2. Check the disk image against the published SHA-256, attach it read-only and hidden, copy
-///    `snapit.app` out of it, detach it, and clear any quarantine on the copy.
+///    `snapit.app` out of it, detach it, and clear any quarantine on the copy. The copy must have
+///    snapit's bundle identifier, the announced version and a signature that passes a strict check,
+///    nested code included (`BundleCheck`).
 /// 3. Swap the staged copy in at the installed copy's path, while snapit and the helper still run.
 ///    Nothing before this step touches the installed copy, so a failure up to here leaves it as it
 ///    was, and the staging folder is removed.
@@ -19,6 +21,8 @@ enum UpdateInstall {
         /// The Update window announced a version this copy does not know of, or none.
         case notAnnounced
         case alreadyRunning
+        /// This copy runs from a disk image or from a folder it cannot write to.
+        case notHere
         case staging(String)
         case network(ReleaseEndpointError)
         case status(Int)
@@ -26,6 +30,7 @@ enum UpdateInstall {
         case hashMismatch
         case diskImage(String)
         case quarantineRemains
+        case bundle(BundleCheck.Failure)
 
         /// One word for the cause, which the reply of `install-update` leads with; the Update window
         /// words each one for the user.
@@ -33,13 +38,19 @@ enum UpdateInstall {
             switch self {
             case .notAnnounced: "not-announced"
             case .alreadyRunning: "already-running"
+            case .notHere: UpdateFailure.notHere.rawValue
             case .staging: "staging"
-            case .network: "network"
+            case .network(.offline): UpdateFailure.offline.rawValue
+            case .network(.timeout): UpdateFailure.timeout.rawValue
+            case .network(.cannotSave): "cannot-save"
             case .status: "status"
             case .notAHash: "not-a-hash"
-            case .hashMismatch: "hash-mismatch"
-            case .diskImage: "disk-image"
+            case .hashMismatch: UpdateFailure.hashMismatch.rawValue
+            case .diskImage: UpdateFailure.diskImage.rawValue
             case .quarantineRemains: "quarantine"
+            case .bundle(.identifier): UpdateFailure.wrongIdentifier.rawValue
+            case .bundle(.version): UpdateFailure.wrongVersion.rawValue
+            case .bundle(.signature): UpdateFailure.badSignature.rawValue
             }
         }
 
@@ -47,6 +58,7 @@ enum UpdateInstall {
             switch self {
             case .notAnnounced: "no newer release was announced"
             case .alreadyRunning: "an Update is already running"
+            case .notHere: "snapit cannot update itself where it runs"
             case .staging(let reason): "snapit could not make room to update: \(reason)"
             case .network(let error): "GitHub could not be reached (\(error))"
             case .status(let code): "GitHub answered \(code)"
@@ -54,6 +66,7 @@ enum UpdateInstall {
             case .hashMismatch: "the download does not match the release's hash"
             case .diskImage(let reason): reason
             case .quarantineRemains: "snapit could not clear quarantine from the new copy"
+            case .bundle(let failure): "\(failure)"
             }
         }
     }
@@ -64,6 +77,7 @@ enum UpdateInstall {
     /// one quits a moment later), or `error <cause> <description>` with the installed copy as it was.
     static func run(announcing version: String, environment: any InstallEnvironment = InstallEdge.current) async -> String {
         guard !isRunning else { return failureReply(Failure.alreadyRunning) }
+        guard canInstall(in: environment) else { return failureReply(Failure.notHere) }
         isRunning = true
         defer { isRunning = false }
         let bundle = URL(fileURLWithPath: environment.bundlePath, isDirectory: true)
@@ -79,8 +93,19 @@ enum UpdateInstall {
         if reply != "ok" {
             NSLog("snapit: Update swapped the new copy in but could not relaunch: \(reply)")
             try? FileManager.default.removeItem(at: staging)
+            return "error relaunch \(reply)"
         }
         return reply
+    }
+
+    /// Whether this copy can replace itself where it runs. Not from a mounted disk image or a
+    /// translocated path, and not from a folder it cannot write to: the swap and its staging both
+    /// need that folder, and snapit never asks for an administrator's password to get at it.
+    static func canInstall(in environment: any InstallEnvironment = InstallEdge.current) -> Bool {
+        let location = InstallCheck.location(environment: environment)
+        guard !location.onDiskImage, !location.translocated else { return false }
+        let folder = URL(fileURLWithPath: environment.bundlePath).deletingLastPathComponent()
+        return FileManager.default.isWritableFile(atPath: folder.path)
     }
 
     /// `error <cause> <description>`: the cause is one word (`Failure.code`, `swap` for a swap that
@@ -108,7 +133,10 @@ enum UpdateInstall {
             let image = staging.appendingPathComponent(release.diskImageName)
             let staged = staging.appendingPathComponent("snapit.app", isDirectory: true)
             try await download(imageRequest, hashRequest, to: image)
-            try await Task.detached { try extractApp(from: image, to: staged, in: staging) }.value
+            let identifier = AppIdentity.mainBundleIdentifier
+            try await Task.detached {
+                try extractApp(from: image, to: staged, in: staging, identifier: identifier, version: version)
+            }.value
             try BundleSwap.swap(staged: staged, intoPlaceOf: bundle)
             return staging
         } catch {
@@ -137,9 +165,12 @@ enum UpdateInstall {
         guard actual == published else { throw Failure.hashMismatch }
     }
 
-    /// Copies `snapit.app` out of the disk image into `staged`, clears quarantine on the copy and
-    /// deletes the image. Blocks, so it runs off the main actor.
-    private nonisolated static func extractApp(from image: URL, to staged: URL, in staging: URL) throws {
+    /// Copies `snapit.app` out of the disk image into `staged`, clears quarantine on the copy,
+    /// deletes the image and checks the copy is the announced snapit. Blocks, so it runs off the
+    /// main actor.
+    private nonisolated static func extractApp(
+        from image: URL, to staged: URL, in staging: URL, identifier: String, version: String
+    ) throws {
         do {
             try DiskImage.copyApp(from: image, to: staged, mountingAt: staging.appendingPathComponent("volume", isDirectory: true))
         } catch let failure as DiskImage.Failure {
@@ -148,5 +179,10 @@ enum UpdateInstall {
         Quarantine.strip(under: staged)
         guard Quarantine.flaggedCount(under: staged) == 0 else { throw Failure.quarantineRemains }
         try? FileManager.default.removeItem(at: image)
+        do {
+            try BundleCheck.verify(staged, identifier: identifier, version: version)
+        } catch let failure as BundleCheck.Failure {
+            throw Failure.bundle(failure)
+        }
     }
 }
