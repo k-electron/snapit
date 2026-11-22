@@ -17,6 +17,8 @@ final class FixtureReleaseEndpoint: ReleaseEndpoint {
     }
 
     var script = Script.offline
+    /// When set, a download of a file writes part of it and then fails with this.
+    var downloadFailure: ReleaseEndpointError?
     private(set) var requestCount = 0
     private var held = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
@@ -42,6 +44,12 @@ final class FixtureReleaseEndpoint: ReleaseEndpoint {
         switch script {
         case .response:
             guard let file = assetFile(for: request), FileManager.default.fileExists(atPath: file.path) else { return 404 }
+            if let failure = downloadFailure {
+                // A connection that drops half-way leaves what arrived.
+                let part = (try? Data(contentsOf: file)).map { $0.prefix(max($0.count / 2, 1)) }
+                try? part?.write(to: destination)
+                throw failure
+            }
             do {
                 try FileManager.default.copyItem(at: file, to: destination)
             } catch {

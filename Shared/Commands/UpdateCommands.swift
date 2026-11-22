@@ -18,4 +18,8 @@ nonisolated extension SocketCommand {
     /// (the cause is one word) with the installed copy as it was. A successful Update quits the helper before the reply goes out, so
     /// the helper may never hear it.
     static let installUpdate = SocketCommand("install-update")
+    /// The helper asks the menu bar app whether this copy can update itself where it runs: `yes`, or
+    /// `no` on a disk image or in a folder snapit cannot write to (the window then says "Move snapit
+    /// to Applications to update it here" in place of Update and Relaunch).
+    static let updateCanInstall = SocketCommand("update-can-install")
 }
