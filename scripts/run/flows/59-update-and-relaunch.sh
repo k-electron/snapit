@@ -106,10 +106,12 @@ expect_equal "and offers Close, Release Page and Update and Relaunch" "close rel
 expect_equal "Check for Updates sent one request" "$((REQUESTS_AT_START + 1))" "$(ur_requests)"
 
 # 3. With none of the release's files there, Update and Relaunch stops at the first request. The
-#    installed copy is as it was, nothing is left, and the window offers the Update again.
+#    installed copy is as it was, nothing is left, and the window says the Update stopped and
+#    offers it again (flow 60 covers each way an Update stops).
 expect_equal "Update and Relaunch answers at once" "ok" "$(send "$EDITOR_SOCK" "update-press update")"
-wait_until 20 ur_val_is state newer
-expect_equal "the window offers the newer release again" "newer" "$(ur_val state)"
+wait_until 20 ur_val_is state failed
+expect_equal "the window says the Update stopped" "failed" "$(ur_val state)"
+expect_equal "and offers Update and Relaunch again" "close release-page update " "$(ur_buttons)"
 expect_equal "the Update asked for the hash and went no further" "$((REQUESTS_AT_START + 2))" "$(ur_requests)"
 expect_equal "the installed copy is as it was" "$UR_BUILD_VERSION" "$(ur_version_of "$UR_DEST")"
 expect_equal "nothing is left in Applications" "snapit.app" "$(ls -A "$UR_APPS")"

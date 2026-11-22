@@ -97,7 +97,7 @@ uf_expect_untouched() {
   if cmp -s "$APP/Contents/MacOS/snapit" "$UF_DEST/Contents/MacOS/snapit"; then pass "$1: the installed copy's program is as it was"; else fail "$1: the installed copy's program changed"; fi
   expect_equal "$1: Applications holds the installed copy and nothing else" "snapit.app" "$(ls -A "$UF_APPS")"
   if [[ -e "$UF_STAGING" ]]; then fail "$1: a staging folder is left: $(ls -A "$UF_STAGING" | tr '\n' ' ')"; else pass "$1: no staging folder is left"; fi
-  if find "$RUN_ROOT" -name '*.dmg' -not -path "$UF_ASSETS/*" 2>/dev/null | grep -q .; then fail "$1: a downloaded disk image is left"; else pass "$1: no downloaded disk image is left"; fi
+  if find "$RUN_ROOT" -name '*.dmg' -not -path "$UF_ASSETS/*" -not -path "$UF_BUILT/*" 2>/dev/null | grep -q .; then fail "$1: a downloaded disk image is left"; else pass "$1: no downloaded disk image is left"; fi
   expect_equal "$1: no disk image is attached" "0" "$(uf_attached)"
   expect_equal "$1: nothing is mounted for the Update" "0" "$(mount | grep -c "update-staging")"
   if kill -0 "$APP_PID" 2>/dev/null && answers "$APP_SOCK"; then pass "$1: snapit keeps running"; else fail "$1: snapit stopped"; fi
