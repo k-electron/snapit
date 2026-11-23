@@ -133,7 +133,7 @@ expect_equal "Update and Relaunch answers at once again" "ok" "$(send "$EDITOR_S
 if wait_until 10 ur_requests_are "$((UR_REQUESTS_BEFORE + 1))"; then pass "the Update asks for the release's hash"; else fail "the Update sent no request (requests: $(ur_requests))"; fi
 wait_until 10 ur_val_is state downloading
 expect_equal "the window says it is downloading" "downloading" "$(ur_val state)"
-expect_equal "and which version" "Downloading snapit $UR_VERSION…" "$(ur_val headline)"
+expect_equal "and which version" "Downloading snapit ${UR_VERSION}…" "$(ur_val headline)"
 expect_equal "Update and Relaunch is not offered while it downloads, Cancel is" "cancel " "$(ur_buttons)"
 expect_equal "a second press does nothing" "error nothing to update" "$(send "$EDITOR_SOCK" "update-press update")"
 expect_equal "the installed copy is untouched until the swap" "$UR_BUILD_VERSION" "$(ur_version_of "$UR_DEST")"

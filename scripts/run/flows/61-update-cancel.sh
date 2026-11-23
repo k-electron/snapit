@@ -125,7 +125,7 @@ send "$APP_SOCK" "update-script hold-download 40" >/dev/null
 expect_equal "Update and Relaunch answers at once" "ok" "$(send "$EDITOR_SOCK" "update-press update")"
 if wait_until 30 uc_val_is progress-percent 40; then pass "the window shows the download 40 per cent done"; else fail "no progress in the window (state '$(uc_val state)', progress '$(uc_val progress)')"; fi
 expect_equal "the window reports downloading" "downloading" "$(uc_val state)"
-expect_equal "and which version" "Downloading snapit $UC_VERSION…" "$(uc_val headline)"
+expect_equal "and which version" "Downloading snapit ${UC_VERSION}…" "$(uc_val headline)"
 expect_equal "Cancel is the button" "cancel " "$(uc_buttons)"
 expect_equal "Cancel is enabled" "enabled" "$(uc_val cancel)"
 expect_equal "and so is the close button" "enabled" "$(uc_val close-button)"
@@ -270,7 +270,7 @@ send "$APP_SOCK" "update-script hold-download off" >/dev/null
 if wait_until 60 uc_val_is cancel disabled; then pass "the swap has begun: Cancel is disabled"; else fail "the swap did not begin (state '$(uc_val state)', progress '$(uc_val progress)', status '$(uc_status)')"; fi
 expect_equal "the swap began without asking again: B is as Discard left it" "none" "$(uc_prompt)"
 expect_equal "the window says it is installing" "installing" "$(uc_val state)"
-expect_equal "and which version" "Installing snapit $UC_VERSION…" "$(uc_val headline)"
+expect_equal "and which version" "Installing snapit ${UC_VERSION}…" "$(uc_val headline)"
 expect_equal "the title bar's close button is disabled" "disabled" "$(uc_val close-button)"
 expect_equal "the menu bar app says it is swapping" "swapping" "$(uc_status)"
 expect_equal "the Cancel button is refused" "error nothing to cancel" "$(send "$EDITOR_SOCK" "update-press cancel")"
