@@ -248,13 +248,15 @@ expect_equal "Update and Relaunch answers" "ok" "$(send "$EDITOR_SOCK" "update-p
 if wait_until 10 uc_prompt_shown; then pass "Quit's question is asked again, for B"; else fail "no question was asked ($(uc_prompt))"; fi
 expect_contains "it names the Editor that is no longer the Last Capture" "shown quit editor=$UC_B" "$(uc_prompt)"
 expect_equal "still nothing requested while it is up" "$REQ" "$(uc_requests)"
+send "$APP_SOCK" "update-script hold-download 30" >/dev/null
 send "$APP_SOCK" "update-script hold-swap on" >/dev/null
 send "$EDITOR_SOCK" "editor-prompt-answer discard" >/dev/null
 if wait_until 30 uc_val_is progress-percent 30; then pass "Discard goes on: the download starts"; else fail "no download after Discard (state '$(uc_val state)')"; fi
 expect_equal "the Update asked for the hash and the disk image" "$((REQ + 2))" "$(uc_requests)"
 expect_equal "Cancel is still offered during the download" "enabled" "$(uc_val cancel)"
 
-send "$APP_SOCK" "defaults-set timedCaptureSeconds 10" >/dev/null
+# The stored seconds are a number, which `timed-seconds-store` writes (`defaults-set` writes text, which counts as the default 3 s).
+send "$APP_SOCK" "timed-seconds-store 10" >/dev/null
 # A stored value that is not one of the two counts as the default: the Action bar, as in flow 43.
 send "$APP_SOCK" "defaults-set afterSelectingArea nonsense" >/dev/null
 UC_FRESH="$(uc_timed fresh-captures)"
@@ -288,7 +290,7 @@ expect_equal "no Capture is taken at zero" "$UC_FRESH" "$(uc_timed fresh-capture
 expect_equal "no Editor opened" "$UC_B $UC_C" "$(open_editors | tr '\n' ' ' | sed 's/ $//')"
 expect_equal "the window is still installing, Cancel still disabled" "disabled" "$(uc_val cancel)"
 expect_equal "and the close button too" "disabled" "$(uc_val close-button)"
-send "$APP_SOCK" "defaults-set timedCaptureSeconds ${TIMER_BEFORE:-3}" >/dev/null
+send "$APP_SOCK" "timed-seconds-store ${TIMER_BEFORE:-3}" >/dev/null
 
 # 8. Released: the swap, and the relaunch. B's edits are discarded with the old copy; the Last
 #    Capture, C, is carried over.
