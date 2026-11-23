@@ -37,7 +37,24 @@ extension EditorSessions {
     /// Quit's question: brings the first Editor with unexported edits forward and asks once for all
     /// of them. True when nothing is at risk, or the user chose to discard.
     func confirmQuit() async -> Bool {
-        let atRisk = editorsAtRisk()
+        await confirmQuit(except: [:])
+    }
+
+    /// What Quit's question was answered for: each Editor at risk now, as it is.
+    func agreedToLose() -> [Int: DocumentState] {
+        editorsAtRisk().reduce(into: [:]) { agreed, session in
+            if let document = session.document { agreed[document.captureNumber] = document.history.state }
+        }
+    }
+
+    /// Quit's question again, for the Editors at risk that are not in `agreed`, or are no longer as
+    /// they were in it: an Update asks it at the click, and again before it swaps, so a Capture is
+    /// never lost to edits or a newer Capture it did not ask about.
+    func confirmQuit(except agreed: [Int: DocumentState]) async -> Bool {
+        let atRisk = editorsAtRisk().filter { session in
+            guard let document = session.document else { return true }
+            return agreed[document.captureNumber] != document.history.state
+        }
         guard let first = atRisk.first else { return true }
         first.bringForward()
         return await EditorPrompts.shared.ask(.quit(count: atRisk.count), in: first)

@@ -19,28 +19,39 @@ nonisolated enum UpdateAnswers {
     static let notesByteLimit = 20_000
 
     static func answer(for result: Result<ReleaseResponse, ReleaseEndpointError>, installed: String) -> UpdateAnswer {
+        decide(for: result, installed: installed).answer
+    }
+
+    /// The answer, and for a newer release the release it announces: the one an Update installs.
+    static func decide(
+        for result: Result<ReleaseResponse, ReleaseEndpointError>, installed: String
+    ) -> (answer: UpdateAnswer, announced: AnnouncedRelease?) {
         let response: ReleaseResponse
         switch result {
-        case .failure(.offline): return .unreachable(.offline)
-        case .failure(.timeout): return .unreachable(.timeout)
+        case .failure(.offline), .failure(.cannotSave): return (.unreachable(.offline), nil)
+        case .failure(.timeout): return (.unreachable(.timeout), nil)
         case .success(let value): response = value
         }
         switch response.status {
         case 200: break
-        case 403, 429: return .unreachable(.rateLimit)
-        case 404: return .unreachable(.noRelease)
-        default: return .unreachable(.badResponse)
+        case 403, 429: return (.unreachable(.rateLimit), nil)
+        case 404: return (.unreachable(.noRelease), nil)
+        default: return (.unreachable(.badResponse), nil)
         }
         guard let release = try? JSONDecoder().decode(LatestRelease.self, from: response.body),
             let tag = release.tag_name, let version = ReleaseVersion(tag)
-        else { return .unreachable(.badResponse) }
+        else { return (.unreachable(.badResponse), nil) }
         // The endpoint never returns these; if it ever did, they are not an update.
-        if release.draft == true || release.prerelease == true { return .unreachable(.noRelease) }
-        guard let current = ReleaseVersion(installed) else { return .unreachable(.ownVersion) }
-        guard version > current else { return .upToDate(installed: current.description) }
-        return .newer(
-            installed: current.description, version: version.description,
-            downloadURL: releasePage(tag: tag), notes: notes(release.body))
+        if release.draft == true || release.prerelease == true { return (.unreachable(.noRelease), nil) }
+        guard let current = ReleaseVersion(installed) else { return (.unreachable(.ownVersion), nil) }
+        guard version > current else { return (.upToDate(installed: current.description), nil) }
+        let trimmedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (
+            .newer(
+                installed: current.description, version: version.description,
+                releasePage: releasePage(tag: tag), notes: notes(release.body)),
+            AnnouncedRelease(tag: trimmedTag, version: version.description)
+        )
     }
 
     /// The release page of a tag in snapit's repository. Built here from the tag that
@@ -74,7 +85,7 @@ nonisolated enum UpdateAnswers {
 }
 
 /// The fields of GitHub's release object that Check for Updates reads. Its `html_url` is not one:
-/// the Download button's page is built from the tag.
+/// the Release Page link is built from the tag.
 nonisolated struct LatestRelease: Decodable {
     let tag_name: String?
     let body: String?

@@ -40,6 +40,30 @@ final class FixtureInstallEnvironment: InstallEnvironment {
         pretendedBundlePath = nil
     }
 
+    /// `<root>/update-staging`, new and empty: the run's root is on the volume Applications is on
+    /// there, and a run can name the folder to see that nothing is left of the Update.
+    func makeUpdateStagingFolder(forBundleAt bundle: URL) throws -> URL {
+        let folder = root.appendingPathComponent("update-staging", isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    private let swapGate = FixtureGate()
+    private var swapHeld = false
+
+    /// `update-script hold-swap on|off`: while on, an Update waits just before its swap.
+    func holdSwap(_ on: Bool) {
+        swapHeld = on
+        if !on { swapGate.release() }
+    }
+
+    func waitBeforeSwap() async {
+        while swapHeld {
+            do { try await swapGate.wait() } catch { return }
+        }
+    }
+
     func scheduleEject(mountPoint: String) {
         guard let marker = ejectedMarker else { return }
         let line = Data((mountPoint + "\n").utf8)

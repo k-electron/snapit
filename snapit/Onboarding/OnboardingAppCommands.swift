@@ -85,18 +85,31 @@ extension SocketCommandRegistry {
 
 /// "Relaunch snapit": the menu bar app starts a new copy of itself and quits. Screen Recording
 /// is granted to the menu bar app, and macOS only lets a process use it from its next launch on.
+///
+/// An Update relaunches through it too, starting the newer copy it swapped in at `appURL`. That
+/// relaunch hands the Last Capture and the Update's staging folder to the new copy
+/// (`UpdateHandoff`); any other relaunch quits as snapit always does, and the Last Capture goes.
 @MainActor
 enum SnapitRelaunch {
-    static func run() async -> String {
+    static func run(appAt appURL: URL = Bundle.main.bundleURL, updateStagingFolder: URL? = nil) async -> String {
         // The Editor helper goes first, so the relaunched copy starts a helper of its own (it shows
         // Onboarding again at the step it was on) instead of meeting this one on its way out. Its `quit`
         // runs `QuitPreparation`. The question about Editors with unexported edits is asked by the
         // Permission guide in the helper before it sends `relaunch-snapit`, so by now the user agreed.
+        if updateStagingFolder != nil, await CommandSocketClient.isListening(at: AppIdentity.editorSocketPath) {
+            // The Last Capture goes with the Update: what was drawn a moment ago is written first.
+            _ = try? await CommandSocketClient.send(.saveLastCapture, to: AppIdentity.editorSocketPath, timeoutSeconds: 5)
+        }
         await HelperWindowLauncher.quitRunningHelper()
         SocketOwnership.release()
+        let handoff = updateStagingFolder.map {
+            UpdateHandoff(oldProcessID: getpid(), stagingFolder: $0, lastCapture: LastCapture.shared.number)
+        }
+        CaptureHandoff.isHandedToUpdate = handoff != nil
         do {
-            try await InstallRelaunch.start(appAt: Bundle.main.bundleURL)
+            try await InstallRelaunch.start(appAt: appURL, arguments: handoff?.arguments ?? [])
         } catch {
+            CaptureHandoff.isHandedToUpdate = false
             SocketOwnership.reacquire()
             return "error snapit could not relaunch: \(error.localizedDescription)"
         }

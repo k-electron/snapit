@@ -2,11 +2,20 @@ import AppKit
 
 nonisolated extension SocketCommand {
     /// Facts about the update window, one `key=value` line each: `window`, `title`, `activation`,
-    /// `state` (`checking`, `newer`, `up-to-date`, `unreachable`), `headline`, `detail`, `reminder`,
-    /// `url`, `notes` (percent-encoded), `notes-bytes`, `notes-blocks`; then one `notes-block <kind>|<text>` line per block of the
-    /// rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test mode only.
+    /// `state` (`checking`, `newer`, `cannot-install`, `downloading`, `installing`, `failed`,
+    /// `up-to-date`, `unreachable`), `headline`, `detail`, `notice` (why the Update stopped, or "Move
+    /// snapit to Applications to update it here"), `reminder`, `url`, `notes` (percent-encoded),
+    /// `notes-bytes`, `notes-blocks`, `progress` (`<bytes received>/<bytes in all>` while it downloads,
+    /// `?` for a size not known; empty otherwise), `progress-percent` (empty when not known), `cancel`
+    /// (`enabled`, `disabled` from the swap on, `none` without a Cancel button) and `close-button`
+    /// (the title bar's, `enabled` or `disabled`); then one `notes-block <kind>|<text>` line per
+    /// block of the rendered notes and one `button <id>|<title>|<tooltip>` line per button. Test
+    /// mode only.
     static let updateFacts = SocketCommand("update-facts")
-    /// `update-press download|close`: presses a button of the update window. Test mode only.
+    /// `update-press update|cancel|release-page|close`: presses a button of the update window
+    /// (`close` is the title bar's close button). `update` replies at once, while the Update goes
+    /// on; `cancel` and `close` reply `error ...` when the swap has begun and they are disabled.
+    /// Test mode only.
     static let updatePress = SocketCommand("update-press")
     /// `update-snapshot <png path>`: renders the window's view to a PNG inside the run's root. Test
     /// mode only.
@@ -21,16 +30,29 @@ extension SocketCommandRegistry {
             CATransaction.flush()
             return "ok"
         }
+        register(.confirmUpdateSwap) { _ in
+            let agreed = UpdateWindow.shared?.model.agreedToLose ?? [:]
+            return await EditorSessions.shared.confirmQuit(except: agreed) ? "ok" : "cancel"
+        }
         guard TestMode.isActive else { return }
         register(.updateFacts) { _ in UpdateFacts.describe() }
         register(.updatePress) { request in
             guard let model = UpdateWindow.shared?.model else { return "error no update window" }
             switch request.arguments.first {
-            case "download":
-                guard model.downloadURL != nil else { return "error nothing to download" }
-                model.download()
-            case "close": model.close()
-            default: return "error update-press download|close"
+            case "update":
+                guard model.buttons.contains(where: { $0.id == model.updateButton.id }) else { return "error nothing to update" }
+                model.update()
+            case "cancel":
+                guard model.canCancel else { return "error nothing to cancel" }
+                model.cancel()
+            case "release-page":
+                guard model.releasePageURL != nil else { return "error no release page" }
+                model.openReleasePage()
+            case "close":
+                guard model.canClose else { return "error the window cannot close while the Update swaps in the new copy" }
+                // The title bar's own close button: it asks the window's delegate, as a click does.
+                UpdateWindow.shared?.window?.performClose(nil)
+            default: return "error update-press update|cancel|release-page|close"
             }
             return "ok"
         }
@@ -62,13 +84,18 @@ enum UpdateFacts {
             "window=\(window.isVisible ? "visible" : "hidden")",
             "title=\(window.title)",
             "activation=\(NSApp.activationPolicy() == .regular ? "regular" : "accessory")",
-            "state=\(model.state.name)",
+            "state=\(model.stateName)",
             "headline=\(model.headline)",
             "detail=\(model.detail ?? "")",
+            "notice=\(model.notice ?? "")",
             "reminder=\(model.reminder ?? "")",
-            "url=\(model.downloadURL?.absoluteString ?? "")",
+            "url=\(model.releasePageURL?.absoluteString ?? "")",
             "notes=\(encoded(model.notes ?? ""))",
         ]
+        lines.append("progress=\(progressText(model))")
+        lines.append("progress-percent=\(model.isInstalling ? model.progress.percent.map(String.init) ?? "" : "")")
+        lines.append("cancel=\(model.buttons.contains { $0.id == model.cancelButton.id } ? (model.canCancel ? "enabled" : "disabled") : "none")")
+        lines.append("close-button=\(update.closeButtonEnabled.map { $0 ? "enabled" : "disabled" } ?? "none")")
         lines.append("notes-bytes=\((model.notes ?? "").utf8.count)")
         lines.append("notes-blocks=\(model.blocks.count)")
         for block in model.blocks {
@@ -76,6 +103,11 @@ enum UpdateFacts {
         }
         lines += model.buttons.map(\.factsLine)
         return lines.joined(separator: "\n")
+    }
+
+    private static func progressText(_ model: UpdateModel) -> String {
+        guard model.isInstalling, case .downloading(let received, let total) = model.progress else { return "" }
+        return "\(received)/\(total.map(String.init) ?? "?")"
     }
 
     /// Percent-encoded as `SocketRequest` encodes an argument, so a run can compare it with text it

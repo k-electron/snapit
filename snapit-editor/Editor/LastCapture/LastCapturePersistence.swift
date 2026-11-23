@@ -60,6 +60,15 @@ final class LastCapturePersistence {
         isStopped = true
     }
 
+    /// Writes the current state now and waits, when a change is pending; later changes are still
+    /// stored as before.
+    func flush() {
+        guard !isStopped, pending != nil else { return }
+        pending?.cancel()
+        pending = nil
+        write(wait: true)
+    }
+
     /// This Editor is no longer the Last Capture's: nothing more is written.
     func stop() {
         pending?.cancel()

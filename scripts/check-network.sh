@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks that snapit's one network call is the only one: Check for Updates' request to GitHub's
-# latest-release endpoint (`GitHubReleaseEndpoint.swift`). It is a static check, a tripwire for
+# Checks that snapit's network calls are all in one file (`GitHubReleaseEndpoint.swift`): Check for
+# Updates' request to GitHub's latest-release endpoint and, when the user then chooses Update and
+# Relaunch, the download of that release's disk image and its `.sha256`. It is a static check, a tripwire for
 # the ways code gets online; flow 56 of the scripted run adds the runtime check (no internet
 # socket in either process).
 #

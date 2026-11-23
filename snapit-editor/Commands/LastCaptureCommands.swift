@@ -54,6 +54,10 @@ extension SocketCommandRegistry {
                 return "error could-not-reopen"
             }
         }
+        register(.saveLastCapture) { _ in
+            EditorSessions.shared.lastCaptureSession?.writeLastCaptureNow()
+            return "ok"
+        }
         // Quit (the `quit` command and the helper's own "Quit snapit"): nothing more is written for
         // the Last Capture, and the quit goes on only when no write is still running. The menu bar
         // app removes the Capture's files after that.

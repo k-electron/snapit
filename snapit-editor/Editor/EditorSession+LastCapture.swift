@@ -24,6 +24,12 @@ extension EditorSession {
         document?.onPersistableChange = nil
     }
 
+    /// Writes the state file now when a change is still waiting for its delay. The Editor goes on
+    /// being the Last Capture's.
+    func writeLastCaptureNow() {
+        lastCapture?.flush()
+    }
+
     /// The Editor is closing: the Last Capture's Editor writes its state one last time, so
     /// Reopen brings it back exactly as it was. Never asks anything.
     func saveLastCaptureOnClose() {

@@ -83,11 +83,15 @@ mp_case() { # label, simulate state, requests added, resets added, guide-state, 
   expect_equal "$label: times snapit's own entry was reset" "$((resets + $4))" "$(mp_sr resets)"
   expect_equal "$label: worded for an update or not" "$6" "$(mp_gf "" guide-update)"
   expect_equal "$label: headline" "$7" "$(mp_gf "" guide-headline)"
+  if [[ "$6" == yes ]]; then
+    expect_contains "$label: the message names the version" "snapit was updated to $MP_VERSION." "$(mp_gf "" guide-message)"
+  fi
   if [[ "$(mp_gf "" guide-message)" == *toggle* || "$(mp_gf "" guide-message)" == *"already"* ]]; then fail "$label: the guide tells people to toggle an existing switch: $(mp_gf "" guide-message)"; else pass "$label: the guide never tells people to toggle an existing switch"; fi
   mp_close_windows
 }
 mp_case "never granted" notDetermined 1 0 denied no "Turn on Screen Recording for snapit"
-mp_case "granted before an update" grantedStale 1 1 denied yes "snapit needs Screen Recording turned back on"
+MP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")"
+mp_case "granted before an update" grantedStale 1 1 denied yes "snapit was updated to $MP_VERSION and needs Screen Recording turned back on"
 mp_case "asked and denied" denied 0 0 denied no "Turn on Screen Recording for snapit"
 mp_case "turned off" turnedOff 0 0 denied no "Turn on Screen Recording for snapit"
 expect_equal "turned off says so" "Screen Recording is off for snapit. Turn snapit on in System Settings, then choose Quit & Reopen." "$(send_slow "$APP_SOCK" "press-shortcut capture-screen" >/dev/null; wait_until 15 mp_guide_visible ""; mp_gf "" guide-message)"
